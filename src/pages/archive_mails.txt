@@ -1,0 +1,275 @@
+[IMPORTANT]
+From: alice@example.com
+To: moi@monemail.com
+Date: 2025-05-25 09:15
+Subject: Réunion urgente demain
+
+Bonjour,
+
+Nous avons une réunion urgente demain à 10h00 pour finaliser le projet.  
+Merci de préparer les documents nécessaires.
+
+Cordialement,  
+Alice
+
+--------------------------------------------
+
+[IMPORTANT]
+From: bob@example.com
+To: moi@monemail.com
+Date: 2025-05-24 14:30
+Subject: Projet finalisé, à valider
+
+Salut,
+
+Le projet est maintenant finalisé.  
+Peux-tu vérifier les derniers points et me confirmer que tout est bon ?  
+
+Merci,  
+Bob
+
+--------------------------------------------
+
+[SPAM]
+From: promo123@spamdomain.com
+To: moi@monemail.com
+Date: 2025-05-26 08:00
+Subject: Offre incroyable à ne pas rater !!!
+
+Gagnez 1000€ chaque jour en cliquant ici !  
+Offre limitée, dépêchez-vous !  
+Cliquez sur ce lien magique : http://spamlink.fake
+
+--------------------------------------------
+
+[IMPORTANT]
+From: carol@example.com
+To: moi@monemail.com
+Date: 2025-05-23 17:45
+Subject: Compte rendu du rendez-vous client
+
+Bonjour,
+
+Voici le compte rendu de notre rendez-vous avec le client XYZ.  
+Le projet avance comme prévu, la prochaine étape est la validation du cahier des charges.
+
+Bonne journée,  
+Carol
+
+--------------------------------------------
+
+[SPAM]
+From: freegift@spamoffers.com
+To: moi@monemail.com
+Date: 2025-05-25 11:00
+Subject: Vous avez gagné un cadeau gratuit !
+
+Félicitations ! Vous avez gagné un cadeau gratuit.  
+Cliquez ici pour réclamer votre prix avant qu’il ne soit trop tard !
+
+--------------------------------------------
+
+[IMPORTANT]
+From: david@example.com
+To: moi@monemail.com
+Date: 2025-05-22 10:20
+Subject: Mise à jour importante du système
+
+Bonjour,
+
+Une mise à jour critique du système aura lieu ce week-end.  
+Veuillez sauvegarder vos données avant vendredi soir.
+
+Merci,  
+David
+
+--------------------------------------------
+
+[SPAM]
+From: cheapmeds@pharmspam.com
+To: moi@monemail.com
+Date: 2025-05-26 13:00
+Subject: Médicaments à prix cassés
+
+Achetez vos médicaments sans ordonnance à prix cassés !  
+Livraison rapide et discrète. Visitez notre site maintenant.
+
+--------------------------------------------
+
+[IMPORTANT]
+From: emma@example.com
+To: moi@monemail.com
+Date: 2025-05-21 15:10
+Subject: Invitation conférence 2025
+
+Cher(e) collègue,
+
+Vous êtes invité(e) à la conférence annuelle 2025 sur l’innovation technologique.  
+Merci de confirmer votre présence avant le 30 mai.
+
+Cordialement,  
+Emma
+
+--------------------------------------------
+
+[SPAM]
+From: lotterywin@fakeemail.com
+To: moi@monemail.com
+Date: 2025-05-26 09:00
+Subject: Félicitations, vous avez gagné la loterie !
+
+Vous êtes le grand gagnant de notre loterie internationale.  
+Envoyez vos coordonnées pour recevoir votre prix immédiatement.
+
+--------------------------------------------
+
+[IMPORTANT]
+From: frank@example.com
+To: moi@monemail.com
+Date: 2025-05-20 11:30
+Subject: Problème détecté sur le serveur
+
+Bonjour,
+
+Un problème a été détecté sur le serveur principal.  
+L’équipe technique travaille à sa résolution.
+
+Cordialement,  
+Frank
+
+--------------------------------------------
+
+[SPAM]
+From: quickcash@spamfast.com
+To: moi@monemail.com
+Date: 2025-05-19 16:45
+Subject: Gagnez de l'argent rapidement !
+
+Profitez de notre méthode exclusive pour gagner de l'argent rapidement !  
+Inscrivez-vous maintenant et recevez un bonus.
+
+--------------------------------------------
+
+[IMPORTANT]
+From: gina@example.com
+To: moi@monemail.com
+Date: 2025-05-18 09:00
+Subject: Validation budget Q3
+
+Salut,
+
+Le budget pour le troisième trimestre doit être validé avant la fin du mois.  
+Peux-tu regarder les documents envoyés et me donner ton retour ?
+
+Merci,  
+Gina
+
+--------------------------------------------
+
+[SPAM]
+From: bestdeals@spamshopping.com
+To: moi@monemail.com
+Date: 2025-05-17 14:20
+Subject: Offre exceptionnelle - Jusqu'à 70% de réduction !
+
+Découvrez nos offres incroyables sur les produits high-tech.  
+Cliquez vite, stock limité !
+
+--------------------------------------------
+
+[IMPORTANT]
+From: henry@example.com
+To: moi@monemail.com
+Date: 2025-05-16 10:50
+Subject: Rapport d'avancement du projet Alpha
+
+Bonjour,
+
+Le projet Alpha avance conformément au planning.  
+Nous avons finalisé la phase de tests et préparons le déploiement.
+
+Bien à toi,  
+Henry
+
+--------------------------------------------
+
+[SPAM]
+From: miraclecure@spamhealth.com
+To: moi@monemail.com
+Date: 2025-05-15 08:30
+Subject: Remède miracle contre toutes les maladies
+
+Essayez notre remède miracle, approuvé par des experts.  
+Commandez maintenant avec une remise exclusive !
+
+--------------------------------------------
+
+[IMPORTANT]
+From: isabelle@example.com
+To: moi@monemail.com
+Date: 2025-05-14 13:15
+Subject: Organisation séminaire client
+
+Bonjour,
+
+Le séminaire client aura lieu le 15 juin.  
+Merci de confirmer ta participation et tes besoins logistiques.
+
+Cordialement,  
+Isabelle
+
+--------------------------------------------
+
+[SPAM]
+From: winbig@spamlottery.com
+To: moi@monemail.com
+Date: 2025-05-13 09:40
+Subject: Gagnez gros avec notre nouvelle loterie !
+
+Participez maintenant et tentez de gagner des millions.  
+C’est simple et rapide !
+
+--------------------------------------------
+
+[IMPORTANT]
+From: julien@example.com
+To: moi@monemail.com
+Date: 2025-05-12 11:55
+Subject: Nouvelle politique de sécurité
+
+Salut,
+
+Nous avons mis à jour la politique de sécurité informatique.  
+Merci de lire le document joint et de respecter les nouvelles règles.
+
+Merci,  
+Julien
+
+--------------------------------------------
+
+[SPAM]
+From: cheaploans@spamfinance.com
+To: moi@monemail.com
+Date: 2025-05-11 15:25
+Subject: Prêts personnels à taux réduit
+
+Obtenez un prêt personnel rapidement avec un taux réduit.  
+Sans justificatif, réponse immédiate.
+
+--------------------------------------------
+
+[IMPORTANT]
+From: karen@example.com
+To: moi@monemail.com
+Date: 2025-05-10 08:45
+Subject: Suivi client important
+
+Bonjour,
+
+Le client ABC a demandé une mise à jour sur son dossier.  
+Merci de préparer un rapport détaillé avant vendredi.
+
+Cordialement,  
+Karen
+
+--------------------------------------------
