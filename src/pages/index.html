@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Email Filter - Détection de Spam</title>
+    <title>Email Filter - Détection de Spam CSV</title>
 
     <!-- Bootstrap CSS -->
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
@@ -22,6 +22,10 @@
             transition: all 0.3s ease;
             cursor: pointer;
             margin-bottom: 10px;
+            padding: 15px;
+            background: white;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
         }
 
         .email-item.spam {
@@ -36,6 +40,7 @@
         .email-item.active {
             background-color: #e3f2fd !important;
             border-color: #2196f3;
+            box-shadow: 0 4px 20px rgba(33, 150, 243, 0.3);
         }
 
         .card {
@@ -93,13 +98,7 @@
         .btn-analyze:hover {
             background: rgba(255,255,255,0.3);
             transform: scale(1.05);
-        }
-
-        .email-controls {
-            background: rgba(255, 255, 255, 0.9);
-            border-radius: 15px;
-            padding: 15px;
-            margin-bottom: 20px;
+            color: white;
         }
 
         .source-indicator {
@@ -121,6 +120,18 @@
         #emailList {
             max-height: 500px;
             overflow-y: auto;
+            padding: 0 15px;
+        }
+
+        .search-controls {
+            background: rgba(255, 255, 255, 0.9);
+            border-radius: 15px;
+            padding: 15px;
+            margin-bottom: 20px;
+        }
+
+        .filter-buttons .btn {
+            margin: 2px;
         }
 
         /* Scrollbar personnalisée */
@@ -141,6 +152,13 @@
         ::-webkit-scrollbar-thumb:hover {
             background: #555;
         }
+
+        .loading-spinner {
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100px;
+        }
     </style>
 </head>
 <body>
@@ -154,14 +172,14 @@
                             <div class="col-md-6">
                                 <h2 class="mb-0">
                                     <i class="bi bi-shield-check text-primary"></i>
-                                    Email Filter Dashboard
+                                    Email Filter Dashboard CSV
                                 </h2>
-                                <p class="text-muted mb-0">Détection intelligente de spam en temps réel</p>
+                                <p class="text-muted mb-0">Détection intelligente de spam avec format CSV</p>
                             </div>
                             <div class="col-md-6 text-end">
                                 <div class="btn-group" role="group">
                                     <button type="button" class="btn btn-success" onclick="loadLiveEmails()">
-                                        <i class="bi bi-cloud-download"></i> Gmail
+                                        <i class="bi bi-cloud-download"></i> Gmail CSV
                                     </button>
                                     <button type="button" class="btn btn-primary" onclick="loadDemoEmails()">
                                         <i class="bi bi-file-text"></i> Demo
@@ -180,6 +198,35 @@
         <!-- Source Indicator -->
         <div id="sourceIndicator" class="source-indicator" style="display: none;">
             <strong>📊 Source:</strong> <span id="sourceText">Chargement...</span>
+        </div>
+
+        <!-- Search and Filter Controls -->
+        <div class="search-controls">
+            <div class="row align-items-center">
+                <div class="col-md-6">
+                    <div class="input-group">
+                        <span class="input-group-text">
+                            <i class="bi bi-search"></i>
+                        </span>
+                        <input type="text" id="searchInput" class="form-control"
+                               placeholder="Rechercher dans les emails..."
+                               onkeyup="performSearch()">
+                    </div>
+                </div>
+                <div class="col-md-6">
+                    <div class="filter-buttons text-end">
+                        <button class="btn btn-outline-secondary btn-sm active" onclick="filterEmails('ALL')" data-filter="ALL">
+                            <i class="bi bi-envelope"></i> Tous
+                        </button>
+                        <button class="btn btn-outline-success btn-sm" onclick="filterEmails('IMPORTANT')" data-filter="IMPORTANT">
+                            <i class="bi bi-check-circle"></i> Importants
+                        </button>
+                        <button class="btn btn-outline-danger btn-sm" onclick="filterEmails('SPAM')" data-filter="SPAM">
+                            <i class="bi bi-x-circle"></i> Spam
+                        </button>
+                    </div>
+                </div>
+            </div>
         </div>
 
         <!-- Statistics -->
@@ -218,9 +265,11 @@
                     </div>
                     <div class="card-body p-0">
                         <div id="emailList">
-                            <div class="text-center p-4">
-                                <div class="spinner-border text-primary" role="status"></div>
-                                <div class="mt-2">Chargement des emails...</div>
+                            <div class="loading-spinner">
+                                <div class="spinner-border text-primary" role="status">
+                                    <span class="visually-hidden">Chargement...</span>
+                                </div>
+                                <div class="ms-3">Chargement des emails CSV...</div>
                             </div>
                         </div>
                     </div>
@@ -239,8 +288,18 @@
                     <div class="card-body">
                         <!-- Email Details -->
                         <div class="mb-3">
+                            <strong>ID:</strong>
+                            <div id="emailId" class="text-muted small">Sélectionnez un email</div>
+                        </div>
+
+                        <div class="mb-3">
                             <strong>De:</strong>
                             <div id="emailFrom" class="text-muted">Sélectionnez un email</div>
+                        </div>
+
+                        <div class="mb-3">
+                            <strong>Date:</strong>
+                            <div id="emailDate" class="text-muted">-</div>
                         </div>
 
                         <div class="mb-3">
@@ -268,12 +327,12 @@
                         <div class="analyze-section">
                             <h6 class="mb-3">
                                 <i class="bi bi-cpu"></i>
-                                Analyse automatique
+                                Analyse Simple (Mode Aléatoire)
                             </h6>
 
-                            <button id="analyzeBtn" class="btn btn-analyze mb-3">
-                                <i class="bi bi-search"></i>
-                                ANALYSER
+                            <button id="analyzeBtn" class="btn btn-analyze mb-3" onclick="analyzeEmail()">
+                                <i class="bi bi-shuffle"></i>
+                                ANALYSER (RANDOM)
                             </button>
 
                             <div id="analysisResult" class="mb-3"></div>
@@ -303,292 +362,123 @@
         </div>
     </div>
 
-    <!-- Email Data -->
-    <script id="emailData" type="text/plain">
-[IMPORTANT]
-From: alice@example.com
-To: moi@monemail.com
-Date: 2025-05-25 09:15
-Subject: Réunion urgente demain
-
-Bonjour,
-
-Nous avons une réunion urgente demain à 10h00 pour finaliser le projet.
-Merci de préparer les documents nécessaires.
-
-Cordialement,
-Alice
-
---------------------------------------------
-
-[IMPORTANT]
-From: Google Payments <payments-noreply@google.com>
-To: moi@monemail.com
-Date: 2025-05-28 15:49
-Subject: Colab : Merci
-
-Google
-
-Merci
-Vous avez effectué un paiement associé à Colab.
-Si vous avez acheté un abonnement, vous pouvez l'annuler.
-
---------------------------------------------
-
-[SPAM]
-From: "Suivre-votre-colis" <spam@fake.com>
-To: moi@monemail.com
-Date: 2025-05-12 05:44
-Subject: Vous avez un colis en attente
-
-Colis suspendu - Cliquez ici pour confirmer votre adresse.
-URGENT: Votre colis sera retourné!
-
---------------------------------------------
-
-[IMPORTANT]
-From: bob@example.com
-To: moi@monemail.com
-Date: 2025-05-24 14:30
-Subject: Projet finalisé, à valider
-
-Salut,
-
-Le projet est maintenant finalisé.
-Peux-tu vérifier les derniers points ?
-
-Merci,
-Bob
-
---------------------------------------------
-
-[SPAM]
-From: promo123@spamdomain.com
-To: moi@monemail.com
-Date: 2025-05-26 08:00
-Subject: Offre incroyable à ne pas rater !!!
-
-Gagnez 1000€ chaque jour en cliquant ici !
-Offre limitée, dépêchez-vous !
-
---------------------------------------------
-
-[IMPORTANT]
-From: Microsoft Azure <azure@microsoft.com>
-To: moi@monemail.com
-Date: 2025-05-29 06:07
-Subject: Formation Azure gratuite
-
-Découvrez comment rationaliser la migration des charges de travail.
-Inscrivez-vous à notre formation gratuite.
-
---------------------------------------------
-    </script>
-
     <!-- Bootstrap JS -->
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
 
+    <!-- CSV Email Loader -->
+    <script src="csvEmailLoader.js"></script>
+
     <script>
-        // Variables globales
-        let currentEmails = [];
-        let currentSource = 'demo';
+        // Variables globales pour la recherche et le filtrage
+        let currentFilter = 'ALL';
+        let currentSearchQuery = '';
+        let filteredEmails = [];
 
-        // Parse les emails avec classification automatique si manquante
-        function parseEmails(text) {
-            const emailBlocks = text.trim().split('--------------------------------------------');
-            return emailBlocks.map(block => {
-                const lines = block.trim().split('\n');
-                if (lines.length < 5) return null;
-
-                let type = '', from = '', to = '', date = '', subject = '', body = '';
-                let i = 0;
-
-                // Type (s'il existe)
-                if (lines[0].startsWith('[')) {
-                    type = lines[0].replace(/\[|\]/g, '');
-                    i++;
-                }
-
-                // Parse headers
-                for (; i < lines.length; i++) {
-                    const line = lines[i].trim();
-                    if (line.startsWith('From:')) from = line.substring(5).trim();
-                    else if (line.startsWith('To:')) to = line.substring(3).trim();
-                    else if (line.startsWith('Date:')) date = line.substring(5).trim();
-                    else if (line.startsWith('Subject:')) {
-                        subject = line.substring(8).trim();
-                        i++;
-                        break;
-                    }
-                }
-
-                // Body
-                body = lines.slice(i).join('\n').trim();
-
-                // Classification automatique si pas de type défini
-                if (!type) {
-                    type = classifyEmail(from, subject, body);
-                }
-
-                return { type, from, to, date, subject, body };
-            }).filter(email => email !== null);
+        // Fonctions de recherche et filtrage
+        function performSearch() {
+            const query = document.getElementById('searchInput').value.trim();
+            currentSearchQuery = query;
+            applyFiltersAndSearch();
         }
 
-        // Classifie automatiquement un email comme SPAM ou IMPORTANT
-        function classifyEmail(from, subject, body) {
-            const spamIndicators = [
-                // Expéditeurs suspects
-                /no-?reply.*@.*\.(us|tk|ml|ga|cf)$/i,
-                /^[A-Z0-9]{8,}@/i,
-                /\.(us|tk|ml|ga|cf)$/i,
+        function filterEmails(type) {
+            currentFilter = type;
 
-                // Sujets suspects
-                /URGENT|FÉLICITATIONS|GAGNEZ|CADEAU|GRATUIT|PROMO|SOLDE|RÉDUCTION|OFFRE|CLIQUEZ/i,
-                /€|EUROS|ARGENT|CASINO|LOTERIE|VIAGRA|MEDICAMENT/i,
-                /COMPLÉTEZ|RÉCUPÉREZ|DÉBLOQUEZ|MAINTENANT/i,
-
-                // Contenu suspect
-                /cliquez.*ici|votre.*colis|en.*attente|suspendu|expiré/i,
-                /confirmer.*adresse|mettre.*à.*jour|vérifier.*compte/i,
-                /félicitations.*gagné|prix.*gratuit|remise.*exclusive/i
-            ];
-
-            const textToCheck = `${from} ${subject} ${body}`.toLowerCase();
-
-            // Vérifier les indicateurs de spam
-            for (let indicator of spamIndicators) {
-                if (indicator.test(textToCheck)) {
-                    return 'SPAM';
+            // Mettre à jour l'apparence des boutons
+            document.querySelectorAll('.filter-buttons .btn').forEach(btn => {
+                btn.classList.remove('active');
+                if (btn.dataset.filter === type) {
+                    btn.classList.add('active');
                 }
-            }
-
-            // Services connus comme importants
-            const legitimateServices = [
-                /@(google|microsoft|amazon|apple|github|linkedin|facebook|twitter)\.com/i,
-                /@(gmail|outlook|hotmail|yahoo)\.com/i,
-                /@.*\.(edu|gov|org)$/i,
-                /noreply@.*\.(fr|com|net)$/i
-            ];
-
-            for (let service of legitimateServices) {
-                if (service.test(from)) {
-                    return 'IMPORTANT';
-                }
-            }
-
-            // Par défaut, considérer comme important si pas d'indicateur de spam
-            return 'IMPORTANT';
-        }
-
-        // Nettoie le contenu d'un email
-        function cleanEmailContent(content) {
-            if (!content) return '';
-
-            // Si c'est du HTML, extraire le texte visible
-            if (content.includes('<') && content.includes('>')) {
-                // Supprimer les balises HTML mais garder le contenu
-                let cleaned = content
-                    .replace(/<script[^>]*>.*?<\/script>/gis, '') // Supprimer scripts
-                    .replace(/<style[^>]*>.*?<\/style>/gis, '')   // Supprimer styles
-                    .replace(/<[^>]+>/g, ' ')                     // Supprimer balises HTML
-                    .replace(/&nbsp;/g, ' ')                      // Remplacer &nbsp;
-                    .replace(/&amp;/g, '&')                       // Décoder &amp;
-                    .replace(/&lt;/g, '<')                        // Décoder &lt;
-                    .replace(/&gt;/g, '>')                        // Décoder &gt;
-                    .replace(/&quot;/g, '"')                      // Décoder &quot;
-                    .replace(/\s+/g, ' ')                         // Multiples espaces en un
-                    .trim();
-
-                return cleaned;
-            }
-
-            // Sinon, juste nettoyer les espaces
-            return content.replace(/\s+/g, ' ').trim();
-        }
-
-        // Affiche les emails
-        function displayEmails(emails) {
-            currentEmails = emails;
-            const container = document.getElementById('emailList');
-
-            if (emails.length === 0) {
-                container.innerHTML = '<div class="text-center p-4 text-muted">Aucun email trouvé</div>';
-                updateStats(emails);
-                return;
-            }
-
-            // Créer la structure HTML directement (pas de sous-listes)
-            let html = '';
-            emails.forEach((email, index) => {
-                const isSpam = email.type === 'SPAM';
-                const cleanBody = cleanEmailContent(email.body);
-
-                html += `
-                    <div class="email-item ${isSpam ? 'spam' : ''}" onclick="selectEmail(${index})" data-index="${index}">
-                        <div class="d-flex justify-content-between align-items-start">
-                            <div class="flex-grow-1">
-                                <div class="d-flex align-items-center mb-2">
-                                    <strong class="me-2">${truncate(email.from, 35)}</strong>
-                                    <span class="email-type-badge ${isSpam ? 'bg-danger' : 'bg-success'} text-white">
-                                        ${email.type}
-                                    </span>
-                                </div>
-                                <div class="text-dark fw-semibold mb-1">${truncate(email.subject, 50)}</div>
-                                <div class="text-muted small">${truncate(cleanBody, 70)}</div>
-                            </div>
-                            <div class="text-end ms-3">
-                                <small class="text-muted">${formatDate(email.date)}</small>
-                            </div>
-                        </div>
-                    </div>
-                `;
             });
 
-            container.innerHTML = html;
-            updateStats(emails);
+            applyFiltersAndSearch();
+        }
 
-            // Sélectionner le premier email
-            if (emails.length > 0) {
-                selectEmail(0);
+        function applyFiltersAndSearch() {
+            let emails = emailLoader.emails;
+
+            // Appliquer le filtre de type
+            if (currentFilter !== 'ALL') {
+                emails = emails.filter(email => email.type === currentFilter);
+            }
+
+            // Appliquer la recherche
+            if (currentSearchQuery) {
+                const query = currentSearchQuery.toLowerCase();
+                emails = emails.filter(email =>
+                    (email.from && email.from.toLowerCase().includes(query)) ||
+                    (email.subject && email.subject.toLowerCase().includes(query)) ||
+                    (email.body && email.body.toLowerCase().includes(query))
+                );
+            }
+
+            filteredEmails = emails;
+
+            // Afficher les résultats
+            const container = document.getElementById('emailList');
+            emailLoader.displayEmails(container, filteredEmails);
+
+            // Mettre à jour le compteur
+            const counter = document.getElementById('emailCounter');
+            if (counter) {
+                const total = emailLoader.emails.length;
+                const filtered = filteredEmails.length;
+                counter.textContent = filtered === total ?
+                    `${total} emails` :
+                    `${filtered}/${total} emails`;
             }
         }
 
-        // Sélectionne un email
+        // Fonction de sélection d'email mise à jour
         function selectEmail(index) {
+            // Utiliser l'index dans la liste filtrée
+            const email = filteredEmails[index] || emailLoader.emails[index];
+            if (!email) return;
+
             // Supprimer la sélection précédente
             document.querySelectorAll('.email-item').forEach(item => {
                 item.classList.remove('active');
             });
 
-            // Ajouter la sélection
+            // Ajouter la nouvelle sélection
             const emailElement = document.querySelector(`[data-index="${index}"]`);
             if (emailElement) {
                 emailElement.classList.add('active');
             }
 
             // Afficher l'aperçu
-            const email = currentEmails[index];
-            if (email) {
-                document.getElementById('emailFrom').textContent = email.from;
-                document.getElementById('emailSubject').textContent = email.subject;
+            const elements = {
+                id: document.getElementById('emailId'),
+                from: document.getElementById('emailFrom'),
+                date: document.getElementById('emailDate'),
+                subject: document.getElementById('emailSubject'),
+                body: document.getElementById('emailBody'),
+                analyzeBtn: document.getElementById('analyzeBtn')
+            };
 
-                // Stocker le contenu pour les deux modes d'affichage
-                const bodyElement = document.getElementById('emailBody');
-                bodyElement.dataset.textContent = email.body;
-                bodyElement.dataset.htmlContent = email.body;
+            if (elements.id) elements.id.textContent = email.id || 'N/A';
+            if (elements.from) elements.from.textContent = email.from;
+            if (elements.date) elements.date.textContent = emailLoader.formatDate(email.date);
+            if (elements.subject) elements.subject.textContent = email.subject;
 
-                // Afficher selon le mode sélectionné
+            if (elements.body) {
+                elements.body.dataset.textContent = email.body;
+                elements.body.dataset.htmlContent = email.body;
                 updateBodyDisplay();
-
-                // Stocker le type pour l'analyse
-                document.getElementById('analyzeBtn').dataset.emailType = email.type;
-
-                // Reset analysis
-                document.getElementById('analysisResult').textContent = '';
-                document.querySelectorAll('input[name="satisfaction"]').forEach(input => {
-                    input.checked = false;
-                });
             }
+
+            if (elements.analyzeBtn) {
+                elements.analyzeBtn.dataset.emailType = email.type;
+            }
+
+            // Reset analysis
+            const analysisResult = document.getElementById('analysisResult');
+            if (analysisResult) analysisResult.textContent = '';
+
+            document.querySelectorAll('input[name="satisfaction"]').forEach(input => {
+                input.checked = false;
+            });
         }
 
         // Met à jour l'affichage du contenu selon le mode
@@ -608,96 +498,10 @@ Inscrivez-vous à notre formation gratuite.
                 bodyElement.style.whiteSpace = 'normal';
             } else {
                 // Mode texte : afficher le contenu nettoyé
-                const cleanContent = cleanEmailContent(rawContent);
+                const cleanContent = emailLoader.cleanEmailContent(rawContent);
                 bodyElement.textContent = cleanContent || rawContent;
                 bodyElement.style.fontFamily = "'Courier New', monospace";
                 bodyElement.style.whiteSpace = 'pre-wrap';
-            }
-        }
-
-        // Met à jour les statistiques
-        function updateStats(emails) {
-            const total = emails.length;
-            const spamEmails = emails.filter(e => e.type === 'SPAM').length;
-            const importantEmails = emails.filter(e => e.type === 'IMPORTANT').length;
-            const successRate = total > 0 ? Math.round((importantEmails / total) * 100) : 0;
-
-            document.getElementById('totalEmails').textContent = total;
-            document.getElementById('successRate').textContent = successRate + '%';
-            document.getElementById('spamCount').textContent = spamEmails;
-            document.getElementById('emailCounter').textContent = `${total} emails`;
-        }
-
-        // Charge les emails de démo
-        function loadDemoEmails() {
-            showSource('🔄 Chargement des emails de démonstration...', 'text-warning');
-
-            // Essayer de charger depuis archive_mails.txt
-            fetch('archive_mails.txt')
-                .then(response => {
-                    if (!response.ok) throw new Error('Fichier non trouvé');
-                    return response.text();
-                })
-                .then(text => {
-                    const emails = parseEmails(text);
-                    displayEmails(emails);
-                    currentSource = 'demo';
-                    showSource('📁 Emails de démonstration chargés', 'text-info');
-                })
-                .catch(() => {
-                    // Fallback vers les données intégrées
-                    const emailText = document.getElementById('emailData').textContent;
-                    const emails = parseEmails(emailText);
-                    displayEmails(emails);
-                    currentSource = 'embedded';
-                    showSource('📦 Emails intégrés (fallback)', 'text-warning');
-                });
-        }
-
-        // Charge les emails Gmail
-        function loadLiveEmails() {
-            showSource('🔄 Chargement des emails Gmail...', 'text-warning');
-
-            fetch('archive_mails_live.txt')
-                .then(response => {
-                    if (!response.ok) throw new Error('Fichier live non trouvé');
-                    return response.text();
-                })
-                .then(text => {
-                    const emails = parseEmails(text);
-                    displayEmails(emails);
-                    currentSource = 'live';
-                    showSource('✅ Emails Gmail chargés avec succès', 'text-success');
-                })
-                .catch(() => {
-                    showSource('❌ Emails Gmail indisponibles - Retour aux emails de démo', 'text-warning');
-                    loadDemoEmails();
-                });
-        }
-
-        // Actualise les emails
-        function refreshEmails() {
-            if (currentSource === 'live') {
-                loadLiveEmails();
-            } else {
-                loadDemoEmails();
-            }
-        }
-
-        // Affiche l'indicateur de source
-        function showSource(message, className = 'text-info') {
-            const indicator = document.getElementById('sourceIndicator');
-            const text = document.getElementById('sourceText');
-
-            text.textContent = message;
-            text.className = className;
-            indicator.style.display = 'block';
-
-            // Masquer automatiquement les messages de succès
-            if (className === 'text-success') {
-                setTimeout(() => {
-                    indicator.style.display = 'none';
-                }, 3000);
             }
         }
 
@@ -710,15 +514,28 @@ Inscrivez-vous à notre formation gratuite.
             resultDiv.innerHTML = '<div class="spinner-border spinner-border-sm me-2"></div>Analyse en cours...';
 
             setTimeout(() => {
+                // Simulation d'analyse aléatoire
+                const confidence = Math.floor(Math.random() * 30) + 70; // 70-99%
                 let result = '';
+                let className = '';
+
                 if (emailType === 'IMPORTANT') {
-                    result = '✅ Ce mail est classé comme IMPORTANT';
+                    result = `✅ Email classé IMPORTANT (Confiance: ${confidence}%)`;
+                    className = 'text-success';
                 } else if (emailType === 'SPAM') {
-                    result = '⚠️ Ce mail est classé comme SPAM';
+                    result = `⚠️ Email classé SPAM (Confiance: ${confidence}%)`;
+                    className = 'text-warning';
                 } else {
-                    result = '❓ Classification non déterminée';
+                    result = '❓ Classification aléatoire en cours...';
+                    className = 'text-muted';
                 }
-                resultDiv.textContent = result;
+
+                resultDiv.innerHTML = `
+                    <div class="${className}">
+                        ${result}
+                        <br><small class="text-muted">Mode: Classification aléatoire</small>
+                    </div>
+                `;
             }, 1000);
         }
 
@@ -728,36 +545,16 @@ Inscrivez-vous à notre formation gratuite.
             const resultDiv = document.getElementById('analysisResult');
 
             if (satisfaction === 'yes') {
-                resultDiv.innerHTML = '👍 Merci pour votre feedback positif !';
+                resultDiv.innerHTML = '<span class="text-success">👍 Merci pour votre feedback positif !</span>';
             } else {
-                resultDiv.innerHTML = '👎 Merci, nous améliorerons notre détection.';
+                resultDiv.innerHTML = '<span class="text-warning">👎 Merci, nous améliorerons notre détection.</span>';
             }
 
-            console.log(`Feedback: ${satisfaction} pour email type: ${emailType}`);
-        }
-
-        // Utilitaires
-        function truncate(text, length) {
-            return text && text.length > length ? text.substring(0, length) + '...' : text || '';
-        }
-
-        function formatDate(dateStr) {
-            try {
-                const date = new Date(dateStr);
-                return date.toLocaleDateString('fr-FR', {
-                    day: '2-digit',
-                    month: '2-digit'
-                });
-            } catch {
-                return dateStr || '';
-            }
+            console.log(`Feedback CSV: ${satisfaction} pour email type: ${emailType}`);
         }
 
         // Event listeners
         document.addEventListener('DOMContentLoaded', function() {
-            // Bouton analyser
-            document.getElementById('analyzeBtn').addEventListener('click', analyzeEmail);
-
             // Feedback satisfaction
             document.querySelectorAll('input[name="satisfaction"]').forEach(input => {
                 input.addEventListener('change', function() {
@@ -773,13 +570,8 @@ Inscrivez-vous à notre formation gratuite.
             });
 
             // Chargement initial
-            loadDemoEmails();
-
-            // Essayer de charger Gmail après 2 secondes
-            setTimeout(() => {
-                console.log('Tentative de chargement automatique Gmail...');
-                loadLiveEmails();
-            }, 2000);
+            console.log('🚀 Initialisation du dashboard CSV...');
+            loadLiveEmails();
         });
     </script>
 </body>

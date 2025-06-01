@@ -1,6 +1,7 @@
 """
 email_fetcher_csv.py
 Script pour récupérer les emails depuis Gmail et les sauvegarder au format CSV
+Classification simple en mode aléatoire (préparé pour modèle ML)
 """
 
 import imaplib
@@ -10,6 +11,7 @@ from email.utils import parsedate_to_datetime
 import os
 import csv
 import json
+import random
 from datetime import datetime
 from dotenv import load_dotenv
 import re
@@ -222,8 +224,8 @@ def generate_csv_files(emails_data):
     os.makedirs(output_dir, exist_ok=True)
 
     # Chemins des fichiers
-    csv_file_path = os.path.join(output_dir, "emails_live.csv")
-    json_file_path = os.path.join(output_dir, "emails_live.json")
+    csv_file_path = os.path.join(output_dir, "src/pages/emails_live.csv")
+    json_file_path = os.path.join(output_dir, "src/pages/emails_live.json")
 
     # 1. Fichier CSV principal
     fieldnames = ['id', 'type', 'from', 'to', 'date', 'subject', 'body', 'message_id', 'processed_at']
