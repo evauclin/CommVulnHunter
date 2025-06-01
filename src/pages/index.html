@@ -1,244 +1,310 @@
-<!doctype html>
-<html lang="en">
-  <!--begin::Head-->
-  <head>
-    <meta http-equiv="Content-Type" content="text/html; charset=utf-8" />
-    <title>Email Filter</title>
-    <!--begin::Fonts-->
-    <link
-      rel="stylesheet"
-      href="https://cdn.jsdelivr.net/npm/@fontsource/source-sans-3@5.0.12/index.css"
-      integrity="sha256-tXJfXfp6Ewt1ilPzLDtQnJV4hclT9XuaZUKyUvmyr+Q="
-      crossorigin="anonymous"
-    />
-    <!--end::Fonts-->
-    <!--begin::Third Party Plugin(OverlayScrollbars)-->
-    <link
-      rel="stylesheet"
-      href="https://cdn.jsdelivr.net/npm/overlayscrollbars@2.10.1/styles/overlayscrollbars.min.css"
-      integrity="sha256-tZHrRjVqNSRyWg2wbppGnT833E/Ys0DHWGwT04GiqQg="
-      crossorigin="anonymous"
-    />
-    <!--end::Third Party Plugin(OverlayScrollbars)-->
-    <!--begin::Third Party Plugin(Bootstrap Icons)-->
-    <link
-      rel="stylesheet"
-      href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css"
-      integrity="sha256-9kPW/n5nn53j4WMRYAxe9c1rCY96Oogo/MKSVdKzPmI="
-      crossorigin="anonymous"
-    />
-    <!--end::Third Party Plugin(Bootstrap Icons)-->
-    <!--begin::Required Plugin(AdminLTE)-->
-    <link rel="stylesheet" href="../css/adminlte.css" />
-    <!--end::Required Plugin(AdminLTE)-->
-    <!-- apexcharts -->
-    <link
-      rel="stylesheet"
-      href="https://cdn.jsdelivr.net/npm/apexcharts@3.37.1/dist/apexcharts.css"
-      integrity="sha256-4MX+61mt9NVvvuPjUWdUdyfZfxSB1/Rf9WtqRHgG5S0="
-      crossorigin="anonymous"
-    />
-    <!-- jsvectormap -->
-    <link
-      rel="stylesheet"
-      href="https://cdn.jsdelivr.net/npm/jsvectormap@1.5.3/dist/css/jsvectormap.min.css"
-      integrity="sha256-+uGLJmmTKOqBr+2E6KDYs/NRsHxSkONXFHUL0fy2O/4="
-      crossorigin="anonymous"
-    />
-  </head>
-  <!--end::Head-->
-  <!--begin::Body-->
-  <body class="layout-fixed sidebar-expand-lg bg-body-tertiary">
-    <!--begin::App Wrapper-->
-    <div class="app-wrapper">
-      <!--begin::Header-->
-      <nav class="app-header navbar navbar-expand bg-body">
-        <!--begin::Container-->
-        <div class="container-fluid">
-          <!--begin::Start Navbar Links-->
-          <ul class="navbar-nav">
-            <li class="nav-item d-none d-md-block"><a href="#" class="nav-link">Home</a></li>
-          </ul>
-          <!--end::Start Navbar Links-->
-          <!--begin::End Navbar Links-->
-          <ul class="navbar-nav ms-auto">
-            <!--begin::Fullscreen Toggle-->
-            <li class="nav-item">
-              <a class="nav-link" href="#" data-lte-toggle="fullscreen">
-                <i data-lte-icon="maximize" class="bi bi-arrows-fullscreen"></i>
-                <i data-lte-icon="minimize" class="bi bi-fullscreen-exit" style="display: none"></i>
-              </a>
-            </li>
-            <!--end::Fullscreen Toggle-->
-          </ul>
-          <!--end::End Navbar Links-->
-        </div>
-        <!--end::Container-->
-      </nav>
-      <!--end::Header-->
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Email Filter - Détection de Spam</title>
 
-      <!--begin::App Main-->
-      <main class="app-main">
-        <!--begin::App Content Header-->
-        <div class="app-content-header">
-          <!--begin::Container-->
-          <div class="container-fluid">
-            <!--begin::Row-->
-            <div class="row">
-              <div class="col-sm-6"><h3 class="mb-0">Dashboard</h3></div>
-              <div class="col-sm-6">
-                <!-- PANNEAU DE CONTRÔLE DES EMAILS -->
-                <div class="float-end">
-                  <div class="btn-group" role="group" aria-label="Contrôles emails">
-                    <button type="button" class="btn btn-outline-success btn-sm" onclick="loadLiveEmails()" title="Charger les emails depuis Gmail">
-                      <i class="bi bi-cloud-download"></i> Gmail
-                    </button>
-                    <button type="button" class="btn btn-outline-primary btn-sm" onclick="loadAndDisplayMails()" title="Charger les emails de démonstration">
-                      <i class="bi bi-file-text"></i> Demo
-                    </button>
-                    <button type="button" class="btn btn-outline-secondary btn-sm" onclick="refreshEmails()" title="Actualiser les emails">
-                      <i class="bi bi-arrow-clockwise"></i> Refresh
-                    </button>
-                  </div>
-                </div>
-              </div>
-            </div>
-            <!--end::Row-->
-          </div>
-          <!--end::Container-->
-        </div>
-        <!--end::App Content Header-->
+    <!-- Bootstrap CSS -->
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
+    <!-- Bootstrap Icons -->
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css">
 
-        <!--begin::App Content-->
-        <div class="app-content">
-          <!--begin::Container-->
-          <div class="container-fluid">
+    <style>
+        body {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+        }
 
-            <!-- INDICATEUR DE SOURCE -->
-            <div class="row mb-3">
-              <div class="col-12">
-                <div id="sourceIndicator" class="alert alert-info alert-dismissible" style="display: none;">
-                  <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
-                  <strong>Source des emails:</strong> <span id="sourceText">Chargement...</span>
-                </div>
-              </div>
-            </div>
+        .email-item {
+            border-left: 4px solid #28a745;
+            transition: all 0.3s ease;
+            cursor: pointer;
+            margin-bottom: 10px;
+        }
 
-            <!--begin::Statistics Row-->
-            <div class="row">
-              <!--begin::Col-->
-              <div class="col-lg-4 col-md-6">
-                <div class="small-box text-bg-primary">
-                  <div class="inner">
-                    <h3 id="totalEmailsCount">XX</h3>
-                    <p>Emails analysés</p>
-                  </div>
-                  <svg class="small-box-icon" fill="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
-                    <path d="M2.25 2.25a.75.75 0 000 1.5h1.386c.17 0 .318.114.362.278l2.558 9.592a3.752 3.752 0 00-2.806 3.63c0 .414.336.75.75.75h15.75a.75.75 0 000-1.5H5.378A2.25 2.25 0 017.5 15h11.218a.75.75 0 00.674-.421 60.358 60.358 0 002.96-7.228.75.75 0 00-.525-.965A60.864 60.864 0 005.68 4.509l-.232-.867A1.875 1.875 0 003.636 2.25H2.25zM3.75 20.25a1.5 1.5 0 113 0 1.5 1.5 0 01-3 0zM16.5 20.25a1.5 1.5 0 113 0 1.5 1.5 0 01-3 0z"></path>
-                  </svg>
-                </div>
-              </div>
+        .email-item.spam {
+            border-left-color: #dc3545;
+        }
 
-              <div class="col-lg-4 col-md-6">
-                <div class="small-box text-bg-success">
-                  <div class="inner">
-                    <h3 id="successRatePercent">53<sup class="fs-5">%</sup></h3>
-                    <p>Taux de réussite</p>
-                  </div>
-                  <svg class="small-box-icon" fill="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
-                    <path d="M18.375 2.25c-1.035 0-1.875.84-1.875 1.875v15.75c0 1.035.84 1.875 1.875 1.875h.75c1.035 0 1.875-.84 1.875-1.875V4.125c0-1.036-.84-1.875-1.875-1.875h-.75zM9.75 8.625c0-1.036.84-1.875 1.875-1.875h.75c1.036 0 1.875.84 1.875 1.875v11.25c0 1.035-.84 1.875-1.875 1.875h-.75a1.875 1.875 0 01-1.875-1.875V8.625zM3 13.125c0-1.036.84-1.875 1.875-1.875h.75c1.036 0 1.875.84 1.875 1.875v6.75c0 1.035-.84 1.875-1.875 1.875h-.75A1.875 1.875 0 013 19.875v-6.75z"></path>
-                  </svg>
-                </div>
-              </div>
+        .email-item:hover {
+            transform: translateX(5px);
+            box-shadow: 0 4px 15px rgba(0,0,0,0.2);
+        }
 
-              <div class="col-lg-4 col-md-6">
-                <div class="small-box text-bg-danger">
-                  <div class="inner">
-                    <h3 id="spamDetectedCount">XX</h3>
-                    <p>Spams détéctés</p>
-                  </div>
-                  <svg class="small-box-icon" fill="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
-                    <path clip-rule="evenodd" fill-rule="evenodd" d="M2.25 13.5a8.25 8.25 0 018.25-8.25.75.75 0 01.75.75v6.75H18a.75.75 0 01.75.75 8.25 8.25 0 01-16.5 0z"></path>
-                    <path clip-rule="evenodd" fill-rule="evenodd" d="M12.75 3a.75.75 0 01.75-.75 8.25 8.25 0 018.25 8.25.75.75 0 01-.75.75h-7.5a.75.75 0 01-.75-.75V3z"></path>
-                  </svg>
-                </div>
-              </div>
-            </div>
-            <!--end::Statistics Row-->
+        .email-item.active {
+            background-color: #e3f2fd !important;
+            border-color: #2196f3;
+        }
 
-            <!--begin::Main Content Row-->
-            <div class="row">
-              <!-- Left: List of mails -->
-              <div class="col-lg-7 connectedSortable">
-                <div class="card mb-4">
-                  <div class="card-header d-flex justify-content-between align-items-center">
-                    <h3 class="card-title mb-0">List of mails</h3>
-                    <div class="d-flex align-items-center gap-2">
-                      <span id="emailCounter" class="badge bg-secondary">0 emails</span>
-                      <button type="button" class="btn btn-outline-secondary btn-sm" data-lte-toggle="card-collapse">
-                        <i data-lte-icon="expand" class="bi bi-plus-lg"></i>
-                        <i data-lte-icon="collapse" class="bi bi-dash-lg"></i>
-                      </button>
-                    </div>
-                  </div>
-                  <div class="card-body p-0">
-                    <div id="mailContainer" style="max-height: 600px; overflow-y: auto; padding: 10px;">
-                      <div class="text-center text-muted py-4">
-                        <div class="spinner-border spinner-border-sm me-2" role="status"></div>
-                        Chargement des emails...
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              </div>
+        .card {
+            backdrop-filter: blur(10px);
+            background: rgba(255, 255, 255, 0.95);
+            border: none;
+            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.1);
+        }
 
-              <!-- Right: Mail preview + analyze -->
-              <div class="col-lg-5">
-                <div class="card bg-white border-light mb-4 shadow-sm" id="mailPreviewCard">
-                  <div class="card-header d-flex justify-content-between align-items-center">
-                    <div>
-                      <h5 class="mb-0 text-dark" id="previewFrom">Nouveau message</h5>
-                      <small class="text-muted" id="previewEmail">De: john.doe@example.com</small>
-                    </div>
-                    <div class="card-tools">
-                      <button type="button" class="btn btn-outline-secondary btn-sm" data-lte-toggle="card-collapse">
-                        <i data-lte-icon="expand" class="bi bi-plus-lg"></i>
-                        <i data-lte-icon="collapse" class="bi bi-dash-lg"></i>
-                      </button>
-                    </div>
-                  </div>
-                  <div class="card-body">
-                    <p class="text-muted mb-2"><strong>Objet:</strong> <span id="previewSubject">Rapport hebdomadaire</span></p>
-                    <div class="mb-4">
-                      <strong>Contenu:</strong>
-                      <div id="previewBody" class="mt-2 p-3 bg-light border rounded" style="max-height: 200px; overflow-y: auto; font-family: monospace; font-size: 0.9em; white-space: pre-wrap;">
-                        Bonjour, voici le rapport d'analyse des emails de cette semaine. Merci de bien vouloir confirmer réception.
-                      </div>
-                    </div>
+        .stats-card {
+            text-align: center;
+            padding: 2rem;
+            color: white;
+            border-radius: 15px;
+            transition: transform 0.3s ease;
+        }
 
-                    <!-- Analyze section -->
-                    <div class="mt-4 text-center">
-                      <button id="analyzeBtn" class="btn mb-3" style="background-color: #d63384; color: white;">ANALYZE</button>
-                      <div id="analysisResult" class="mb-3 text-primary fw-bold"></div>
-                      <div>
-                        <span>Êtes-vous satisfait de l'analyse ?</span><br />
-                        <div class="form-check form-check-inline">
-                          <input class="form-check-input" type="radio" name="satisfaction" id="satisYes" value="yes" />
-                          <label class="form-check-label" for="satisYes">Oui</label>
+        .stats-card:hover {
+            transform: translateY(-5px);
+        }
+
+        .stats-primary { background: linear-gradient(135deg, #4299e1, #3182ce); }
+        .stats-success { background: linear-gradient(135deg, #48bb78, #38a169); }
+        .stats-danger { background: linear-gradient(135deg, #f56565, #e53e3e); }
+
+        .email-preview {
+            background: #f8f9fa;
+            border: 2px solid #dee2e6;
+            border-radius: 10px;
+            padding: 15px;
+            font-family: 'Courier New', monospace;
+            max-height: 300px;
+            overflow-y: auto;
+            white-space: pre-wrap;
+        }
+
+        .analyze-section {
+            background: linear-gradient(135deg, #667eea, #764ba2);
+            border-radius: 15px;
+            padding: 25px;
+            color: white;
+            text-align: center;
+        }
+
+        .btn-analyze {
+            background: rgba(255,255,255,0.2);
+            border: 2px solid rgba(255,255,255,0.3);
+            color: white;
+            font-weight: 600;
+            padding: 12px 30px;
+            border-radius: 25px;
+            transition: all 0.3s ease;
+        }
+
+        .btn-analyze:hover {
+            background: rgba(255,255,255,0.3);
+            transform: scale(1.05);
+        }
+
+        .email-controls {
+            background: rgba(255, 255, 255, 0.9);
+            border-radius: 15px;
+            padding: 15px;
+            margin-bottom: 20px;
+        }
+
+        .source-indicator {
+            background: rgba(255, 255, 255, 0.9);
+            border-radius: 10px;
+            padding: 10px 15px;
+            margin-bottom: 20px;
+            border-left: 4px solid #17a2b8;
+        }
+
+        .email-type-badge {
+            font-size: 0.7rem;
+            padding: 4px 8px;
+            border-radius: 12px;
+            font-weight: 600;
+            text-transform: uppercase;
+        }
+
+        #emailList {
+            max-height: 500px;
+            overflow-y: auto;
+        }
+
+        /* Scrollbar personnalisée */
+        ::-webkit-scrollbar {
+            width: 8px;
+        }
+
+        ::-webkit-scrollbar-track {
+            background: #f1f1f1;
+            border-radius: 4px;
+        }
+
+        ::-webkit-scrollbar-thumb {
+            background: #888;
+            border-radius: 4px;
+        }
+
+        ::-webkit-scrollbar-thumb:hover {
+            background: #555;
+        }
+    </style>
+</head>
+<body>
+    <div class="container-fluid py-4">
+        <!-- Header -->
+        <div class="row mb-4">
+            <div class="col-12">
+                <div class="card">
+                    <div class="card-body">
+                        <div class="row align-items-center">
+                            <div class="col-md-6">
+                                <h2 class="mb-0">
+                                    <i class="bi bi-shield-check text-primary"></i>
+                                    Email Filter Dashboard
+                                </h2>
+                                <p class="text-muted mb-0">Détection intelligente de spam en temps réel</p>
+                            </div>
+                            <div class="col-md-6 text-end">
+                                <div class="btn-group" role="group">
+                                    <button type="button" class="btn btn-success" onclick="loadLiveEmails()">
+                                        <i class="bi bi-cloud-download"></i> Gmail
+                                    </button>
+                                    <button type="button" class="btn btn-primary" onclick="loadDemoEmails()">
+                                        <i class="bi bi-file-text"></i> Demo
+                                    </button>
+                                    <button type="button" class="btn btn-secondary" onclick="refreshEmails()">
+                                        <i class="bi bi-arrow-clockwise"></i> Refresh
+                                    </button>
+                                </div>
+                            </div>
                         </div>
-                        <div class="form-check form-check-inline">
-                          <input class="form-check-input" type="radio" name="satisfaction" id="satisNo" value="no" />
-                          <label class="form-check-label" for="satisNo">Non</label>
-                        </div>
-                      </div>
                     </div>
-                  </div>
                 </div>
-              </div>
+            </div>
+        </div>
+
+        <!-- Source Indicator -->
+        <div id="sourceIndicator" class="source-indicator" style="display: none;">
+            <strong>📊 Source:</strong> <span id="sourceText">Chargement...</span>
+        </div>
+
+        <!-- Statistics -->
+        <div class="row mb-4">
+            <div class="col-md-4">
+                <div class="stats-card stats-primary">
+                    <div class="display-4" id="totalEmails">0</div>
+                    <h5>Emails analysés</h5>
+                </div>
+            </div>
+            <div class="col-md-4">
+                <div class="stats-card stats-success">
+                    <div class="display-4" id="successRate">0%</div>
+                    <h5>Taux de réussite</h5>
+                </div>
+            </div>
+            <div class="col-md-4">
+                <div class="stats-card stats-danger">
+                    <div class="display-4" id="spamCount">0</div>
+                    <h5>Spams détectés</h5>
+                </div>
+            </div>
+        </div>
+
+        <!-- Main Content -->
+        <div class="row">
+            <!-- Email List -->
+            <div class="col-lg-7">
+                <div class="card">
+                    <div class="card-header d-flex justify-content-between align-items-center">
+                        <h5 class="mb-0">
+                            <i class="bi bi-envelope"></i>
+                            Liste des emails
+                        </h5>
+                        <span id="emailCounter" class="badge bg-secondary">0 emails</span>
+                    </div>
+                    <div class="card-body p-0">
+                        <div id="emailList">
+                            <div class="text-center p-4">
+                                <div class="spinner-border text-primary" role="status"></div>
+                                <div class="mt-2">Chargement des emails...</div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
             </div>
 
-            <!-- VOS DONNÉES D'EMAILS INTÉGRÉES -->
-            <script id="mailData" type="text/plain">
+            <!-- Email Preview -->
+            <div class="col-lg-5">
+                <div class="card">
+                    <div class="card-header">
+                        <h5 class="mb-0">
+                            <i class="bi bi-eye"></i>
+                            Aperçu de l'email
+                        </h5>
+                    </div>
+                    <div class="card-body">
+                        <!-- Email Details -->
+                        <div class="mb-3">
+                            <strong>De:</strong>
+                            <div id="emailFrom" class="text-muted">Sélectionnez un email</div>
+                        </div>
+
+                        <div class="mb-3">
+                            <strong>Objet:</strong>
+                            <div id="emailSubject" class="text-muted">Aucun email sélectionné</div>
+                        </div>
+
+                        <div class="mb-3">
+                            <div class="d-flex justify-content-between align-items-center mb-2">
+                                <strong>Contenu:</strong>
+                                <div class="btn-group btn-group-sm" role="group">
+                                    <input type="radio" class="btn-check" name="viewMode" id="textMode" checked>
+                                    <label class="btn btn-outline-secondary" for="textMode">Texte</label>
+
+                                    <input type="radio" class="btn-check" name="viewMode" id="htmlMode">
+                                    <label class="btn btn-outline-secondary" for="htmlMode">HTML</label>
+                                </div>
+                            </div>
+                            <div id="emailBody" class="email-preview">
+                                Sélectionnez un email dans la liste pour voir son contenu ici.
+                            </div>
+                        </div>
+
+                        <!-- Analysis Section -->
+                        <div class="analyze-section">
+                            <h6 class="mb-3">
+                                <i class="bi bi-cpu"></i>
+                                Analyse automatique
+                            </h6>
+
+                            <button id="analyzeBtn" class="btn btn-analyze mb-3">
+                                <i class="bi bi-search"></i>
+                                ANALYSER
+                            </button>
+
+                            <div id="analysisResult" class="mb-3"></div>
+
+                            <!-- Satisfaction -->
+                            <div class="mt-3 p-3" style="background: rgba(255,255,255,0.1); border-radius: 10px;">
+                                <div class="mb-2">Êtes-vous satisfait de l'analyse ?</div>
+                                <div>
+                                    <div class="form-check form-check-inline">
+                                        <input class="form-check-input" type="radio" name="satisfaction" id="satisfactionYes" value="yes">
+                                        <label class="form-check-label" for="satisfactionYes">
+                                            <i class="bi bi-hand-thumbs-up"></i> Oui
+                                        </label>
+                                    </div>
+                                    <div class="form-check form-check-inline">
+                                        <input class="form-check-input" type="radio" name="satisfaction" id="satisfactionNo" value="no">
+                                        <label class="form-check-label" for="satisfactionNo">
+                                            <i class="bi bi-hand-thumbs-down"></i> Non
+                                        </label>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Email Data -->
+    <script id="emailData" type="text/plain">
 [IMPORTANT]
 From: alice@example.com
 To: moi@monemail.com
@@ -256,6 +322,31 @@ Alice
 --------------------------------------------
 
 [IMPORTANT]
+From: Google Payments <payments-noreply@google.com>
+To: moi@monemail.com
+Date: 2025-05-28 15:49
+Subject: Colab : Merci
+
+Google
+
+Merci
+Vous avez effectué un paiement associé à Colab.
+Si vous avez acheté un abonnement, vous pouvez l'annuler.
+
+--------------------------------------------
+
+[SPAM]
+From: "Suivre-votre-colis" <spam@fake.com>
+To: moi@monemail.com
+Date: 2025-05-12 05:44
+Subject: Vous avez un colis en attente
+
+Colis suspendu - Cliquez ici pour confirmer votre adresse.
+URGENT: Votre colis sera retourné!
+
+--------------------------------------------
+
+[IMPORTANT]
 From: bob@example.com
 To: moi@monemail.com
 Date: 2025-05-24 14:30
@@ -264,7 +355,7 @@ Subject: Projet finalisé, à valider
 Salut,
 
 Le projet est maintenant finalisé.
-Peux-tu vérifier les derniers points et me confirmer que tout est bon ?
+Peux-tu vérifier les derniers points ?
 
 Merci,
 Bob
@@ -279,259 +370,417 @@ Subject: Offre incroyable à ne pas rater !!!
 
 Gagnez 1000€ chaque jour en cliquant ici !
 Offre limitée, dépêchez-vous !
-Cliquez sur ce lien magique : http://spamlink.fake
 
 --------------------------------------------
 
 [IMPORTANT]
-From: carol@example.com
+From: Microsoft Azure <azure@microsoft.com>
 To: moi@monemail.com
-Date: 2025-05-23 17:45
-Subject: Compte rendu du rendez-vous client
+Date: 2025-05-29 06:07
+Subject: Formation Azure gratuite
 
-Bonjour,
-
-Voici le compte rendu de notre rendez-vous avec le client XYZ.
-Le projet avance comme prévu, la prochaine étape est la validation du cahier des charges.
-
-Bonne journée,
-Carol
+Découvrez comment rationaliser la migration des charges de travail.
+Inscrivez-vous à notre formation gratuite.
 
 --------------------------------------------
+    </script>
 
-[SPAM]
-From: freegift@spamoffers.com
-To: moi@monemail.com
-Date: 2025-05-25 11:00
-Subject: Vous avez gagné un cadeau gratuit !
+    <!-- Bootstrap JS -->
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
 
-Félicitations ! Vous avez gagné un cadeau gratuit.
-Cliquez ici pour réclamer votre prix avant qu'il ne soit trop tard !
+    <script>
+        // Variables globales
+        let currentEmails = [];
+        let currentSource = 'demo';
 
---------------------------------------------
+        // Parse les emails avec classification automatique si manquante
+        function parseEmails(text) {
+            const emailBlocks = text.trim().split('--------------------------------------------');
+            return emailBlocks.map(block => {
+                const lines = block.trim().split('\n');
+                if (lines.length < 5) return null;
 
-[IMPORTANT]
-From: david@example.com
-To: moi@monemail.com
-Date: 2025-05-22 10:20
-Subject: Mise à jour importante du système
+                let type = '', from = '', to = '', date = '', subject = '', body = '';
+                let i = 0;
 
-Bonjour,
-
-Une mise à jour critique du système aura lieu ce week-end.
-Veuillez sauvegarder vos données avant vendredi soir.
-
-Merci,
-David
-
---------------------------------------------
-            </script>
-
-            <!-- JAVASCRIPT INTÉGRÉ -->
-            <script>
-              // VOTRE CODE EXISTANT - Parse emails
-              function parseArchive(text) {
-                const mailsRaw = text.trim().split('--------------------------------------------');
-                return mailsRaw.map(raw => {
-                  const lines = raw.trim().split('\n');
-                  if (lines.length < 6) return null;
-
-                  let type = '';
-                  let i = 0;
-                  if (lines[0].startsWith('[')) {
-                    type = lines[0].replace(/\[|\]/g, '').toUpperCase();
+                // Type (s'il existe)
+                if (lines[0].startsWith('[')) {
+                    type = lines[0].replace(/\[|\]/g, '');
                     i++;
-                  }
+                }
 
-                  let from = '', to = '', date = '', subject = '', bodyLines = [];
-                  for (; i < lines.length; i++) {
+                // Parse headers
+                for (; i < lines.length; i++) {
                     const line = lines[i].trim();
                     if (line.startsWith('From:')) from = line.substring(5).trim();
                     else if (line.startsWith('To:')) to = line.substring(3).trim();
                     else if (line.startsWith('Date:')) date = line.substring(5).trim();
                     else if (line.startsWith('Subject:')) {
-                      subject = line.substring(8).trim();
-                      i++;
-                      break;
+                        subject = line.substring(8).trim();
+                        i++;
+                        break;
                     }
-                  }
+                }
 
-                  bodyLines = lines.slice(i).map(l => l.trim());
-                  const body = bodyLines.join('\n');
+                // Body
+                body = lines.slice(i).join('\n').trim();
 
-                  return { type, from, to, date, subject, body };
-                }).filter(m => m !== null);
-              }
+                // Classification automatique si pas de type défini
+                if (!type) {
+                    type = classifyEmail(from, subject, body);
+                }
 
-              // VOTRE CODE EXISTANT - Display emails
-              function displayMails(mails) {
-                const container = document.getElementById('mailContainer');
-                container.innerHTML = '';
+                return { type, from, to, date, subject, body };
+            }).filter(email => email !== null);
+        }
 
-                updateStatistics(mails);
+        // Classifie automatiquement un email comme SPAM ou IMPORTANT
+        function classifyEmail(from, subject, body) {
+            const spamIndicators = [
+                // Expéditeurs suspects
+                /no-?reply.*@.*\.(us|tk|ml|ga|cf)$/i,
+                /^[A-Z0-9]{8,}@/i,
+                /\.(us|tk|ml|ga|cf)$/i,
 
-                mails.forEach(mail => {
-                  const div = document.createElement('div');
-                  div.className = 'mail-item ' + (mail.type === 'SPAM' ? 'spam' : 'important');
-                  div.style.border = mail.type === 'SPAM' ? '2px solid red' : '2px solid green';
-                  div.style.padding = '10px';
-                  div.style.marginBottom = '10px';
-                  div.style.borderRadius = '5px';
-                  div.style.cursor = 'pointer';
+                // Sujets suspects
+                /URGENT|FÉLICITATIONS|GAGNEZ|CADEAU|GRATUIT|PROMO|SOLDE|RÉDUCTION|OFFRE|CLIQUEZ/i,
+                /€|EUROS|ARGENT|CASINO|LOTERIE|VIAGRA|MEDICAMENT/i,
+                /COMPLÉTEZ|RÉCUPÉREZ|DÉBLOQUEZ|MAINTENANT/i,
 
-                  div.innerHTML = `<strong>${mail.from}</strong> — <span class="text-muted">${mail.subject}</span>
-                    <div class="text-truncate text-muted small">${mail.body ? mail.body.substring(0, 60).replace(/\n/g, ' ') + '...' : 'Pas de contenu'}</div>
-                    <small class="text-muted">${mail.date.split(' ')[1] || mail.date}</small>`;
+                // Contenu suspect
+                /cliquez.*ici|votre.*colis|en.*attente|suspendu|expiré/i,
+                /confirmer.*adresse|mettre.*à.*jour|vérifier.*compte/i,
+                /félicitations.*gagné|prix.*gratuit|remise.*exclusive/i
+            ];
 
-                  div.addEventListener('click', () => showMailPreview(mail));
-                  container.appendChild(div);
-                });
-              }
+            const textToCheck = `${from} ${subject} ${body}`.toLowerCase();
 
-              // NOUVEAU - Update statistics
-              function updateStatistics(mails) {
-                const total = mails.length;
-                const spamCount = mails.filter(m => m.type === 'SPAM').length;
-                const importantCount = mails.filter(m => m.type === 'IMPORTANT').length;
-                const successRate = total > 0 ? Math.round((importantCount / total) * 100) : 53;
+            // Vérifier les indicateurs de spam
+            for (let indicator of spamIndicators) {
+                if (indicator.test(textToCheck)) {
+                    return 'SPAM';
+                }
+            }
 
-                document.getElementById('totalEmailsCount').textContent = total;
-                document.getElementById('successRatePercent').innerHTML = `${successRate}<sup class="fs-5">%</sup>`;
-                document.getElementById('spamDetectedCount').textContent = spamCount;
-                document.getElementById('emailCounter').textContent = `${total} emails`;
-              }
+            // Services connus comme importants
+            const legitimateServices = [
+                /@(google|microsoft|amazon|apple|github|linkedin|facebook|twitter)\.com/i,
+                /@(gmail|outlook|hotmail|yahoo)\.com/i,
+                /@.*\.(edu|gov|org)$/i,
+                /noreply@.*\.(fr|com|net)$/i
+            ];
 
-              // VOTRE CODE EXISTANT - Show email preview
-              function showMailPreview(mail) {
-                document.getElementById('previewFrom').textContent = mail.from;
-                document.getElementById('previewEmail').textContent = 'De: ' + mail.from;
-                document.getElementById('previewSubject').textContent = mail.subject;
-                document.getElementById('previewBody').textContent = mail.body || 'Contenu non disponible';
-                document.getElementById('mailPreviewCard').dataset.mailType = mail.type || '';
+            for (let service of legitimateServices) {
+                if (service.test(from)) {
+                    return 'IMPORTANT';
+                }
+            }
 
-                document.querySelectorAll('input[name="satisfaction"]').forEach(el => el.checked = false);
+            // Par défaut, considérer comme important si pas d'indicateur de spam
+            return 'IMPORTANT';
+        }
+
+        // Nettoie le contenu d'un email
+        function cleanEmailContent(content) {
+            if (!content) return '';
+
+            // Si c'est du HTML, extraire le texte visible
+            if (content.includes('<') && content.includes('>')) {
+                // Supprimer les balises HTML mais garder le contenu
+                let cleaned = content
+                    .replace(/<script[^>]*>.*?<\/script>/gis, '') // Supprimer scripts
+                    .replace(/<style[^>]*>.*?<\/style>/gis, '')   // Supprimer styles
+                    .replace(/<[^>]+>/g, ' ')                     // Supprimer balises HTML
+                    .replace(/&nbsp;/g, ' ')                      // Remplacer &nbsp;
+                    .replace(/&amp;/g, '&')                       // Décoder &amp;
+                    .replace(/&lt;/g, '<')                        // Décoder &lt;
+                    .replace(/&gt;/g, '>')                        // Décoder &gt;
+                    .replace(/&quot;/g, '"')                      // Décoder &quot;
+                    .replace(/\s+/g, ' ')                         // Multiples espaces en un
+                    .trim();
+
+                return cleaned;
+            }
+
+            // Sinon, juste nettoyer les espaces
+            return content.replace(/\s+/g, ' ').trim();
+        }
+
+        // Affiche les emails
+        function displayEmails(emails) {
+            currentEmails = emails;
+            const container = document.getElementById('emailList');
+
+            if (emails.length === 0) {
+                container.innerHTML = '<div class="text-center p-4 text-muted">Aucun email trouvé</div>';
+                updateStats(emails);
+                return;
+            }
+
+            // Créer la structure HTML directement (pas de sous-listes)
+            let html = '';
+            emails.forEach((email, index) => {
+                const isSpam = email.type === 'SPAM';
+                const cleanBody = cleanEmailContent(email.body);
+
+                html += `
+                    <div class="email-item ${isSpam ? 'spam' : ''}" onclick="selectEmail(${index})" data-index="${index}">
+                        <div class="d-flex justify-content-between align-items-start">
+                            <div class="flex-grow-1">
+                                <div class="d-flex align-items-center mb-2">
+                                    <strong class="me-2">${truncate(email.from, 35)}</strong>
+                                    <span class="email-type-badge ${isSpam ? 'bg-danger' : 'bg-success'} text-white">
+                                        ${email.type}
+                                    </span>
+                                </div>
+                                <div class="text-dark fw-semibold mb-1">${truncate(email.subject, 50)}</div>
+                                <div class="text-muted small">${truncate(cleanBody, 70)}</div>
+                            </div>
+                            <div class="text-end ms-3">
+                                <small class="text-muted">${formatDate(email.date)}</small>
+                            </div>
+                        </div>
+                    </div>
+                `;
+            });
+
+            container.innerHTML = html;
+            updateStats(emails);
+
+            // Sélectionner le premier email
+            if (emails.length > 0) {
+                selectEmail(0);
+            }
+        }
+
+        // Sélectionne un email
+        function selectEmail(index) {
+            // Supprimer la sélection précédente
+            document.querySelectorAll('.email-item').forEach(item => {
+                item.classList.remove('active');
+            });
+
+            // Ajouter la sélection
+            const emailElement = document.querySelector(`[data-index="${index}"]`);
+            if (emailElement) {
+                emailElement.classList.add('active');
+            }
+
+            // Afficher l'aperçu
+            const email = currentEmails[index];
+            if (email) {
+                document.getElementById('emailFrom').textContent = email.from;
+                document.getElementById('emailSubject').textContent = email.subject;
+
+                // Stocker le contenu pour les deux modes d'affichage
+                const bodyElement = document.getElementById('emailBody');
+                bodyElement.dataset.textContent = email.body;
+                bodyElement.dataset.htmlContent = email.body;
+
+                // Afficher selon le mode sélectionné
+                updateBodyDisplay();
+
+                // Stocker le type pour l'analyse
+                document.getElementById('analyzeBtn').dataset.emailType = email.type;
+
+                // Reset analysis
                 document.getElementById('analysisResult').textContent = '';
-              }
-
-              // VOTRE CODE EXISTANT - Analyze button
-              document.addEventListener('DOMContentLoaded', () => {
-                document.getElementById('analyzeBtn').addEventListener('click', () => {
-                  const mailType = document.getElementById('mailPreviewCard').dataset.mailType || 'Inconnu';
-
-                  let resultText = '';
-                  if (mailType === 'IMPORTANT') resultText = '✅ Ce mail est important.';
-                  else if (mailType === 'SPAM') resultText = '⚠️ Ce mail est un spam.';
-                  else resultText = '❓ Type de mail inconnu.';
-
-                  document.getElementById('analysisResult').textContent = resultText;
+                document.querySelectorAll('input[name="satisfaction"]').forEach(input => {
+                    input.checked = false;
                 });
-              });
+            }
+        }
 
-              // FONCTION EXISTANTE - Load demo emails
-              function loadAndDisplayMails(archiveFile = 'archive_mails.txt') {
-                fetch(archiveFile)
-                  .then(response => {
-                    if (!response.ok) throw new Error('Erreur chargement fichier');
+        // Met à jour l'affichage du contenu selon le mode
+        function updateBodyDisplay() {
+            const bodyElement = document.getElementById('emailBody');
+            const isHtmlMode = document.getElementById('htmlMode').checked;
+            const rawContent = bodyElement.dataset.textContent || '';
+
+            if (isHtmlMode && rawContent.includes('<')) {
+                // Mode HTML : afficher le rendu (mais sécurisé)
+                let htmlContent = rawContent
+                    .replace(/<script[^>]*>.*?<\/script>/gis, '') // Supprimer scripts
+                    .replace(/<style[^>]*>.*?<\/style>/gis, '');  // Supprimer styles
+
+                bodyElement.innerHTML = htmlContent;
+                bodyElement.style.fontFamily = 'inherit';
+                bodyElement.style.whiteSpace = 'normal';
+            } else {
+                // Mode texte : afficher le contenu nettoyé
+                const cleanContent = cleanEmailContent(rawContent);
+                bodyElement.textContent = cleanContent || rawContent;
+                bodyElement.style.fontFamily = "'Courier New', monospace";
+                bodyElement.style.whiteSpace = 'pre-wrap';
+            }
+        }
+
+        // Met à jour les statistiques
+        function updateStats(emails) {
+            const total = emails.length;
+            const spamEmails = emails.filter(e => e.type === 'SPAM').length;
+            const importantEmails = emails.filter(e => e.type === 'IMPORTANT').length;
+            const successRate = total > 0 ? Math.round((importantEmails / total) * 100) : 0;
+
+            document.getElementById('totalEmails').textContent = total;
+            document.getElementById('successRate').textContent = successRate + '%';
+            document.getElementById('spamCount').textContent = spamEmails;
+            document.getElementById('emailCounter').textContent = `${total} emails`;
+        }
+
+        // Charge les emails de démo
+        function loadDemoEmails() {
+            showSource('🔄 Chargement des emails de démonstration...', 'text-warning');
+
+            // Essayer de charger depuis archive_mails.txt
+            fetch('archive_mails.txt')
+                .then(response => {
+                    if (!response.ok) throw new Error('Fichier non trouvé');
                     return response.text();
-                  })
-                  .then(text => {
-                    const mails = parseArchive(text);
-                    displayMails(mails);
-                    updateSourceIndicator('Emails de démonstration', 'info');
-                  })
-                  .catch(error => {
+                })
+                .then(text => {
+                    const emails = parseEmails(text);
+                    displayEmails(emails);
+                    currentSource = 'demo';
+                    showSource('📁 Emails de démonstration chargés', 'text-info');
+                })
+                .catch(() => {
                     // Fallback vers les données intégrées
-                    const mailText = document.getElementById('mailData').textContent;
-                    const mails = parseArchive(mailText);
-                    displayMails(mails);
-                    updateSourceIndicator('Emails intégrés (fallback)', 'warning');
-                  });
-              }
+                    const emailText = document.getElementById('emailData').textContent;
+                    const emails = parseEmails(emailText);
+                    displayEmails(emails);
+                    currentSource = 'embedded';
+                    showSource('📦 Emails intégrés (fallback)', 'text-warning');
+                });
+        }
 
-              // NOUVELLE FONCTION - Load live emails
-              function loadLiveEmails() {
-                updateSourceIndicator('Chargement des emails Gmail...', 'warning');
+        // Charge les emails Gmail
+        function loadLiveEmails() {
+            showSource('🔄 Chargement des emails Gmail...', 'text-warning');
 
-                fetch('archive_mails_live.txt')
-                  .then(response => {
+            fetch('archive_mails_live.txt')
+                .then(response => {
                     if (!response.ok) throw new Error('Fichier live non trouvé');
                     return response.text();
-                  })
-                  .then(text => {
-                    const mails = parseArchive(text);
-                    displayMails(mails);
-                    updateSourceIndicator('Emails Gmail (Live) ✅', 'success');
-                    console.log('📧 Emails live chargés:', mails.length);
-                  })
-                  .catch(error => {
-                    console.warn('⚠️ Erreur chargement emails live:', error);
-                    updateSourceIndicator('Erreur Gmail - Retour aux emails de démo', 'warning');
-                    // Fallback vers les emails de démonstration
-                    loadAndDisplayMails();
-                  });
-              }
+                })
+                .then(text => {
+                    const emails = parseEmails(text);
+                    displayEmails(emails);
+                    currentSource = 'live';
+                    showSource('✅ Emails Gmail chargés avec succès', 'text-success');
+                })
+                .catch(() => {
+                    showSource('❌ Emails Gmail indisponibles - Retour aux emails de démo', 'text-warning');
+                    loadDemoEmails();
+                });
+        }
 
-              // NOUVELLE FONCTION - Refresh
-              function refreshEmails() {
-                updateSourceIndicator('Actualisation en cours...', 'warning');
+        // Actualise les emails
+        function refreshEmails() {
+            if (currentSource === 'live') {
                 loadLiveEmails();
-              }
+            } else {
+                loadDemoEmails();
+            }
+        }
 
-              // NOUVELLE FONCTION - Update source indicator
-              function updateSourceIndicator(message, type = 'info') {
-                const indicator = document.getElementById('sourceIndicator');
-                const sourceText = document.getElementById('sourceText');
+        // Affiche l'indicateur de source
+        function showSource(message, className = 'text-info') {
+            const indicator = document.getElementById('sourceIndicator');
+            const text = document.getElementById('sourceText');
 
-                if (indicator && sourceText) {
-                  sourceText.textContent = message;
-                  indicator.className = `alert alert-${type} alert-dismissible`;
-                  indicator.style.display = 'block';
+            text.textContent = message;
+            text.className = className;
+            indicator.style.display = 'block';
 
-                  // Masquer automatiquement après 3 secondes pour les succès
-                  if (type === 'success') {
-                    setTimeout(() => {
-                      indicator.style.display = 'none';
-                    }, 3000);
-                  }
-                }
-              }
-
-              // INITIALISATION - Load default emails
-              document.addEventListener('DOMContentLoaded', () => {
-                // Charger les emails intégrés par défaut
-                const mailText = document.getElementById('mailData').textContent;
-                const mails = parseArchive(mailText);
-                displayMails(mails);
-                updateSourceIndicator('Emails de démonstration (par défaut)', 'info');
-
-                // Afficher le premier email
-                if (mails.length > 0) {
-                  showMailPreview(mails[0]);
-                }
-
-                // Essayer de charger les emails live après 2 secondes
+            // Masquer automatiquement les messages de succès
+            if (className === 'text-success') {
                 setTimeout(() => {
-                  console.log('🔄 Tentative automatique de chargement des emails Gmail...');
-                  loadLiveEmails();
-                }, 2000);
-              });
-            </script>
+                    indicator.style.display = 'none';
+                }, 3000);
+            }
+        }
 
-          </div>
-          <!--end::Container-->
-        </div>
-        <!--end::App Content-->
-      </main>
-      <!--end::App Main-->
+        // Analyse un email
+        function analyzeEmail() {
+            const emailType = document.getElementById('analyzeBtn').dataset.emailType;
+            const resultDiv = document.getElementById('analysisResult');
 
-      <!--begin::Footer-->
-      <footer class="app-footer">
-        <div class="float-end d-none d-sm-inline">ESGI PA 2025</div>
-        <div>Mail Filter</div>
-      </footer>
-      <!--end::Footer-->
-    </div>
-    <!--end::App Wrapper-->
+            // Animation de chargement
+            resultDiv.innerHTML = '<div class="spinner-border spinner-border-sm me-2"></div>Analyse en cours...';
 
-  </body>
+            setTimeout(() => {
+                let result = '';
+                if (emailType === 'IMPORTANT') {
+                    result = '✅ Ce mail est classé comme IMPORTANT';
+                } else if (emailType === 'SPAM') {
+                    result = '⚠️ Ce mail est classé comme SPAM';
+                } else {
+                    result = '❓ Classification non déterminée';
+                }
+                resultDiv.textContent = result;
+            }, 1000);
+        }
+
+        // Gestion du feedback
+        function handleFeedback(satisfaction) {
+            const emailType = document.getElementById('analyzeBtn').dataset.emailType;
+            const resultDiv = document.getElementById('analysisResult');
+
+            if (satisfaction === 'yes') {
+                resultDiv.innerHTML = '👍 Merci pour votre feedback positif !';
+            } else {
+                resultDiv.innerHTML = '👎 Merci, nous améliorerons notre détection.';
+            }
+
+            console.log(`Feedback: ${satisfaction} pour email type: ${emailType}`);
+        }
+
+        // Utilitaires
+        function truncate(text, length) {
+            return text && text.length > length ? text.substring(0, length) + '...' : text || '';
+        }
+
+        function formatDate(dateStr) {
+            try {
+                const date = new Date(dateStr);
+                return date.toLocaleDateString('fr-FR', {
+                    day: '2-digit',
+                    month: '2-digit'
+                });
+            } catch {
+                return dateStr || '';
+            }
+        }
+
+        // Event listeners
+        document.addEventListener('DOMContentLoaded', function() {
+            // Bouton analyser
+            document.getElementById('analyzeBtn').addEventListener('click', analyzeEmail);
+
+            // Feedback satisfaction
+            document.querySelectorAll('input[name="satisfaction"]').forEach(input => {
+                input.addEventListener('change', function() {
+                    if (this.checked) {
+                        handleFeedback(this.value);
+                    }
+                });
+            });
+
+            // Mode d'affichage du contenu
+            document.querySelectorAll('input[name="viewMode"]').forEach(input => {
+                input.addEventListener('change', updateBodyDisplay);
+            });
+
+            // Chargement initial
+            loadDemoEmails();
+
+            // Essayer de charger Gmail après 2 secondes
+            setTimeout(() => {
+                console.log('Tentative de chargement automatique Gmail...');
+                loadLiveEmails();
+            }, 2000);
+        });
+    </script>
+</body>
 </html>
