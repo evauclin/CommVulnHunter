@@ -62,9 +62,6 @@
           <!--end::Start Navbar Links-->
           <!--begin::End Navbar Links-->
           <ul class="navbar-nav ms-auto">
-            
-            
-            
             <!--begin::Fullscreen Toggle-->
             <li class="nav-item">
               <a class="nav-link" href="#" data-lte-toggle="fullscreen">
@@ -73,16 +70,13 @@
               </a>
             </li>
             <!--end::Fullscreen Toggle-->
-            
           </ul>
           <!--end::End Navbar Links-->
         </div>
         <!--end::Container-->
       </nav>
       <!--end::Header-->
-      
-      </aside>
-      <!--end::Sidebar-->
+
       <!--begin::App Main-->
       <main class="app-main">
         <!--begin::App Content Header-->
@@ -93,7 +87,20 @@
             <div class="row">
               <div class="col-sm-6"><h3 class="mb-0">Dashboard</h3></div>
               <div class="col-sm-6">
-                
+                <!-- PANNEAU DE CONTRÔLE DES EMAILS -->
+                <div class="float-end">
+                  <div class="btn-group" role="group" aria-label="Contrôles emails">
+                    <button type="button" class="btn btn-outline-success btn-sm" onclick="loadLiveEmails()" title="Charger les emails depuis Gmail">
+                      <i class="bi bi-cloud-download"></i> Gmail
+                    </button>
+                    <button type="button" class="btn btn-outline-primary btn-sm" onclick="loadAndDisplayMails()" title="Charger les emails de démonstration">
+                      <i class="bi bi-file-text"></i> Demo
+                    </button>
+                    <button type="button" class="btn btn-outline-secondary btn-sm" onclick="refreshEmails()" title="Actualiser les emails">
+                      <i class="bi bi-arrow-clockwise"></i> Refresh
+                    </button>
+                  </div>
+                </div>
               </div>
             </div>
             <!--end::Row-->
@@ -101,173 +108,137 @@
           <!--end::Container-->
         </div>
         <!--end::App Content Header-->
+
         <!--begin::App Content-->
         <div class="app-content">
           <!--begin::Container-->
           <div class="container-fluid">
-            <!--begin::Row-->
+
+            <!-- INDICATEUR DE SOURCE -->
+            <div class="row mb-3">
+              <div class="col-12">
+                <div id="sourceIndicator" class="alert alert-info alert-dismissible" style="display: none;">
+                  <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+                  <strong>Source des emails:</strong> <span id="sourceText">Chargement...</span>
+                </div>
+              </div>
+            </div>
+
+            <!--begin::Statistics Row-->
             <div class="row">
               <!--begin::Col-->
               <div class="col-lg-4 col-md-6">
-                <!--begin::Small Box Widget 1-->
                 <div class="small-box text-bg-primary">
                   <div class="inner">
-                    <h3>XX</h3>
+                    <h3 id="totalEmailsCount">XX</h3>
                     <p>Emails analysés</p>
                   </div>
-                  <svg
-                    class="small-box-icon"
-                    fill="currentColor"
-                    viewBox="0 0 24 24"
-                    xmlns="http://www.w3.org/2000/svg"
-                    aria-hidden="true"
-                  >
-                    <path
-                      d="M2.25 2.25a.75.75 0 000 1.5h1.386c.17 0 .318.114.362.278l2.558 9.592a3.752 3.752 0 00-2.806 3.63c0 .414.336.75.75.75h15.75a.75.75 0 000-1.5H5.378A2.25 2.25 0 017.5 15h11.218a.75.75 0 00.674-.421 60.358 60.358 0 002.96-7.228.75.75 0 00-.525-.965A60.864 60.864 0 005.68 4.509l-.232-.867A1.875 1.875 0 003.636 2.25H2.25zM3.75 20.25a1.5 1.5 0 113 0 1.5 1.5 0 01-3 0zM16.5 20.25a1.5 1.5 0 113 0 1.5 1.5 0 01-3 0z"
-                    ></path>
+                  <svg class="small-box-icon" fill="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+                    <path d="M2.25 2.25a.75.75 0 000 1.5h1.386c.17 0 .318.114.362.278l2.558 9.592a3.752 3.752 0 00-2.806 3.63c0 .414.336.75.75.75h15.75a.75.75 0 000-1.5H5.378A2.25 2.25 0 017.5 15h11.218a.75.75 0 00.674-.421 60.358 60.358 0 002.96-7.228.75.75 0 00-.525-.965A60.864 60.864 0 005.68 4.509l-.232-.867A1.875 1.875 0 003.636 2.25H2.25zM3.75 20.25a1.5 1.5 0 113 0 1.5 1.5 0 01-3 0zM16.5 20.25a1.5 1.5 0 113 0 1.5 1.5 0 01-3 0z"></path>
                   </svg>
-                   
-                  </a>
                 </div>
-                <!--end::Small Box Widget 1-->
               </div>
-              <!--end::Col-->
+
               <div class="col-lg-4 col-md-6">
-                <!--begin::Small Box Widget 2-->
                 <div class="small-box text-bg-success">
                   <div class="inner">
-                    <h3>53<sup class="fs-5">%</sup></h3>
+                    <h3 id="successRatePercent">53<sup class="fs-5">%</sup></h3>
                     <p>Taux de réussite</p>
                   </div>
-                  <svg
-                    class="small-box-icon"
-                    fill="currentColor"
-                    viewBox="0 0 24 24"
-                    xmlns="http://www.w3.org/2000/svg"
-                    aria-hidden="true"
-                  >
-                    <path
-                      d="M18.375 2.25c-1.035 0-1.875.84-1.875 1.875v15.75c0 1.035.84 1.875 1.875 1.875h.75c1.035 0 1.875-.84 1.875-1.875V4.125c0-1.036-.84-1.875-1.875-1.875h-.75zM9.75 8.625c0-1.036.84-1.875 1.875-1.875h.75c1.036 0 1.875.84 1.875 1.875v11.25c0 1.035-.84 1.875-1.875 1.875h-.75a1.875 1.875 0 01-1.875-1.875V8.625zM3 13.125c0-1.036.84-1.875 1.875-1.875h.75c1.036 0 1.875.84 1.875 1.875v6.75c0 1.035-.84 1.875-1.875 1.875h-.75A1.875 1.875 0 013 19.875v-6.75z"
-                    ></path>
+                  <svg class="small-box-icon" fill="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+                    <path d="M18.375 2.25c-1.035 0-1.875.84-1.875 1.875v15.75c0 1.035.84 1.875 1.875 1.875h.75c1.035 0 1.875-.84 1.875-1.875V4.125c0-1.036-.84-1.875-1.875-1.875h-.75zM9.75 8.625c0-1.036.84-1.875 1.875-1.875h.75c1.036 0 1.875.84 1.875 1.875v11.25c0 1.035-.84 1.875-1.875 1.875h-.75a1.875 1.875 0 01-1.875-1.875V8.625zM3 13.125c0-1.036.84-1.875 1.875-1.875h.75c1.036 0 1.875.84 1.875 1.875v6.75c0 1.035-.84 1.875-1.875 1.875h-.75A1.875 1.875 0 013 19.875v-6.75z"></path>
                   </svg>
-                
                 </div>
-                <!--end::Small Box Widget 2-->
               </div>
-             
+
               <div class="col-lg-4 col-md-6">
-                <!--begin::Small Box Widget 3-->
                 <div class="small-box text-bg-danger">
                   <div class="inner">
-                    <h3>XX</h3>
-                    <p> Spams détéctés</p>
+                    <h3 id="spamDetectedCount">XX</h3>
+                    <p>Spams détéctés</p>
                   </div>
-                  <svg
-                    class="small-box-icon"
-                    fill="currentColor"
-                    viewBox="0 0 24 24"
-                    xmlns="http://www.w3.org/2000/svg"
-                    aria-hidden="true"
-                  >
-                    <path
-                      clip-rule="evenodd"
-                      fill-rule="evenodd"
-                      d="M2.25 13.5a8.25 8.25 0 018.25-8.25.75.75 0 01.75.75v6.75H18a.75.75 0 01.75.75 8.25 8.25 0 01-16.5 0z"
-                    ></path>
-                    <path
-                      clip-rule="evenodd"
-                      fill-rule="evenodd"
-                      d="M12.75 3a.75.75 0 01.75-.75 8.25 8.25 0 018.25 8.25.75.75 0 01-.75.75h-7.5a.75.75 0 01-.75-.75V3z"
-                    ></path>
+                  <svg class="small-box-icon" fill="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+                    <path clip-rule="evenodd" fill-rule="evenodd" d="M2.25 13.5a8.25 8.25 0 018.25-8.25.75.75 0 01.75.75v6.75H18a.75.75 0 01.75.75 8.25 8.25 0 01-16.5 0z"></path>
+                    <path clip-rule="evenodd" fill-rule="evenodd" d="M12.75 3a.75.75 0 01.75-.75 8.25 8.25 0 018.25 8.25.75.75 0 01-.75.75h-7.5a.75.75 0 01-.75-.75V3z"></path>
                   </svg>
-                  
-                  </a>
                 </div>
-                <!--end::Small Box Widget 3-->
               </div>
-              <!--end::Col-->
             </div>
-            <!--end::Row-->
-            <!--begin::Row-->
+            <!--end::Statistics Row-->
+
+            <!--begin::Main Content Row-->
             <div class="row">
+              <!-- Left: List of mails -->
+              <div class="col-lg-7 connectedSortable">
+                <div class="card mb-4">
+                  <div class="card-header d-flex justify-content-between align-items-center">
+                    <h3 class="card-title mb-0">List of mails</h3>
+                    <div class="d-flex align-items-center gap-2">
+                      <span id="emailCounter" class="badge bg-secondary">0 emails</span>
+                      <button type="button" class="btn btn-outline-secondary btn-sm" data-lte-toggle="card-collapse">
+                        <i data-lte-icon="expand" class="bi bi-plus-lg"></i>
+                        <i data-lte-icon="collapse" class="bi bi-dash-lg"></i>
+                      </button>
+                    </div>
+                  </div>
+                  <div class="card-body p-0">
+                    <div id="mailContainer" style="max-height: 600px; overflow-y: auto; padding: 10px;">
+                      <div class="text-center text-muted py-4">
+                        <div class="spinner-border spinner-border-sm me-2" role="status"></div>
+                        Chargement des emails...
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
 
-<div class="row">
-  <!-- Left: List of mails -->
-  <div class="col-lg-7 connectedSortable">
-    <div class="card mb-4">
-      <div class="card-header d-flex justify-content-between align-items-center">
-        <h3 class="card-title mb-0">List of mails</h3>
-        <button
-          type="button"
-          class="btn btn-outline-secondary btn-sm"
-          data-lte-toggle="card-collapse"
-        >
-          <i data-lte-icon="expand" class="bi bi-plus-lg"></i>
-          <i data-lte-icon="collapse" class="bi bi-dash-lg"></i>
-        </button>
-      </div>
-      <div class="card-body p-0">
-        <ul id="mailList" class="list-group list-group-flush">
-          <!-- mails inserted here -->
-        </ul>
-      </div>
-    </div>
-  </div>
+              <!-- Right: Mail preview + analyze -->
+              <div class="col-lg-5">
+                <div class="card bg-white border-light mb-4 shadow-sm" id="mailPreviewCard">
+                  <div class="card-header d-flex justify-content-between align-items-center">
+                    <div>
+                      <h5 class="mb-0 text-dark" id="previewFrom">Nouveau message</h5>
+                      <small class="text-muted" id="previewEmail">De: john.doe@example.com</small>
+                    </div>
+                    <div class="card-tools">
+                      <button type="button" class="btn btn-outline-secondary btn-sm" data-lte-toggle="card-collapse">
+                        <i data-lte-icon="expand" class="bi bi-plus-lg"></i>
+                        <i data-lte-icon="collapse" class="bi bi-dash-lg"></i>
+                      </button>
+                    </div>
+                  </div>
+                  <div class="card-body">
+                    <p class="text-muted mb-2"><strong>Objet:</strong> <span id="previewSubject">Rapport hebdomadaire</span></p>
+                    <div class="mb-4">
+                      <strong>Contenu:</strong>
+                      <div id="previewBody" class="mt-2 p-3 bg-light border rounded" style="max-height: 200px; overflow-y: auto; font-family: monospace; font-size: 0.9em; white-space: pre-wrap;">
+                        Bonjour, voici le rapport d'analyse des emails de cette semaine. Merci de bien vouloir confirmer réception.
+                      </div>
+                    </div>
 
-  <!-- Right: Mail preview + analyze -->
-  <div class="col-lg-5">
-    <div class="card bg-white border-light mb-4 shadow-sm" id="mailPreviewCard">
-      <div class="card-header d-flex justify-content-between align-items-center">
-        <div>
-          <h5 class="mb-0 text-dark" id="previewFrom">Nouveau message</h5>
-          <small class="text-muted" id="previewEmail">De: john.doe@example.com</small>
-        </div>
-        <div class="card-tools">
-          <button
-            type="button"
-            class="btn btn-outline-secondary btn-sm"
-            data-lte-toggle="card-collapse"
-            aria-label="Afficher/Masquer le contenu"
-          >
-            <i data-lte-icon="expand" class="bi bi-plus-lg"></i>
-            <i data-lte-icon="collapse" class="bi bi-dash-lg"></i>
-          </button>
-        </div>
-      </div>
-      <div class="card-body">
-        <p class="text-muted mb-2"><strong>Objet:</strong> <span id="previewSubject">Rapport hebdomadaire</span></p>
-        <p class="text-dark" id="previewBody">
-          Bonjour, voici le rapport d'analyse des emails de cette semaine. Merci de bien vouloir confirmer réception.
-        </p>
-
-        <!-- Analyze section -->
-        <div class="mt-4 text-center">
-          <button id="analyzeBtn" class="btn mb-3" style="background-color: #d63384; color: white;">ANALYZE</button>
-
-          <div id="analysisResult" class="mb-3 text-primary fw-bold"></div>
-
-          <div>
-            <span>Êtes-vous satisfait de l'analyse ?</span><br />
-            <div class="form-check form-check-inline">
-              <input class="form-check-input" type="radio" name="satisfaction" id="satisYes" value="yes" />
-              <label class="form-check-label" for="satisYes">Oui</label>
+                    <!-- Analyze section -->
+                    <div class="mt-4 text-center">
+                      <button id="analyzeBtn" class="btn mb-3" style="background-color: #d63384; color: white;">ANALYZE</button>
+                      <div id="analysisResult" class="mb-3 text-primary fw-bold"></div>
+                      <div>
+                        <span>Êtes-vous satisfait de l'analyse ?</span><br />
+                        <div class="form-check form-check-inline">
+                          <input class="form-check-input" type="radio" name="satisfaction" id="satisYes" value="yes" />
+                          <label class="form-check-label" for="satisYes">Oui</label>
+                        </div>
+                        <div class="form-check form-check-inline">
+                          <input class="form-check-input" type="radio" name="satisfaction" id="satisNo" value="no" />
+                          <label class="form-check-label" for="satisNo">Non</label>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
             </div>
-            <div class="form-check form-check-inline">
-              <input class="form-check-input" type="radio" name="satisfaction" id="satisNo" value="no" />
-              <label class="form-check-label" for="satisNo">Non</label>
-            </div>
-          </div>
-        </div>
-      </div>
-      <div class="card-footer text-end">
-        <a href="#" class="btn btn-primary btn-sm" id="previewLink" target="_blank" style="display:none">Voir l'email</a>
-      </div>
-    </div>
-  </div>
-</div>
 
-<!-- Your mail archive inside a script tag -->
-<script id="mailData" type="text/plain">
+            <!-- VOS DONNÉES D'EMAILS INTÉGRÉES -->
+            <script id="mailData" type="text/plain">
 [IMPORTANT]
 From: alice@example.com
 To: moi@monemail.com
@@ -276,10 +247,10 @@ Subject: Réunion urgente demain
 
 Bonjour,
 
-Nous avons une réunion urgente demain à 10h00 pour finaliser le projet.  
+Nous avons une réunion urgente demain à 10h00 pour finaliser le projet.
 Merci de préparer les documents nécessaires.
 
-Cordialement,  
+Cordialement,
 Alice
 
 --------------------------------------------
@@ -292,10 +263,10 @@ Subject: Projet finalisé, à valider
 
 Salut,
 
-Le projet est maintenant finalisé.  
-Peux-tu vérifier les derniers points et me confirmer que tout est bon ?  
+Le projet est maintenant finalisé.
+Peux-tu vérifier les derniers points et me confirmer que tout est bon ?
 
-Merci,  
+Merci,
 Bob
 
 --------------------------------------------
@@ -306,8 +277,8 @@ To: moi@monemail.com
 Date: 2025-05-26 08:00
 Subject: Offre incroyable à ne pas rater !!!
 
-Gagnez 1000€ chaque jour en cliquant ici !  
-Offre limitée, dépêchez-vous !  
+Gagnez 1000€ chaque jour en cliquant ici !
+Offre limitée, dépêchez-vous !
 Cliquez sur ce lien magique : http://spamlink.fake
 
 --------------------------------------------
@@ -320,10 +291,10 @@ Subject: Compte rendu du rendez-vous client
 
 Bonjour,
 
-Voici le compte rendu de notre rendez-vous avec le client XYZ.  
+Voici le compte rendu de notre rendez-vous avec le client XYZ.
 Le projet avance comme prévu, la prochaine étape est la validation du cahier des charges.
 
-Bonne journée,  
+Bonne journée,
 Carol
 
 --------------------------------------------
@@ -334,8 +305,8 @@ To: moi@monemail.com
 Date: 2025-05-25 11:00
 Subject: Vous avez gagné un cadeau gratuit !
 
-Félicitations ! Vous avez gagné un cadeau gratuit.  
-Cliquez ici pour réclamer votre prix avant qu’il ne soit trop tard !
+Félicitations ! Vous avez gagné un cadeau gratuit.
+Cliquez ici pour réclamer votre prix avant qu'il ne soit trop tard !
 
 --------------------------------------------
 
@@ -347,267 +318,220 @@ Subject: Mise à jour importante du système
 
 Bonjour,
 
-Une mise à jour critique du système aura lieu ce week-end.  
+Une mise à jour critique du système aura lieu ce week-end.
 Veuillez sauvegarder vos données avant vendredi soir.
 
-Merci,  
+Merci,
 David
 
 --------------------------------------------
+            </script>
 
-[SPAM]
-From: cheapmeds@pharmspam.com
-To: moi@monemail.com
-Date: 2025-05-26 13:00
-Subject: Médicaments à prix cassés
+            <!-- JAVASCRIPT INTÉGRÉ -->
+            <script>
+              // VOTRE CODE EXISTANT - Parse emails
+              function parseArchive(text) {
+                const mailsRaw = text.trim().split('--------------------------------------------');
+                return mailsRaw.map(raw => {
+                  const lines = raw.trim().split('\n');
+                  if (lines.length < 6) return null;
 
-Achetez vos médicaments sans ordonnance à prix cassés !  
-Livraison rapide et discrète. Visitez notre site maintenant.
+                  let type = '';
+                  let i = 0;
+                  if (lines[0].startsWith('[')) {
+                    type = lines[0].replace(/\[|\]/g, '').toUpperCase();
+                    i++;
+                  }
 
---------------------------------------------
+                  let from = '', to = '', date = '', subject = '', bodyLines = [];
+                  for (; i < lines.length; i++) {
+                    const line = lines[i].trim();
+                    if (line.startsWith('From:')) from = line.substring(5).trim();
+                    else if (line.startsWith('To:')) to = line.substring(3).trim();
+                    else if (line.startsWith('Date:')) date = line.substring(5).trim();
+                    else if (line.startsWith('Subject:')) {
+                      subject = line.substring(8).trim();
+                      i++;
+                      break;
+                    }
+                  }
 
-[IMPORTANT]
-From: emma@example.com
-To: moi@monemail.com
-Date: 2025-05-21 15:10
-Subject: Invitation conférence 2025
+                  bodyLines = lines.slice(i).map(l => l.trim());
+                  const body = bodyLines.join('\n');
 
-Cher(e) collègue,
+                  return { type, from, to, date, subject, body };
+                }).filter(m => m !== null);
+              }
 
-Vous êtes invité(e) à la conférence annuelle 2025 sur l’innovation technologique.  
-Merci de confirmer votre présence avant le 30 mai.
+              // VOTRE CODE EXISTANT - Display emails
+              function displayMails(mails) {
+                const container = document.getElementById('mailContainer');
+                container.innerHTML = '';
 
-Cordialement,  
-Emma
+                updateStatistics(mails);
 
---------------------------------------------
+                mails.forEach(mail => {
+                  const div = document.createElement('div');
+                  div.className = 'mail-item ' + (mail.type === 'SPAM' ? 'spam' : 'important');
+                  div.style.border = mail.type === 'SPAM' ? '2px solid red' : '2px solid green';
+                  div.style.padding = '10px';
+                  div.style.marginBottom = '10px';
+                  div.style.borderRadius = '5px';
+                  div.style.cursor = 'pointer';
 
-[SPAM]
-From: lotterywin@fakeemail.com
-To: moi@monemail.com
-Date: 2025-05-26 09:00
-Subject: Félicitations, vous avez gagné la loterie !
+                  div.innerHTML = `<strong>${mail.from}</strong> — <span class="text-muted">${mail.subject}</span>
+                    <div class="text-truncate text-muted small">${mail.body ? mail.body.substring(0, 60).replace(/\n/g, ' ') + '...' : 'Pas de contenu'}</div>
+                    <small class="text-muted">${mail.date.split(' ')[1] || mail.date}</small>`;
 
-Vous êtes le grand gagnant de notre loterie internationale.  
-Envoyez vos coordonnées pour recevoir votre prix immédiatement.
+                  div.addEventListener('click', () => showMailPreview(mail));
+                  container.appendChild(div);
+                });
+              }
 
---------------------------------------------
+              // NOUVEAU - Update statistics
+              function updateStatistics(mails) {
+                const total = mails.length;
+                const spamCount = mails.filter(m => m.type === 'SPAM').length;
+                const importantCount = mails.filter(m => m.type === 'IMPORTANT').length;
+                const successRate = total > 0 ? Math.round((importantCount / total) * 100) : 53;
 
-[IMPORTANT]
-From: frank@example.com
-To: moi@monemail.com
-Date: 2025-05-20 11:30
-Subject: Problème détecté sur le serveur
+                document.getElementById('totalEmailsCount').textContent = total;
+                document.getElementById('successRatePercent').innerHTML = `${successRate}<sup class="fs-5">%</sup>`;
+                document.getElementById('spamDetectedCount').textContent = spamCount;
+                document.getElementById('emailCounter').textContent = `${total} emails`;
+              }
 
-Bonjour,
+              // VOTRE CODE EXISTANT - Show email preview
+              function showMailPreview(mail) {
+                document.getElementById('previewFrom').textContent = mail.from;
+                document.getElementById('previewEmail').textContent = 'De: ' + mail.from;
+                document.getElementById('previewSubject').textContent = mail.subject;
+                document.getElementById('previewBody').textContent = mail.body || 'Contenu non disponible';
+                document.getElementById('mailPreviewCard').dataset.mailType = mail.type || '';
 
-Un problème a été détecté sur le serveur principal.  
-L’équipe technique travaille à sa résolution.
+                document.querySelectorAll('input[name="satisfaction"]').forEach(el => el.checked = false);
+                document.getElementById('analysisResult').textContent = '';
+              }
 
-Cordialement,  
-Frank
+              // VOTRE CODE EXISTANT - Analyze button
+              document.addEventListener('DOMContentLoaded', () => {
+                document.getElementById('analyzeBtn').addEventListener('click', () => {
+                  const mailType = document.getElementById('mailPreviewCard').dataset.mailType || 'Inconnu';
 
---------------------------------------------
+                  let resultText = '';
+                  if (mailType === 'IMPORTANT') resultText = '✅ Ce mail est important.';
+                  else if (mailType === 'SPAM') resultText = '⚠️ Ce mail est un spam.';
+                  else resultText = '❓ Type de mail inconnu.';
 
-[SPAM]
-From: quickcash@spamfast.com
-To: moi@monemail.com
-Date: 2025-05-19 16:45
-Subject: Gagnez de l'argent rapidement !
+                  document.getElementById('analysisResult').textContent = resultText;
+                });
+              });
 
-Profitez de notre méthode exclusive pour gagner de l'argent rapidement !  
-Inscrivez-vous maintenant et recevez un bonus.
+              // FONCTION EXISTANTE - Load demo emails
+              function loadAndDisplayMails(archiveFile = 'archive_mails.txt') {
+                fetch(archiveFile)
+                  .then(response => {
+                    if (!response.ok) throw new Error('Erreur chargement fichier');
+                    return response.text();
+                  })
+                  .then(text => {
+                    const mails = parseArchive(text);
+                    displayMails(mails);
+                    updateSourceIndicator('Emails de démonstration', 'info');
+                  })
+                  .catch(error => {
+                    // Fallback vers les données intégrées
+                    const mailText = document.getElementById('mailData').textContent;
+                    const mails = parseArchive(mailText);
+                    displayMails(mails);
+                    updateSourceIndicator('Emails intégrés (fallback)', 'warning');
+                  });
+              }
 
---------------------------------------------
+              // NOUVELLE FONCTION - Load live emails
+              function loadLiveEmails() {
+                updateSourceIndicator('Chargement des emails Gmail...', 'warning');
 
-[IMPORTANT]
-From: gina@example.com
-To: moi@monemail.com
-Date: 2025-05-18 09:00
-Subject: Validation budget Q3
+                fetch('archive_mails_live.txt')
+                  .then(response => {
+                    if (!response.ok) throw new Error('Fichier live non trouvé');
+                    return response.text();
+                  })
+                  .then(text => {
+                    const mails = parseArchive(text);
+                    displayMails(mails);
+                    updateSourceIndicator('Emails Gmail (Live) ✅', 'success');
+                    console.log('📧 Emails live chargés:', mails.length);
+                  })
+                  .catch(error => {
+                    console.warn('⚠️ Erreur chargement emails live:', error);
+                    updateSourceIndicator('Erreur Gmail - Retour aux emails de démo', 'warning');
+                    // Fallback vers les emails de démonstration
+                    loadAndDisplayMails();
+                  });
+              }
 
-Salut,
+              // NOUVELLE FONCTION - Refresh
+              function refreshEmails() {
+                updateSourceIndicator('Actualisation en cours...', 'warning');
+                loadLiveEmails();
+              }
 
-Le budget pour le troisième trimestre doit être validé avant la fin du mois.  
-Peux-tu regarder les documents envoyés et me donner ton retour ?
+              // NOUVELLE FONCTION - Update source indicator
+              function updateSourceIndicator(message, type = 'info') {
+                const indicator = document.getElementById('sourceIndicator');
+                const sourceText = document.getElementById('sourceText');
 
-Merci,  
-Gina
+                if (indicator && sourceText) {
+                  sourceText.textContent = message;
+                  indicator.className = `alert alert-${type} alert-dismissible`;
+                  indicator.style.display = 'block';
 
---------------------------------------------
+                  // Masquer automatiquement après 3 secondes pour les succès
+                  if (type === 'success') {
+                    setTimeout(() => {
+                      indicator.style.display = 'none';
+                    }, 3000);
+                  }
+                }
+              }
 
-[SPAM]
-From: miraclecure@spamhealth.com
-To: moi@monemail.com
-Date: 2025-05-15 08:30
-Subject: Remède miracle contre toutes les maladies
+              // INITIALISATION - Load default emails
+              document.addEventListener('DOMContentLoaded', () => {
+                // Charger les emails intégrés par défaut
+                const mailText = document.getElementById('mailData').textContent;
+                const mails = parseArchive(mailText);
+                displayMails(mails);
+                updateSourceIndicator('Emails de démonstration (par défaut)', 'info');
 
-Essayez notre remède miracle, approuvé par des experts.  
-Commandez maintenant avec une remise exclusive !
+                // Afficher le premier email
+                if (mails.length > 0) {
+                  showMailPreview(mails[0]);
+                }
 
---------------------------------------------
+                // Essayer de charger les emails live après 2 secondes
+                setTimeout(() => {
+                  console.log('🔄 Tentative automatique de chargement des emails Gmail...');
+                  loadLiveEmails();
+                }, 2000);
+              });
+            </script>
 
-[IMPORTANT]
-From: isabelle@example.com
-To: moi@monemail.com
-Date: 2025-05-14 13:15
-Subject: Organisation séminaire client
-
-Bonjour,
-
-Le séminaire client aura lieu le 15 juin.  
-Merci de confirmer ta participation et tes besoins logistiques.
-
-Cordialement,  
-Isabelle
-
---------------------------------------------
-
-
-[IMPORTANT]
-From: julien@example.com
-To: moi@monemail.com
-Date: 2025-05-12 11:55
-Subject: Nouvelle politique de sécurité
-
-Salut,
-
-Nous avons mis à jour la politique de sécurité informatique.  
-Merci de lire le document joint et de respecter les nouvelles règles.
-
-Merci,  
-Julien
-
---------------------------------------------
-
-[SPAM]
-From: cheaploans@spamfinance.com
-To: moi@monemail.com
-Date: 2025-05-11 15:25
-Subject: Prêts personnels à taux réduit
-
-Obtenez un prêt personnel rapidement avec un taux réduit.  
-Sans justificatif, réponse immédiate.
-
---------------------------------------------
-
-</script>
-
-<script>
-  // Parse mails including type (IMPORTANT or SPAM)
-  function parseArchive(text) {
-    const mailsRaw = text.trim().split('--------------------------------------------');
-    return mailsRaw.map(raw => {
-      const lines = raw.trim().split('\n');
-      if (lines.length < 6) return null;
-
-      let type = '';
-      let i = 0;
-      if (lines[0].startsWith('[')) {
-        type = lines[0].replace(/\[|\]/g, '').toUpperCase();
-        i++;
-      }
-
-      let from = '', to = '', date = '', subject = '', bodyLines = [];
-      for (; i < lines.length; i++) {
-        const line = lines[i].trim();
-        if (line.startsWith('From:')) from = line.substring(5).trim();
-        else if (line.startsWith('To:')) to = line.substring(3).trim();
-        else if (line.startsWith('Date:')) date = line.substring(5).trim();
-        else if (line.startsWith('Subject:')) {
-          subject = line.substring(8).trim();
-          i++;
-          break;
-        }
-      }
-
-      bodyLines = lines.slice(i).map(l => l.trim());
-      const body = bodyLines.join('\n');
-
-      return { type, from, to, date, subject, body };
-    }).filter(m => m !== null);
-  }
-
-  // Show mail list in the left panel
-  function displayMails(mails) {
-    const ul = document.getElementById('mailList');
-    ul.innerHTML = '';
-    mails.forEach(mail => {
-      const li = document.createElement('li');
-      li.className = 'list-group-item d-flex justify-content-between align-items-start';
-      li.style.cursor = 'pointer';
-      li.innerHTML = `
-        <div>
-          <strong>${mail.from}</strong> — <span class="text-muted">${mail.subject}</span>
-          <div class="text-truncate text-muted small">${mail.body.substring(0, 60).replace(/\n/g, ' ') + '...'}</div>
-        </div>
-        <small class="text-muted">${mail.date.split(' ')[1] || mail.date}</small>
-      `;
-      li.addEventListener('click', () => showMailPreview(mail));
-      ul.appendChild(li);
-    });
-  }
-
-  // Show selected mail details in preview and update mail type field
-  function showMailPreview(mail) {
-    document.getElementById('previewFrom').textContent = mail.from;
-    document.getElementById('previewEmail').textContent = 'De: ' + mail.from;
-    document.getElementById('previewSubject').textContent = mail.subject;
-    document.getElementById('previewBody').textContent = mail.body;
-    // Store mail type in a data attribute (hidden)
-    document.getElementById('mailPreviewCard').dataset.mailType = mail.type || '';
-
-    // Clear satisfaction radios on new mail
-    document.querySelectorAll('input[name="satisfaction"]').forEach(el => el.checked = false);
-
-    // Clear previous analysis result
-    document.getElementById('analysisResult').textContent = '';
-  }
-
-  // ANALYZE button click handler
-  document.getElementById('analyzeBtn').addEventListener('click', () => {
-    const mailType = document.getElementById('mailPreviewCard').dataset.mailType || 'Inconnu';
-
-    let resultText = '';
-    if (mailType === 'IMPORTANT') resultText = 'Ce mail est important.';
-    else if (mailType === 'SPAM') resultText = 'Ce mail est un spam.';
-    else resultText = 'Type de mail inconnu.';
-
-    document.getElementById('analysisResult').textContent = resultText;
-  });
-
-  // Load and display mails on page load
-  const mailText = document.getElementById('mailData').textContent;
-  const mails = parseArchive(mailText);
-  displayMails(mails);
-
-  // Show first mail by default if any
-  if (mails.length > 0) {
-    showMailPreview(mails[0]);
-  }
-</script>
- 
-            </div>
-            <!-- /.row (main row) -->
           </div>
           <!--end::Container-->
         </div>
         <!--end::App Content-->
       </main>
       <!--end::App Main-->
+
       <!--begin::Footer-->
       <footer class="app-footer">
-        <!--begin::To the end-->
         <div class="float-end d-none d-sm-inline">ESGI PA 2025</div>
-        <!--end::To the end-->
-        <!--begin::Copyright-->
-       
-        Mail Filter 
-        <!--end::Copyright-->
+        <div>Mail Filter</div>
       </footer>
       <!--end::Footer-->
     </div>
     <!--end::App Wrapper-->
-    <!--begin::Script-->
 
+  </body>
 </html>
