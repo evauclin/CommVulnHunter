@@ -1,0 +1,25 @@
+{
+  "model_type": "LSTM",
+  "model_file": "best_lstm_model.h5",
+  "tokenizer_file": "tokenizer.pkl",
+  "scaler_file": "scaler.pkl",
+  "label_encoder_file": "label_encoder.pkl",
+  "config": {
+    "max_vocab_size": 10000,
+    "max_sequence_length": 150,
+    "embedding_dim": 100,
+    "lstm_units": 64,
+    "dense_units": 32,
+    "dropout_rate": 0.3,
+    "learning_rate": 0.001,
+    "batch_size": 2046,
+    "epochs": 30,
+    "patience": 8
+  },
+  "vocabulary_size": 112042,
+  "classes": [
+    "benign",
+    "phishing"
+  ],
+  "creation_date": "2025-06-03T05:26:33.539175"
+}
