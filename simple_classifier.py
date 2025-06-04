@@ -16,7 +16,7 @@ class EmailClassifier:
     Mode aléatoire en attendant l'implémentation d'un modèle ML
     """
 
-    def __init__(self, mode: str = "random"):
+    def __init__(self, mode: str = "ml"):
         """
         Initialise le classificateur
 
@@ -201,7 +201,7 @@ if __name__ == "__main__":
         ("promo@spammy.tk", "Offre limitée!!!", "Ne ratez pas cette occasion..."),
     ]
 
-    classifier = EmailClassifier(mode="random")
+    classifier = EmailClassifier(mode="RANDOM")
 
     print("\n📊 Résultats de classification:")
     for from_addr, subject, body in test_emails:

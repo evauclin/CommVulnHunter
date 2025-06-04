@@ -506,7 +506,7 @@
         }
 
         // Analyse un email
-        function analyzeEmail() {
+        /*function analyzeEmail() {
             const emailType = document.getElementById('analyzeBtn').dataset.emailType;
             const resultDiv = document.getElementById('analysisResult');
 
@@ -515,7 +515,7 @@
 
             setTimeout(() => {
                 // Simulation d'analyse aléatoire
-                const confidence = Math.floor(Math.random() * 30) + 70; // 70-99%
+                const confidence = 1.0 //Math.floor(Math.random() * 30) + 70; // 70-99%
                 let result = '';
                 let className = '';
 
@@ -537,9 +537,102 @@
                     </div>
                 `;
             }, 1000);
+        }*/
+        // Fonction JavaScript équivalente à votre clean_text Python
+        function cleanText(text) {
+            /**
+             * Cleans a text by:
+             * - Removing extra spaces
+             * - Replacing straight quotes with typographic ones to avoid conflicts
+             */
+            if (!text || typeof text !== 'string') {
+                return '';
+            }
+
+            // Remove extra spaces
+            const noExtraSpaces = text.split(/\s+/).join(' ').trim();
+
+            // Replace straight quotes with typographic ones
+            const safeQuotes = noExtraSpaces
+                .replace(/"/g, '"')  // Replace double quotes
+                .replace(/'/g, ''); // Replace single quotes
+
+            return safeQuotes;
         }
 
-        // Gestion du feedback
+        // Fonction analyzeEmail mise à jour avec clean_text
+        async function analyzeEmail() {
+            const resultDiv = document.getElementById('analysisResult');
+
+            // Récupérer le contenu de l'email
+            const emailFrom = document.getElementById('emailFrom').textContent;
+            const emailSubject = document.getElementById('emailSubject').textContent;
+            const emailBody = document.getElementById('emailBody').textContent;
+
+            // Combiner et nettoyer le contenu
+            const rawEmailText = `From: ${emailFrom} Subject: ${emailSubject} Body: ${emailBody}`;
+            print(rawEmailText)
+            const cleanedEmailText = cleanText(rawEmailText);
+
+            console.log('Texte original:', rawEmailText.substring(0, 100) + '...');
+            console.log('Texte nettoyé:', cleanedEmailText.substring(0, 100) + '...');
+
+            // Animation de chargement
+            resultDiv.innerHTML = '<div class="spinner-border spinner-border-sm me-2"></div>Analyse ML en cours...';
+
+            try {
+                // Appel à l'API FastAPI avec texte nettoyé
+                const response = await fetch('http://localhost:800/predict', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                        text: cleanedEmailText  // Utiliser le texte nettoyé
+                    })
+                });
+
+                if (!response.ok) {
+                    throw new Error(`Erreur API: ${response.status}`);
+                }
+
+                const data = await response.json();
+
+                // Afficher le résultat
+                const confidence = Math.round(data.probability * 100);
+                let result, className;
+
+                if (data.prediction === 'phishing') {
+                    result = `⚠️ Email classé SPAM/PHISHING (Confiance: ${confidence}%)`;
+                    className = 'text-danger';
+                } else {
+                    result = `✅ Email classé LÉGITIME (Confiance: ${100 - confidence}%)`;
+                    className = 'text-success';
+                }
+
+                resultDiv.innerHTML = `
+                    <div class="${className}">
+                        ${result}
+                        <br><small class="text-muted">Modèle: LSTM Deep Learning</small>
+                        <br><small class="text-muted">Niveau: ${data.confidence}</small>
+                    </div>
+                `;
+
+            } catch (error) {
+                console.error('Erreur lors de l\'analyse ML:', error);
+                resultDiv.innerHTML = `
+                    <div class="text-warning">
+                        ⚠️ Erreur ML - ${error.message}
+                        <br><small class="text-muted">Passage en mode fallback...</small>
+                    </div>
+                `;
+
+                setTimeout(() => {
+                    analyzeEmailFallback();
+                }, 1000);
+            }
+        }
+                // Gestion du feedback
         function handleFeedback(satisfaction) {
             const emailType = document.getElementById('analyzeBtn').dataset.emailType;
             const resultDiv = document.getElementById('analysisResult');
