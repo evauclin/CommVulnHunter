@@ -1,7 +1,6 @@
 """
-email_fetcher_csv.py
+email_fetcher_csv.py - Version corrigée
 Script pour récupérer les emails depuis Gmail et les sauvegarder au format CSV
-Classification simple en mode aléatoire (préparé pour modèle ML)
 """
 
 import imaplib
@@ -217,44 +216,52 @@ def extract_text_from_html(html_content):
 
 
 def generate_csv_files(emails_data):
-    """Génère les fichiers CSV et JSON"""
+    """Génère les fichiers CSV et JSON - VERSION CORRIGÉE"""
 
-    # Créer le dossier de sortie
+    # ✅ CORRECTION: Créer le dossier de sortie correct
     output_dir = "src/pages"
     os.makedirs(output_dir, exist_ok=True)
 
-    # Chemins des fichiers
-    csv_file_path = os.path.join(output_dir, "src/pages/emails_live.csv")
-    json_file_path = os.path.join(output_dir, "src/pages/emails_live.json")
+    # ✅ CORRECTION: Chemins corrects (sans duplication)
+    csv_file_path = os.path.join(output_dir, "emails_live.csv")
+    json_file_path = os.path.join(output_dir, "emails_live.json")
+
+    print(f"📁 Génération des fichiers dans: {output_dir}")
+    print(f"📄 CSV: {csv_file_path}")
+    print(f"📄 JSON: {json_file_path}")
 
     # 1. Fichier CSV principal
     fieldnames = ['id', 'type', 'from', 'to', 'date', 'subject', 'body', 'message_id', 'processed_at']
 
-    with open(csv_file_path, 'w', newline='', encoding='utf-8') as csvfile:
-        writer = csv.DictWriter(csvfile, fieldnames=fieldnames, quoting=csv.QUOTE_ALL)
-        writer.writeheader()
+    try:
+        with open(csv_file_path, 'w', newline='', encoding='utf-8') as csvfile:
+            writer = csv.DictWriter(csvfile, fieldnames=fieldnames, quoting=csv.QUOTE_ALL)
+            writer.writeheader()
 
-        for email_data in emails_data:
-            writer.writerow(email_data)
+            for email_data in emails_data:
+                writer.writerow(email_data)
 
-    print(f"✅ Fichier CSV généré: {csv_file_path}")
+        print(f"✅ Fichier CSV généré: {csv_file_path}")
 
-    # 2. Fichier JSON (pour compatibilité et backup)
-    json_data = {
-        "generated_at": datetime.now().isoformat(),
-        "total_emails": len(emails_data),
-        "source": "gmail_imap",
-        "format_version": "2.0",
-        "emails": emails_data
-    }
+        # 2. Fichier JSON (pour compatibilité et backup)
+        json_data = {
+            "generated_at": datetime.now().isoformat(),
+            "total_emails": len(emails_data),
+            "source": "gmail_imap",
+            "format_version": "2.0",
+            "emails": emails_data
+        }
 
-    with open(json_file_path, "w", encoding="utf-8") as f:
-        json.dump(json_data, f, ensure_ascii=False, indent=2)
+        with open(json_file_path, "w", encoding="utf-8") as f:
+            json.dump(json_data, f, ensure_ascii=False, indent=2)
 
-    print(f"✅ Fichier JSON généré: {json_file_path}")
+        print(f"✅ Fichier JSON généré: {json_file_path}")
 
-    # 3. Génération des statistiques
-    generate_statistics(emails_data, output_dir)
+        # 3. Génération des statistiques
+        generate_statistics(emails_data, output_dir)
+
+    except Exception as e:
+        print(f"❌ Erreur génération fichiers: {e}")
 
 
 def generate_statistics(emails_data, output_dir):
@@ -279,8 +286,7 @@ def generate_statistics(emails_data, output_dir):
             domains[domain][email_data['type'].lower()] += 1
 
     stats["domains"] = domains
-    stats["success_rate"] = round((stats["important_emails"] / stats["total_emails"]) * 100, 2) if stats[
-                                                                                                       "total_emails"] > 0 else 0
+    stats["success_rate"] = round((stats["important_emails"] / stats["total_emails"]) * 100, 2) if stats["total_emails"] > 0 else 0
 
     # Sauvegarder les statistiques
     stats_file = os.path.join(output_dir, "email_stats.json")

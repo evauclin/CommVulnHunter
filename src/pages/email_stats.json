@@ -1,0 +1,259 @@
+{
+  "total_emails": 73,
+  "important_emails": 50,
+  "spam_emails": 23,
+  "generated_at": "2025-06-02T00:16:33.604805",
+  "domains": {
+    "email.alphorm.com": {
+      "total": 2,
+      "spam": 0,
+      "important": 2
+    },
+    "notifs.leetchi.com": {
+      "total": 1,
+      "spam": 0,
+      "important": 1
+    },
+    "vivatechnology.com": {
+      "total": 3,
+      "spam": 0,
+      "important": 3
+    },
+    "marketing.ryanairemail.com": {
+      "total": 1,
+      "spam": 0,
+      "important": 1
+    },
+    "k.aroma-zone.com": {
+      "total": 1,
+      "spam": 0,
+      "important": 1
+    },
+    "accounts.google.com": {
+      "total": 1,
+      "spam": 0,
+      "important": 1
+    },
+    "csdausterlitz.fr": {
+      "total": 1,
+      "spam": 0,
+      "important": 1
+    },
+    "location-etudiant.fr": {
+      "total": 5,
+      "spam": 0,
+      "important": 5
+    },
+    "comms.vueling.com": {
+      "total": 2,
+      "spam": 0,
+      "important": 2
+    },
+    "mail.adobe.com": {
+      "total": 1,
+      "spam": 0,
+      "important": 1
+    },
+    "yahoo.com": {
+      "total": 4,
+      "spam": 0,
+      "important": 4
+    },
+    "travel.mail.flixbus.com": {
+      "total": 1,
+      "spam": 0,
+      "important": 1
+    },
+    "google.com": {
+      "total": 7,
+      "spam": 0,
+      "important": 7
+    },
+    "ter.sncf-voyageurs.com": {
+      "total": 1,
+      "spam": 0,
+      "important": 1
+    },
+    "info.digitalocean.com": {
+      "total": 1,
+      "spam": 0,
+      "important": 1
+    },
+    "meteojob.com": {
+      "total": 2,
+      "spam": 0,
+      "important": 2
+    },
+    "email.microsoft.com": {
+      "total": 1,
+      "spam": 0,
+      "important": 1
+    },
+    "dremio.com": {
+      "total": 2,
+      "spam": 1,
+      "important": 1
+    },
+    "email.apple.com": {
+      "total": 3,
+      "spam": 0,
+      "important": 3
+    },
+    "noreply55.jobs2web.com": {
+      "total": 1,
+      "spam": 0,
+      "important": 1
+    },
+    "datascientest.com": {
+      "total": 1,
+      "spam": 0,
+      "important": 1
+    },
+    "photo-me.eu": {
+      "total": 1,
+      "spam": 0,
+      "important": 1
+    },
+    "mkt.getyourguide.com": {
+      "total": 1,
+      "spam": 0,
+      "important": 1
+    },
+    "welovedevs.com": {
+      "total": 1,
+      "spam": 0,
+      "important": 1
+    },
+    "news.fitnesspark.fr": {
+      "total": 2,
+      "spam": 0,
+      "important": 2
+    },
+    "chess.com": {
+      "total": 1,
+      "spam": 0,
+      "important": 1
+    },
+    "academia-mail.com": {
+      "total": 1,
+      "spam": 0,
+      "important": 1
+    },
+    "costalerts.amazonaws.com": {
+      "total": 1,
+      "spam": 0,
+      "important": 1
+    },
+    "lefive.fr": {
+      "total": 1,
+      "spam": 0,
+      "important": 1
+    },
+    "RUJQT.fr": {
+      "total": 1,
+      "spam": 1,
+      "important": 0
+    },
+    "KrtJxPdrKrtJxPdr.fr": {
+      "total": 1,
+      "spam": 1,
+      "important": 0
+    },
+    "ZSfZsSRSK.us": {
+      "total": 1,
+      "spam": 1,
+      "important": 0
+    },
+    "OSwuvFYk.fr": {
+      "total": 1,
+      "spam": 1,
+      "important": 0
+    },
+    "qlik.com": {
+      "total": 2,
+      "spam": 2,
+      "important": 0
+    },
+    "RNZwafia.us": {
+      "total": 1,
+      "spam": 1,
+      "important": 0
+    },
+    "6zKCCbZ.6zKCCbZ.6zKCCbZ.fr": {
+      "total": 1,
+      "spam": 1,
+      "important": 0
+    },
+    "tiVMP.fr": {
+      "total": 1,
+      "spam": 1,
+      "important": 0
+    },
+    "ZgFYCkBBm.us": {
+      "total": 1,
+      "spam": 1,
+      "important": 0
+    },
+    "DWdG8Il.DWdG8Il.DWdG8Il.fr": {
+      "total": 1,
+      "spam": 1,
+      "important": 0
+    },
+    "WVyqomSe.us": {
+      "total": 1,
+      "spam": 1,
+      "important": 0
+    },
+    "hello.redis.io": {
+      "total": 1,
+      "spam": 1,
+      "important": 0
+    },
+    "OMsCSaFj.us": {
+      "total": 1,
+      "spam": 1,
+      "important": 0
+    },
+    "dfx2hbra.fr": {
+      "total": 1,
+      "spam": 1,
+      "important": 0
+    },
+    "9zliLMhO.fr": {
+      "total": 1,
+      "spam": 1,
+      "important": 0
+    },
+    "VUpMq.fr": {
+      "total": 1,
+      "spam": 1,
+      "important": 0
+    },
+    "wwdZheCoL.us": {
+      "total": 1,
+      "spam": 1,
+      "important": 0
+    },
+    "VSQEU.fr": {
+      "total": 1,
+      "spam": 1,
+      "important": 0
+    },
+    "vLkmhcJ.vLkmhcJ.vLkmhcJ.fr": {
+      "total": 1,
+      "spam": 1,
+      "important": 0
+    },
+    "uBDEl.fr": {
+      "total": 1,
+      "spam": 1,
+      "important": 0
+    },
+    "1EXj92L.1EXj92L.1EXj92L.fr": {
+      "total": 1,
+      "spam": 1,
+      "important": 0
+    }
+  },
+  "success_rate": 68.49
+}
