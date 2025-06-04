@@ -1,2 +1,10 @@
+# Dossiers IDE
 .idea/
-.env/
+
+# Environnement virtuel
+venv/
+__pycache__/
+*.pyc
+
+# Fichiers de config perso
+*.env
