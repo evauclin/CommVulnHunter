@@ -80,6 +80,20 @@ class EmailClassifier:
 
         return classification
 
+    def clean_text(self , text):
+        """
+        Cleans a text by:
+        - Removing extra spaces
+        - Replacing straight quotes with typographic ones to avoid conflicts
+        """
+        no_extra_spaces = ' '.join(text.split())
+        safe_quotes = (
+            no_extra_spaces
+            .replace('"', '“')  # Replace double quotes
+            .replace("'", '’')  # Replace single quotes
+        )
+        return safe_quotes
+
     def _classify_ml(self, from_addr: str, subject: str, body: str) -> str:
         """
         Classification avec modèle ML (à implémenter)
@@ -95,7 +109,7 @@ class EmailClassifier:
         try:
             response = requests.post(
                 "http://localhost:8000/predict",
-                json={"text": email_text},
+                json={"text": self.clean_text(email_text)},
                 timeout=5
             )
 
