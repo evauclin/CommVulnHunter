@@ -7,6 +7,7 @@ Préparé pour l'intégration d'un modèle ML futur
 import random
 import re
 from typing import Dict, Any
+import requests
 
 
 class EmailClassifier:
@@ -89,8 +90,27 @@ class EmailClassifier:
         - Prédiction avec le modèle
         - Post-processing des résultats
         """
-        print("⚠️ Mode ML non encore implémenté, utilisation du mode aléatoire")
-        return self._classify_random(from_addr, subject, body)
+        email_text = f"From: {from_addr} Subject: {subject} Body: {body}"
+
+        try:
+            response = requests.post(
+                "http://localhost:8000/predict",
+                json={"text": email_text},
+                timeout=5
+            )
+
+            if response.status_code == 200:
+                result = response.json()
+
+                # Si phishing détecté → SPAM, sinon → IMPORTANT
+                if result["prediction"] == "phishing":
+                    return "SPAM"
+                else:
+                    return "IMPORTANT"
+            else:
+                return "IMPORTANT"
+        except requests.RequestException as e:
+            print(f"Erreur lors de l'appel à l'API de classification ML: {e}")
 
     def get_stats(self) -> Dict[str, Any]:
         """Retourne les statistiques de classification"""
