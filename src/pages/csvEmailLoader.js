@@ -72,7 +72,7 @@ class EmailCSVLoader {
     /**
      * Charge les emails depuis un fichier CSV
      */
-    async loadEmailsFromCSV(filename = 'emails_live.csv') {
+    async loadEmailsFromCSV(filename = './emails_live.csv') {
         try {
             console.log(`📂 Chargement du fichier CSV: ${filename}`);
 
@@ -470,7 +470,7 @@ async function loadLiveEmails() {
     try {
         console.log('🔄 Chargement des emails live...');
 
-        await emailLoader.loadEmailsFromCSV('emails_live.csv');
+        await emailLoader.loadEmailsFromCSV('./emails_live.csv');
         await emailLoader.loadStats();
 
         const container = document.getElementById('emailList');
