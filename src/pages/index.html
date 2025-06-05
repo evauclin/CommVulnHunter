@@ -468,31 +468,20 @@
 
             // Charger les emails de démonstration
             loadDemoEmails() {
-                console.log('🚀 DÉBUT - Chargement des emails de démonstration...');
+                console.log('📧 Chargement des emails de démonstration...');
+                this.emails = this.generateDemoEmails();
+                this.updateDisplay();
+                this.updateStats();
 
-                try {
-                    this.emails = this.generateDemoEmails();
-                    console.log('✅ Emails générés:', this.emails.length);
-                    console.log('📧 Premier email:', this.emails[0]);
-
-                    this.updateDisplay();
-                    this.updateStats();
-
-                    // Mettre à jour l'indicateur de source
-                    const sourceIndicator = document.getElementById('sourceIndicator');
-                    const sourceText = document.getElementById('sourceText');
-                    if (sourceIndicator && sourceText) {
-                        sourceText.textContent = 'Emails de démonstration (6 emails)';
-                        sourceIndicator.style.display = 'block';
-                        console.log('📊 Source indicator mis à jour');
-                    } else {
-                        console.warn('⚠️ Source indicator non trouvé');
-                    }
-
-                    console.log(`🎉 SUCCÈS - ${this.emails.length} emails de démonstration chargés`);
-                } catch (error) {
-                    console.error('❌ ERREUR lors du chargement des emails:', error);
+                // Mettre à jour l'indicateur de source
+                const sourceIndicator = document.getElementById('sourceIndicator');
+                const sourceText = document.getElementById('sourceText');
+                if (sourceIndicator && sourceText) {
+                    sourceText.textContent = 'Emails de démonstration (6 emails)';
+                    sourceIndicator.style.display = 'block';
                 }
+
+                console.log(`✅ ${this.emails.length} emails de démonstration chargés`);
             },
 
             // Charger emails depuis CSV (simulation)
@@ -541,103 +530,65 @@
 
             // Afficher les emails
             displayEmails(container, emailsToShow = null) {
-                console.log('🖥️ DÉBUT displayEmails');
-
                 if (!container) {
-                    console.error('❌ Conteneur email introuvable - ID:', container);
+                    console.error('❌ Conteneur email introuvable');
                     return;
                 }
 
-                console.log('✅ Conteneur trouvé:', container.id);
-
                 const emails = emailsToShow || this.emails;
-                console.log('📧 Emails à afficher:', emails.length);
 
                 if (emails.length === 0) {
-                    console.warn('⚠️ Aucun email à afficher');
                     container.innerHTML = `
                         <div class="text-center p-4">
                             <i class="bi bi-envelope-x text-muted" style="font-size: 3rem;"></i>
                             <h5 class="text-muted mt-3">Aucun email trouvé</h5>
                             <p class="text-muted">Chargez des emails ou modifiez vos filtres</p>
-                            <button class="btn btn-primary" onclick="loadDemoEmails()">Charger les emails de démo</button>
                         </div>
                     `;
                     return;
                 }
 
-                try {
-                    const emailsHTML = emails.map((email, index) => {
-                        const typeClass = email.type === 'SPAM' ? 'spam' : '';
-                        const typeIcon = email.type === 'SPAM' ? '⚠️' : '✅';
-                        const typeBadge = email.type === 'SPAM' ?
-                            '<span class="email-type-badge bg-danger text-white">SPAM</span>' :
-                            '<span class="email-type-badge bg-success text-white">IMPORTANT</span>';
+                container.innerHTML = emails.map((email, index) => {
+                    const typeClass = email.type === 'SPAM' ? 'spam' : '';
+                    const typeIcon = email.type === 'SPAM' ? '⚠️' : '✅';
+                    const typeBadge = email.type === 'SPAM' ?
+                        '<span class="email-type-badge bg-danger text-white">SPAM</span>' :
+                        '<span class="email-type-badge bg-success text-white">IMPORTANT</span>';
 
-                        return `
-                            <div class="email-item ${typeClass}" data-index="${index}" onclick="selectEmail(${index})">
-                                <div class="d-flex justify-content-between align-items-start mb-2">
-                                    <div class="flex-grow-1">
-                                        <strong class="d-block">${email.from || 'Expéditeur inconnu'}</strong>
-                                        <small class="text-muted">${this.formatDate(email.date)}</small>
-                                    </div>
-                                    <div class="text-end">
-                                        ${typeBadge}
-                                    </div>
+                    return `
+                        <div class="email-item ${typeClass}" data-index="${index}" onclick="selectEmail(${index})">
+                            <div class="d-flex justify-content-between align-items-start mb-2">
+                                <div class="flex-grow-1">
+                                    <strong class="d-block">${email.from}</strong>
+                                    <small class="text-muted">${this.formatDate(email.date)}</small>
                                 </div>
-                                <div class="mb-2">
-                                    <strong>${email.subject || 'Pas de sujet'}</strong>
-                                </div>
-                                <div class="text-muted small">
-                                    ${(email.body || '').substring(0, 100)}${(email.body || '').length > 100 ? '...' : ''}
+                                <div class="text-end">
+                                    ${typeBadge}
                                 </div>
                             </div>
-                        `;
-                    }).join('');
-
-                    container.innerHTML = emailsHTML;
-                    console.log(`✅ ${emails.length} emails affichés dans le conteneur`);
-                } catch (error) {
-                    console.error('❌ Erreur lors de la génération HTML:', error);
-                    container.innerHTML = `
-                        <div class="alert alert-danger">
-                            <strong>Erreur d'affichage</strong><br>
-                            ${error.message}
-                            <br><button class="btn btn-sm btn-primary mt-2" onclick="loadDemoEmails()">Réessayer</button>
+                            <div class="mb-2">
+                                <strong>${email.subject}</strong>
+                            </div>
+                            <div class="text-muted small">
+                                ${email.body.substring(0, 100)}${email.body.length > 100 ? '...' : ''}
+                            </div>
                         </div>
                     `;
-                }
+                }).join('');
+
+                console.log(`📧 ${emails.length} emails affichés`);
             },
 
             // Mettre à jour l'affichage
             updateDisplay() {
-                console.log('🔄 updateDisplay - début');
                 const container = document.getElementById('emailList');
-
-                if (!container) {
-                    console.error('❌ Conteneur emailList introuvable !');
-                    // Essayer de créer le message d'erreur dans le body
-                    document.body.innerHTML += `
-                        <div style="position: fixed; top: 10px; right: 10px; background: red; color: white; padding: 10px; z-index: 9999;">
-                            ❌ ERREUR: Conteneur emailList introuvable !
-                        </div>
-                    `;
-                    return;
-                }
-
-                console.log('✅ Conteneur emailList trouvé, affichage des emails...');
                 this.displayEmails(container);
 
                 // Mettre à jour le compteur
                 const counter = document.getElementById('emailCounter');
                 if (counter) {
                     counter.textContent = `${this.emails.length} emails`;
-                    console.log('📊 Compteur mis à jour:', counter.textContent);
-                } else {
-                    console.warn('⚠️ Compteur emailCounter introuvable');
                 }
-
-                console.log('✅ updateDisplay - terminé');
             },
 
             // Mettre à jour les statistiques
@@ -662,45 +613,28 @@
 
         // 🔧 FONCTIONS GLOBALES POUR LES BOUTONS
         function loadDemoEmails() {
-            console.log('🎯 BOUTON loadDemoEmails cliqué');
-            try {
-                emailLoader.loadDemoEmails();
-                applyFiltersAndSearch();
-                console.log('✅ loadDemoEmails terminé avec succès');
-            } catch (error) {
-                console.error('❌ Erreur dans loadDemoEmails:', error);
-            }
+            emailLoader.loadDemoEmails();
+            applyFiltersAndSearch();
         }
 
         function loadLiveEmails() {
-            console.log('🎯 BOUTON loadLiveEmails cliqué');
-            try {
-                emailLoader.loadLiveEmails();
-                applyFiltersAndSearch();
-                console.log('✅ loadLiveEmails terminé avec succès');
-            } catch (error) {
-                console.error('❌ Erreur dans loadLiveEmails:', error);
-            }
+            emailLoader.loadLiveEmails();
+            applyFiltersAndSearch();
         }
 
         function refreshEmails() {
-            console.log('🔄 BOUTON refreshEmails cliqué');
-            try {
-                // Recharger les mêmes emails
-                emailLoader.updateDisplay();
-                emailLoader.updateStats();
-                applyFiltersAndSearch();
-                console.log('✅ refreshEmails terminé avec succès');
-            } catch (error) {
-                console.error('❌ Erreur dans refreshEmails:', error);
-            }
+            console.log('🔄 Rafraîchissement des emails...');
+            // Recharger les mêmes emails
+            emailLoader.updateDisplay();
+            emailLoader.updateStats();
+            applyFiltersAndSearch();
         }
 
         // Variables globales
         let currentFilter = 'ALL';
         let currentSearchQuery = '';
         let filteredEmails = [];
-        let mlApiUrl = 'http://localhost:80';
+        let mlApiUrl = 'http://localhost:800';
         let mlStatusOnline = false;
 
         // Vérification du statut du modèle ML
@@ -787,7 +721,7 @@ app.add_middleware(
             // Remplacer les guillemets droits par des guillemets typographiques
             const safeQuotes = noExtraSpaces
                 .replace(/"/g, '"')  // Guillemets doubles
-                .replace(/'/g, '''); // Guillemets simples
+                .replace(/'/g, ' '); // Guillemets simples
 
             return safeQuotes;
         }
@@ -922,7 +856,7 @@ app.add_middleware(
             `;
         }
 
-        // Fonctions de recherche et filtrage
+        // Fonctions de recherche et filtrage (inchangées)
         function performSearch() {
             const query = document.getElementById('searchInput').value.trim();
             currentSearchQuery = query;
@@ -951,17 +885,11 @@ app.add_middleware(
 
             if (currentSearchQuery) {
                 const query = currentSearchQuery.toLowerCase();
-                emails = emails.filter(email => {
-                    const cleanFrom = emailLoader.cleanEmailAddress(email.from || '');
-                    const cleanSubject = email.subject || '';
-                    const cleanBody = emailLoader.cleanEmailContent(email.body || '');
-
-                    return (
-                        cleanFrom.toLowerCase().includes(query) ||
-                        cleanSubject.toLowerCase().includes(query) ||
-                        cleanBody.toLowerCase().includes(query)
-                    );
-                });
+                emails = emails.filter(email =>
+                    (email.from && email.from.toLowerCase().includes(query)) ||
+                    (email.subject && email.subject.toLowerCase().includes(query)) ||
+                    (email.body && email.body.toLowerCase().includes(query))
+                );
             }
 
             filteredEmails = emails;
@@ -1064,26 +992,13 @@ app.add_middleware(
 
         // Event listeners
         document.addEventListener('DOMContentLoaded', function() {
-            console.log('🚀 DOM CHARGÉ - Initialisation du dashboard ML...');
+            console.log('🚀 Initialisation du dashboard ML...');
 
-            // Vérifier que les éléments existent
-            const emailList = document.getElementById('emailList');
-            const emailCounter = document.getElementById('emailCounter');
+            // Chargement automatique des emails de démonstration
+            loadDemoEmails();
 
-            console.log('🔍 Vérification des éléments:');
-            console.log('  - emailList:', emailList ? '✅ Trouvé' : '❌ Manquant');
-            console.log('  - emailCounter:', emailCounter ? '✅ Trouvé' : '❌ Manquant');
-
-            // Attendre un peu pour que tout soit prêt
-            setTimeout(() => {
-                console.log('⏰ Chargement automatique des emails après timeout...');
-
-                // Chargement automatique des emails de démonstration
-                loadDemoEmails();
-
-                // Vérifier le statut ML après chargement des emails
-                setTimeout(checkMLStatus, 1000);
-            }, 500);
+            // Vérifier le statut ML
+            checkMLStatus();
 
             // Feedback satisfaction
             document.querySelectorAll('input[name="satisfaction"]').forEach(input => {
@@ -1098,8 +1013,6 @@ app.add_middleware(
             document.querySelectorAll('input[name="viewMode"]').forEach(input => {
                 input.addEventListener('change', updateBodyDisplay);
             });
-
-            console.log('✅ Event listeners configurés');
         });
 
         // CSS pour l'animation de rotation
