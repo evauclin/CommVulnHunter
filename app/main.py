@@ -129,10 +129,12 @@ def predict(text_input: TextInput):
         print(f"📧 Analyse d'un email de {len(text_input.text)} caractères")
 
         processed_text = preprocess_text(text_input.text)
-        print(f"🔤 Texte preprocessé: {processed_text[:100]}...")
+
+        print(f"🔤 Texte preprocessé: {processed_text}...")
 
         sequence = tokenizer.texts_to_sequences([processed_text])
         padded_sequence = pad_sequences(sequence, maxlen=150, padding='post', truncating='post')
+        print(text_input.text)
 
         numerical_features = extract_numerical_features(text_input.text)
         scaled_features = scaler.transform([numerical_features])
