@@ -468,7 +468,7 @@ const emailLoader = new EmailCSVLoader();
 // Fonctions globales pour compatibilité
 async function loadLiveEmails() {
     try {
-        console.log('🔄 Chargement des emails live...');
+        console.log('Chargement des emails live...');
 
         await emailLoader.loadEmailsFromCSV('./emails_live.csv');
         await emailLoader.loadStats();
@@ -477,15 +477,15 @@ async function loadLiveEmails() {
         emailLoader.displayEmails(container);
         emailLoader.updateStatsDisplay();
 
-        console.log('📧 Emails live chargés avec succès');
+        console.log('Emails live chargés avec succès');
 
         if (emailLoader.emails.length > 0) {
             selectEmail(0);
         }
 
     } catch (error) {
-        console.warn('⚠️ Erreur chargement emails live:', error);
-        console.warn('🔄 Fallback vers emails de démo');
+        console.warn('Erreur chargement emails live:', error);
+        console.warn('Fallback vers emails de démo');
         loadDemoEmails();
     }
 }
@@ -502,15 +502,15 @@ async function loadDemoEmails() {
         const container = document.getElementById('emailList');
         emailLoader.displayEmails(container);
         emailLoader.updateStatsDisplay();
-        emailLoader.updateSourceIndicator('📁 Emails de démonstration chargés', 'info');
+        emailLoader.updateSourceIndicator('Emails de démonstration chargés', 'info');
 
         if (emailLoader.emails.length > 0) {
             selectEmail(0);
         }
 
     } catch (error) {
-        console.error('❌ Erreur chargement emails démo:', error);
-        emailLoader.updateSourceIndicator('❌ Erreur de chargement', 'danger');
+        console.error(' Erreur chargement emails démo:', error);
+        emailLoader.updateSourceIndicator(' Erreur de chargement', 'danger');
     }
 }
 
