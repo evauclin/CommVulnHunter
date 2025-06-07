@@ -343,15 +343,15 @@ class LSTMPhishingDetector:
         import json
         with open(metadata_path, 'w') as f:
             json.dump(metadata, f, indent=2)
-        print(f"✅ Métadonnées sauvegardées: {metadata_path}")
+        print(f" Métadonnées sauvegardées: {metadata_path}")
 
-        print(f"\n🚀 ARTEFACTS PRÊTS POUR L'API:")
-        print(f"  📁 {model_path}")
-        print(f"  📁 {tokenizer_path}")
-        print(f"  📁 {scaler_path}")
-        print(f"  📁 {label_encoder_path}")
-        print(f"  📁 {metadata_path}")
-        print(f"\n➡️  Copiez ces fichiers dans votre dossier Docker!")
+        print(f"\n ARTEFACTS PRÊTS POUR L'API:")
+        print(f"   {model_path}")
+        print(f"   {tokenizer_path}")
+        print(f"   {scaler_path}")
+        print(f"   {label_encoder_path}")
+        print(f"   {metadata_path}")
+        print(f"\n️  Copiez ces fichiers dans votre dossier Docker!")
 
         return {
             'model_path': model_path,
@@ -363,7 +363,7 @@ class LSTMPhishingDetector:
 
     def build_gru_model(self):
         """Alternative avec GRU (plus rapide que LSTM)"""
-        print("🏗️ Construction du modèle GRU...")
+        print(" Construction du modèle GRU...")
 
         text_input = Input(shape=(self.config['max_sequence_length'],), name='text_input')
 
@@ -498,7 +498,7 @@ class LSTMPhishingDetector:
             verbose=1
         )
 
-        print("✅ Entraînement terminé!")
+        print(" Entraînement terminé!")
 
         # Sauvegarder automatiquement tous les artefacts
         self.save_model_artifacts("best_lstm_model")
@@ -541,7 +541,7 @@ class LSTMPhishingDetector:
             print(f"{label:<10}  {cm[i,0]:<10} {cm[i,1]:<10}")
 
         # Rapport détaillé
-        print(f"\n📈 Rapport de classification:")
+        print(f"\n Rapport de classification:")
         report = classification_report(y_test_encoded, y_pred, target_names=labels, digits=4)
         print(report)
 
@@ -720,7 +720,7 @@ def main():
         print(f"Probabilité phishing: {prob:.4f}")
         print(f"Confiance: {'PHISHING' if prob > 0.7 else 'SUSPECT' if prob > 0.3 else 'LÉGITIME'}")
 
-    print(f"\n🎉 ENTRAÎNEMENT TERMINÉ!")
+    print(f"\n ENTRAÎNEMENT TERMINÉ!")
     print("Fichiers créés pour l'API Docker:")
     print("  - best_lstm_model.h5")
     print("  - tokenizer.pkl")
