@@ -31,15 +31,7 @@ class EmailClassifier:
 
     def classify(self, from_addr: str, subject: str, body: str) -> str:
         """
-        Classifie un email avec le modèle ML
 
-        Args:
-            from_addr: Adresse de l'expéditeur
-            subject: Sujet de l'email
-            body: Corps de l'email
-
-        Returns:
-            "SPAM" ou "IMPORTANT" ou "ERROR"
         """
         self.stats["total_classified"] += 1
 
@@ -56,11 +48,7 @@ class EmailClassifier:
         return result
 
     def clean_text(self, text):
-        """
-        Nettoie un texte en :
-        - Supprimant les espaces supplémentaires
-        - Remplaçant les guillemets droits par des typographiques
-        """
+
         if not text or not isinstance(text, str):
             return ""
 
@@ -185,14 +173,14 @@ def test_ml_api() -> bool:
 
 if __name__ == "__main__":
     # Test du classificateur ML
-    print("🧪 Test du classificateur ML")
+    print(" Test du classificateur ML")
 
     # Tester la connexion API
-    print("\n🔌 Test de connexion à l'API ML...")
+    print("\n Test de connexion à l'API ML...")
     if test_ml_api():
-        print("✅ API ML disponible")
+        print(" API ML disponible")
     else:
-        print("❌ API ML non disponible")
+        print(" API ML non disponible")
         print("Démarrez l'API avec: uvicorn app.main:app --host 0.0.0.0 --port 8000")
         exit(1)
 
@@ -206,14 +194,14 @@ if __name__ == "__main__":
 
     classifier = EmailClassifier()
 
-    print("\n📊 Résultats de classification ML:")
+    print("\n Résultats de classification ML:")
     for from_addr, subject, body in test_emails:
         result = classifier.classify(from_addr, subject, body)
-        print(f"   📧 {subject[:20]:<20} → {result}")
+        print(f"    {subject[:20]:<20} → {result}")
 
-    print(f"\n📈 Statistiques finales:")
+    print(f"\n Statistiques finales:")
     stats = classifier.get_stats()
     for key, value in stats.items():
         print(f"   {key}: {value}")
 
-    print("\n✨ Classification ML uniquement - Pas de mode aléatoire !")
+    print("\n Classification ML uniquement - Pas de mode aléatoire !")

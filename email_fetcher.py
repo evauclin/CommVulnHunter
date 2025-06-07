@@ -27,10 +27,10 @@ def fetch_emails_from_gmail():
 
     try:
         # Connexion à Gmail
-        print("🔌 Connexion à Gmail...")
+        print(" Connexion à Gmail...")
         mail = imaplib.IMAP4_SSL("imap.gmail.com")
         mail.login(username, password)
-        print("✅ Connexion réussie")
+        print(" Connexion réussie")
 
         emails_data = []
 
@@ -55,18 +55,18 @@ def fetch_emails_from_gmail():
                 if email_data:
                     emails_data.append(email_data)
         except:
-            print("⚠️ Impossible d'accéder aux spams")
+            print("⚠ Impossible d'accéder aux spams")
 
         mail.logout()
 
         # Générer les fichiers CSV et JSON
         generate_csv_files(emails_data)
 
-        print(f"✅ {len(emails_data)} emails récupérés et sauvegardés en CSV")
+        print(f" {len(emails_data)} emails récupérés et sauvegardés en CSV")
         return emails_data
 
     except Exception as e:
-        print(f"❌ Erreur: {e}")
+        print(f" Erreur: {e}")
         return []
 
 
@@ -98,7 +98,7 @@ def process_email(mail, email_id, email_type):
                     "processed_at": datetime.now().isoformat()
                 }
     except Exception as e:
-        print(f"⚠️ Erreur traitement email: {e}")
+        print(f" Erreur traitement email: {e}")
         return None
 
 
@@ -235,7 +235,7 @@ def generate_csv_files(emails_data):
         for email_data in emails_data:
             writer.writerow(email_data)
 
-    print(f"✅ Fichier CSV généré: {csv_file_path}")
+    print(f" Fichier CSV généré: {csv_file_path}")
 
     # 2. Fichier JSON (pour compatibilité et backup)
     json_data = {
@@ -249,7 +249,7 @@ def generate_csv_files(emails_data):
     with open(json_file_path, "w", encoding="utf-8") as f:
         json.dump(json_data, f, ensure_ascii=False, indent=2)
 
-    print(f"✅ Fichier JSON généré: {json_file_path}")
+    print(f" Fichier JSON généré: {json_file_path}")
 
     # 3. Génération des statistiques
     generate_statistics(emails_data, output_dir)
@@ -285,14 +285,14 @@ def generate_statistics(emails_data, output_dir):
     with open(stats_file, "w", encoding="utf-8") as f:
         json.dump(stats, f, ensure_ascii=False, indent=2)
 
-    print(f"✅ Statistiques générées: {stats_file}")
+    print(f" Statistiques générées: {stats_file}")
 
     # Afficher un résumé
-    print("\n📊 Résumé:")
-    print(f"   📧 Total: {stats['total_emails']}")
-    print(f"   ✅ Importants: {stats['important_emails']}")
-    print(f"   🚫 Spam: {stats['spam_emails']}")
-    print(f"   📈 Taux de réussite: {stats['success_rate']}%")
+    print("\n Résumé:")
+    print(f"    Total: {stats['total_emails']}")
+    print(f"    Importants: {stats['important_emails']}")
+    print(f"    Spam: {stats['spam_emails']}")
+    print(f"    Taux de réussite: {stats['success_rate']}%")
 
 
 if __name__ == "__main__":
@@ -300,11 +300,11 @@ if __name__ == "__main__":
 
     # Vérification de la configuration
     if not os.getenv("EMAIL_PASSWORD"):
-        print("⚠️ Configuration manquante!")
+        print(" Configuration manquante!")
         print("Créez un fichier .env avec:")
         print("EMAIL_USERNAME=votre@gmail.com")
         print("EMAIL_PASSWORD=votre_mot_de_passe_application")
         exit(1)
 
     emails = fetch_emails_from_gmail()
-    print("🎉 Terminé!")
+    print(" Terminé!")
