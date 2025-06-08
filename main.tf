@@ -11,7 +11,7 @@ resource "aws_security_group" "allow_ssh" {
     from_port   = 22
     to_port     = 22
     protocol    = "tcp"
-    cidr_blocks = ["0.0.0.0/0"] # ⚠️ pour tester.
+    cidr_blocks = ["0.0.0.0/0"] # TODO: Restrict this to your IP for security
      }
 
   ingress {
@@ -55,7 +55,7 @@ resource "aws_instance" "docker_host" {
     user        = "ubuntu"
     private_key = file("/Users/vauclinetienne/.ssh/id_ed25519")
     host        = self.public_ip
-    timeout     = "10m"  # Increased timeout
+    timeout     = "10m"  # if timeout occurs,increase this
   }
 
   provisioner "remote-exec" {
