@@ -1,4 +1,3 @@
-# Utiliser une image de base Python
 FROM python:3.9
 
 # Définir le répertoire de travail

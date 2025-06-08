@@ -7,10 +7,9 @@ services:
       dockerfile: Dockerfile_ml
     ports:
       - "80:80"
-    volumes:
-      - ./app:/app
     environment:
       - PYTHONUNBUFFERED=1
+    restart: unless-stopped
 
   web:
     build:
@@ -18,3 +17,6 @@ services:
       dockerfile: Dockerfile_web
     ports:
       - "8080:80"
+    depends_on:
+      - fastapi
+    restart: unless-stopped
