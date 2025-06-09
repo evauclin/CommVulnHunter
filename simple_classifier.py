@@ -26,13 +26,11 @@ class EmailClassifier:
             "total_classified": 0,
             "spam_detected": 0,
             "important_detected": 0,
-            "errors": 0
+            "errors": 0,
         }
 
     def classify(self, from_addr: str, subject: str, body: str) -> str:
-        """
-
-        """
+        """ """
         self.stats["total_classified"] += 1
 
         result = self._classify_ml(from_addr, subject, body)
@@ -48,18 +46,19 @@ class EmailClassifier:
         return result
 
     def clean_text(self, text):
-
         if not text or not isinstance(text, str):
             return ""
 
         # Supprimer les espaces supplémentaires
-        no_extra_spaces = ' '.join(text.split())
+        no_extra_spaces = " ".join(text.split())
 
         # Remplacer les guillemets pour éviter les conflits
         safe_quotes = (
-            no_extra_spaces
-            .replace('"', '"')  # Remplacer les guillemets doubles
-            .replace("'", '  ')  # Remplacer les guillemets simples
+            no_extra_spaces.replace(
+                '"', '"'
+            ).replace(  # Remplacer les guillemets doubles
+                "'", "  "
+            )  # Remplacer les guillemets simples
         )
         return safe_quotes
 
@@ -84,9 +83,7 @@ class EmailClassifier:
         try:
             # Appel à l'API ML
             response = requests.post(
-                f"{self.api_url}/predict",
-                json={"text": cleaned_text},
-                timeout=10
+                f"{self.api_url}/predict", json={"text": cleaned_text}, timeout=10
             )
 
             if response.status_code == 200:
@@ -102,7 +99,9 @@ class EmailClassifier:
                 return "ERROR"
 
         except requests.exceptions.ConnectionError:
-            print("Erreur : Impossible de se connecter à l'API ML. Vérifiez que l'API est démarrée.")
+            print(
+                "Erreur : Impossible de se connecter à l'API ML. Vérifiez que l'API est démarrée."
+            )
             return "ERROR"
         except requests.exceptions.Timeout:
             print("Erreur : Timeout lors de l'appel à l'API ML.")
@@ -121,7 +120,7 @@ class EmailClassifier:
             **self.stats,
             "spam_rate": round((self.stats["spam_detected"] / total) * 100, 2),
             "error_rate": round((self.stats["errors"] / total) * 100, 2),
-            "success_rate": round(((total - self.stats["errors"]) / total) * 100, 2)
+            "success_rate": round(((total - self.stats["errors"]) / total) * 100, 2),
         }
 
     def reset_stats(self):
@@ -130,7 +129,7 @@ class EmailClassifier:
             "total_classified": 0,
             "spam_detected": 0,
             "important_detected": 0,
-            "errors": 0
+            "errors": 0,
         }
 
     def test_api_connection(self) -> bool:

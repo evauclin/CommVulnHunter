@@ -1,3 +1,5 @@
+from pathlib import Path
+
 from fastapi import FastAPI
 from pydantic import BaseModel
 import pickle
@@ -20,13 +22,15 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Chargement des modèles et preprocesseurs
-model = load_model('model/best_lstm_model.keras')
-with open('model/tokenizer.pkl', 'rb') as f:
+current_dir = Path(__file__).parent
+model_dir = current_dir / "model"
+
+model = load_model(model_dir / "best_lstm_model.keras")
+with open(model_dir / "tokenizer.pkl", "rb") as f:
     tokenizer = pickle.load(f)
-with open('model/scaler.pkl', 'rb') as f:
+with open(model_dir / "scaler.pkl", "rb") as f:
     scaler = pickle.load(f)
-with open('model/label_encoder.pkl', 'rb') as f:
+with open(model_dir / "label_encoder.pkl", "rb") as f:
     label_encoder = pickle.load(f)
 
 
@@ -41,30 +45,33 @@ def preprocess_text(text):
 
     text = str(text).lower()
 
-
-    text = re.sub(r'http[s]?://(?:[a-zA-Z]|[0-9]|[$-_@.&+]|[!*\\(\\),]|(?:%[0-9a-fA-F][0-9a-fA-F]))+',
-                  ' URL_TOKEN ', text)
+    text = re.sub(
+        r"http[s]?://(?:[a-zA-Z]|[0-9]|[$-_@.&+]|[!*\\(\\),]|(?:%[0-9a-fA-F][0-9a-fA-F]))+",
+        " URL_TOKEN ",
+        text,
+    )
 
     # Remplacer les emails par un token spécial
-    text = re.sub(r'\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}\b',
-                  ' EMAIL_TOKEN ', text)
+    text = re.sub(
+        r"\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}\b", " EMAIL_TOKEN ", text
+    )
 
     # Remplacer les numéros par un token
-    text = re.sub(r'\b\d+\b', ' NUM_TOKEN ', text)
+    text = re.sub(r"\b\d+\b", " NUM_TOKEN ", text)
 
     # Nettoyer la ponctuation excessive mais garder la structure
-    text = re.sub(r'[^\w\s]', ' ', text)
-    text = re.sub(r'\s+', ' ', text).strip()
+    text = re.sub(r"[^\w\s]", " ", text)
+    text = re.sub(r"\s+", " ", text).strip()
 
     # Tokenisation simple pour LSTM (pas de stemming agressif)
     tokens = text.split()
 
     filtered_tokens = []
     for token in tokens:
-        if len(token) > 1 and token not in ['the', 'a', 'an', 'and', 'or', 'but']:
+        if len(token) > 1 and token not in ["the", "a", "an", "and", "or", "but"]:
             filtered_tokens.append(token)
 
-    return ' '.join(filtered_tokens)
+    return " ".join(filtered_tokens)
 
 
 def extract_numerical_features(text):
@@ -77,27 +84,48 @@ def extract_numerical_features(text):
     char_count = len(text_str)
     word_count = len(text_str.split())
 
-    exclamation_count = text_str.count('!')
-    question_count = text_str.count('?')
+    exclamation_count = text_str.count("!")
+    question_count = text_str.count("?")
     upper_count = sum(1 for c in text_str if c.isupper())
     upper_ratio = upper_count / max(char_count, 1)
 
-    url_count = len(re.findall(r'http[s]?://', text_str))
-    email_count = len(re.findall(r'\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}\b', text_str))
+    url_count = len(re.findall(r"http[s]?://", text_str))
+    email_count = len(
+        re.findall(r"\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}\b", text_str)
+    )
 
     suspicious_words = [
-        'urgent', 'immediate', 'verify', 'confirm', 'suspended', 'expired',
-        'winner', 'congratulations', 'free', 'click', 'now', 'limited'
+        "urgent",
+        "immediate",
+        "verify",
+        "confirm",
+        "suspended",
+        "expired",
+        "winner",
+        "congratulations",
+        "free",
+        "click",
+        "now",
+        "limited",
     ]
     suspicious_count = sum(1 for word in suspicious_words if word in text_str.lower())
 
     digit_ratio = sum(1 for c in text_str if c.isdigit()) / max(char_count, 1)
-    special_char_ratio = sum(1 for c in text_str if c in '!@#$%^&*()') / max(char_count, 1)
+    special_char_ratio = sum(1 for c in text_str if c in "!@#$%^&*()") / max(
+        char_count, 1
+    )
 
     features = [
-        char_count, word_count, exclamation_count, question_count,
-        upper_ratio, url_count, email_count, suspicious_count,
-        digit_ratio, special_char_ratio
+        char_count,
+        word_count,
+        exclamation_count,
+        question_count,
+        upper_ratio,
+        url_count,
+        email_count,
+        suspicious_count,
+        digit_ratio,
+        special_char_ratio,
     ]
 
     return features
@@ -108,18 +136,17 @@ def read_root():
     return {
         "message": "API de détection de phishing avec LSTM",
         "status": "active",
-        "tensorflow_version": tf.__version__
+        "tensorflow_version": tf.__version__,
     }
 
 
-# 🏥 Health check - VERSION UNIQUE
 @app.get("/health")
 def health_check():
     return {
         "status": "healthy",
         "model_loaded": model is not None,
         "tensorflow_version": tf.__version__,
-        "message": "ML API is running"
+        "message": "ML API is running",
     }
 
 
@@ -133,7 +160,9 @@ def predict(text_input: TextInput):
         print(f"🔤 Texte preprocessé: {processed_text}...")
 
         sequence = tokenizer.texts_to_sequences([processed_text])
-        padded_sequence = pad_sequences(sequence, maxlen=150, padding='post', truncating='post')
+        padded_sequence = pad_sequences(
+            sequence, maxlen=566, padding="post", truncating="post"
+        )
         print(text_input.text)
 
         numerical_features = extract_numerical_features(text_input.text)
@@ -146,22 +175,23 @@ def predict(text_input: TextInput):
         prediction = model.predict([padded_sequence, scaled_features])
         predicted_class = label_encoder.inverse_transform([int(prediction > 0.5)])
 
-        print(f"🎯 Classe prédite: {predicted_class[0]} avec probabilité: {prediction[0][0]}")
+        print(
+            f"🎯 Classe prédite: {predicted_class[0]} avec probabilité: {prediction[0][0]}"
+        )
 
         return {
             "prediction": predicted_class[0],
             "probability": float(prediction[0][0]),
-            "confidence": "HIGH" if abs(prediction[0][0] - 0.5) > 0.3 else "MEDIUM" if abs(
-                prediction[0][0] - 0.5) > 0.1 else "LOW",
+            "confidence": "HIGH"
+            if abs(prediction[0][0] - 0.5) > 0.3
+            else "MEDIUM"
+            if abs(prediction[0][0] - 0.5) > 0.1
+            else "LOW",
         }
 
     except Exception as e:
         print(f"❌ Erreur lors de la prédiction: {e}")
-        return {
-            "error": str(e),
-            "prediction": "error",
-            "probability": 0.0
-        }
+        return {"error": str(e), "prediction": "error", "probability": 0.0}
 
 
 @app.post("/predict/batch")

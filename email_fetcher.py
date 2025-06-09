@@ -22,8 +22,8 @@ def fetch_emails_from_gmail():
     """Récupère les emails depuis Gmail et les formate en CSV"""
 
     # Configuration Gmail
-    username = os.getenv('EMAIL_USERNAME', 'farinesfari@gmail.com')
-    password = os.getenv('EMAIL_PASSWORD', 'aelk usor ixat xoyd')
+    username = os.getenv("EMAIL_USERNAME", "farinesfari@gmail.com")
+    password = os.getenv("EMAIL_PASSWORD", "aelk usor ixat xoyd")
 
     try:
         # Connexion à Gmail
@@ -95,7 +95,7 @@ def process_email(mail, email_id, email_type):
                     "subject": subject,
                     "body": body,
                     "message_id": message_id,
-                    "processed_at": datetime.now().isoformat()
+                    "processed_at": datetime.now().isoformat(),
                 }
     except Exception as e:
         print(f" Erreur traitement email: {e}")
@@ -105,6 +105,7 @@ def process_email(mail, email_id, email_type):
 def generate_email_id(from_addr, subject, date_str):
     """Génère un ID unique pour l'email"""
     import hashlib
+
     content = f"{from_addr}-{subject}-{date_str}"
     return hashlib.md5(content.encode()).hexdigest()[:12]
 
@@ -122,7 +123,7 @@ def decode_header_text(header_value):
                 if encoding:
                     decoded_text += part.decode(encoding)
                 else:
-                    decoded_text += part.decode('utf-8', errors='ignore')
+                    decoded_text += part.decode("utf-8", errors="ignore")
             else:
                 decoded_text += part
         return clean_text_for_csv(decoded_text.strip())
@@ -136,13 +137,13 @@ def clean_text_for_csv(text):
         return ""
 
     # Supprimer les caractères de contrôle
-    text = re.sub(r'[\x00-\x08\x0b\x0c\x0e-\x1f\x7f-\x9f]', '', text)
+    text = re.sub(r"[\x00-\x08\x0b\x0c\x0e-\x1f\x7f-\x9f]", "", text)
 
     # Remplacer les retours à la ligne par des espaces
-    text = re.sub(r'\r?\n', ' ', text)
+    text = re.sub(r"\r?\n", " ", text)
 
     # Nettoyer les espaces multiples
-    text = re.sub(r'\s+', ' ', text)
+    text = re.sub(r"\s+", " ", text)
 
     return text.strip()
 
@@ -168,13 +169,13 @@ def extract_body(msg):
                 if part.get_content_type() == "text/plain":
                     payload = part.get_payload(decode=True)
                     if payload:
-                        body = payload.decode('utf-8', errors='ignore')
+                        body = payload.decode("utf-8", errors="ignore")
                         break
                 elif part.get_content_type() == "text/html" and not body:
                     # Fallback vers HTML si pas de texte plain
                     payload = part.get_payload(decode=True)
                     if payload:
-                        html_body = payload.decode('utf-8', errors='ignore')
+                        html_body = payload.decode("utf-8", errors="ignore")
                         # Extraire le texte du HTML (simple)
                         body = extract_text_from_html(html_body)
         else:
@@ -182,13 +183,17 @@ def extract_body(msg):
             if payload:
                 content_type = msg.get_content_type()
                 if content_type == "text/html":
-                    body = extract_text_from_html(payload.decode('utf-8', errors='ignore'))
+                    body = extract_text_from_html(
+                        payload.decode("utf-8", errors="ignore")
+                    )
                 else:
-                    body = payload.decode('utf-8', errors='ignore')
+                    body = payload.decode("utf-8", errors="ignore")
 
         # Nettoyer et limiter le contenu
         body = clean_text_for_csv(body)
-        return body[:1000] if body else "Contenu non disponible"  # Limiter à 1000 caractères
+        return (
+            body[:1000] if body else "Contenu non disponible"
+        )  # Limiter à 1000 caractères
     except:
         return "Contenu non disponible"
 
@@ -198,18 +203,22 @@ def extract_text_from_html(html_content):
     import re
 
     # Supprimer les scripts et styles
-    html_content = re.sub(r'<script[^>]*>.*?</script>', '', html_content, flags=re.DOTALL | re.IGNORECASE)
-    html_content = re.sub(r'<style[^>]*>.*?</style>', '', html_content, flags=re.DOTALL | re.IGNORECASE)
+    html_content = re.sub(
+        r"<script[^>]*>.*?</script>", "", html_content, flags=re.DOTALL | re.IGNORECASE
+    )
+    html_content = re.sub(
+        r"<style[^>]*>.*?</style>", "", html_content, flags=re.DOTALL | re.IGNORECASE
+    )
 
     # Supprimer les balises HTML
-    text = re.sub(r'<[^>]+>', ' ', html_content)
+    text = re.sub(r"<[^>]+>", " ", html_content)
 
     # Décoder les entités HTML communes
-    text = text.replace('&nbsp;', ' ')
-    text = text.replace('&amp;', '&')
-    text = text.replace('&lt;', '<')
-    text = text.replace('&gt;', '>')
-    text = text.replace('&quot;', '"')
+    text = text.replace("&nbsp;", " ")
+    text = text.replace("&amp;", "&")
+    text = text.replace("&lt;", "<")
+    text = text.replace("&gt;", ">")
+    text = text.replace("&quot;", '"')
 
     return text
 
@@ -226,9 +235,19 @@ def generate_csv_files(emails_data):
     json_file_path = os.path.join(output_dir, "emails_live.json")
 
     # 1. Fichier CSV principal
-    fieldnames = ['id', 'type', 'from', 'to', 'date', 'subject', 'body', 'message_id', 'processed_at']
+    fieldnames = [
+        "id",
+        "type",
+        "from",
+        "to",
+        "date",
+        "subject",
+        "body",
+        "message_id",
+        "processed_at",
+    ]
 
-    with open(csv_file_path, 'w', newline='', encoding='utf-8') as csvfile:
+    with open(csv_file_path, "w", newline="", encoding="utf-8") as csvfile:
         writer = csv.DictWriter(csvfile, fieldnames=fieldnames, quoting=csv.QUOTE_ALL)
         writer.writeheader()
 
@@ -243,7 +262,7 @@ def generate_csv_files(emails_data):
         "total_emails": len(emails_data),
         "source": "gmail_imap",
         "format_version": "2.0",
-        "emails": emails_data
+        "emails": emails_data,
     }
 
     with open(json_file_path, "w", encoding="utf-8") as f:
@@ -260,25 +279,28 @@ def generate_statistics(emails_data, output_dir):
 
     stats = {
         "total_emails": len(emails_data),
-        "important_emails": len([e for e in emails_data if e['type'] == 'IMPORTANT']),
-        "spam_emails": len([e for e in emails_data if e['type'] == 'SPAM']),
+        "important_emails": len([e for e in emails_data if e["type"] == "IMPORTANT"]),
+        "spam_emails": len([e for e in emails_data if e["type"] == "SPAM"]),
         "generated_at": datetime.now().isoformat(),
     }
 
     # Statistiques par domaine
     domains = {}
     for email_data in emails_data:
-        from_addr = email_data.get('from', '')
-        if '@' in from_addr:
-            domain = from_addr.split('@')[-1].split('>')[0].strip()
+        from_addr = email_data.get("from", "")
+        if "@" in from_addr:
+            domain = from_addr.split("@")[-1].split(">")[0].strip()
             if domain not in domains:
                 domains[domain] = {"total": 0, "spam": 0, "important": 0}
             domains[domain]["total"] += 1
-            domains[domain][email_data['type'].lower()] += 1
+            domains[domain][email_data["type"].lower()] += 1
 
     stats["domains"] = domains
-    stats["success_rate"] = round((stats["important_emails"] / stats["total_emails"]) * 100, 2) if stats[
-                                                                                                       "total_emails"] > 0 else 0
+    stats["success_rate"] = (
+        round((stats["important_emails"] / stats["total_emails"]) * 100, 2)
+        if stats["total_emails"] > 0
+        else 0
+    )
 
     # Sauvegarder les statistiques
     stats_file = os.path.join(output_dir, "email_stats.json")

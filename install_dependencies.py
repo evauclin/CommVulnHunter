@@ -63,7 +63,7 @@ def main():
 
         # Proposer de créer le fichier .env
         create_env = input("   Voulez-vous créer le fichier .env maintenant ? (o/n): ")
-        if create_env.lower() in ['o', 'oui', 'y', 'yes']:
+        if create_env.lower() in ["o", "oui", "y", "yes"]:
             username = input("   Email Gmail: ")
             password = input("   Mot de passe d'application: ")
 
