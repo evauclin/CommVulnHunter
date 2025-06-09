@@ -57,8 +57,19 @@
     <script src="csvEmailLoader.js" defer></script>
 
     <script defer>
-        let currentFilter = 'ALL', currentSearchQuery = '', filteredEmails = [], mlApiUrl = 'http://localhost:80', mlStatusOnline = false;
+        let currentFilter = 'ALL', currentSearchQuery = '', filteredEmails = [], mlStatusOnline = false;
 
+const getApiUrl = () => {
+    const hostname = window.location.hostname;
+    // Si on est en développement local
+    if (hostname === 'localhost' || hostname === '127.0.0.1') {
+        return 'http://localhost:80';
+    }
+    // Si on est sur AWS ou autre serveur
+    return `http://${hostname}:80`;
+};
+
+const mlApiUrl = getApiUrl();
         async function loadLiveEmails() {
             try {
                 await emailLoader.loadEmailsFromCSV('./emails_live.csv');
