@@ -186,11 +186,13 @@ set_classification_mode("ml")
 ✨ **Version Simple - Prête pour l'évolution vers un modèle ML avancé** ✨# CommVulnHunter
 
 
-## commande to build the image
+## commande to build and run the image in local
 ```bash
-docker build -t phishing-detector . 
+docker-compose up --build 
 ```
-## commande to run the image
+## you can deploy these containers on aws with terraform
 ```bash
-uvicorn app.main:app --reload --host 0.0.0.0 --port 80
+terraform init
+terraform plan
+terraform apply
 ```
