@@ -46,9 +46,17 @@ resource "aws_instance" "docker_host" {
 
   user_data = file("install.sh")
 
+  root_block_device {
+    volume_size = 15
+    volume_type = "gp3"
+    delete_on_termination = true
+  }
+
   tags = {
     Name = "docker-compose-fastapi-web"
   }
+
+
 
   connection {
     type        = "ssh"
