@@ -1,0 +1,26 @@
+{
+  "model_type": "LSTM_Hybrid_FR_EN",
+  "model_file": "best_lstm_model.keras",
+  "tokenizer_file": "tokenizer.pkl",
+  "scaler_file": "scaler.pkl",
+  "label_encoder_file": "label_encoder.pkl",
+  "config": {
+    "embedding_dim": 128,
+    "lstm_units": 64,
+    "dense_units": 32,
+    "dropout_rate": 0.4,
+    "learning_rate": 0.001,
+    "batch_size": 128,
+    "epochs": 30,
+    "patience": 2,
+    "suspicious_words_path": "suspicious_words.json",
+    "max_vocab_size": 465661,
+    "max_sequence_length": 256
+  },
+  "vocabulary_size": 465660,
+  "classes": [
+    "benign",
+    "phishing"
+  ],
+  "creation_date": "2025-06-10T06:39:08.680881"
+}
