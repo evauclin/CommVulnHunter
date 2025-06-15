@@ -1,0 +1,31 @@
+# requirements.txt
+# Dépendances pour Email Filter CSV
+
+# Configuration et variables d'environnement
+python-dotenv>=1.0.0
+
+# Planification des tâches
+schedule>=1.2.0
+
+# Traitement des emails (inclus dans Python standard)
+# imaplib - inclus
+# email - inclus
+# csv - inclus
+# json - inclus
+
+# Logging avancé (optionnel)
+colorlog>=6.7.0
+
+# Utilitaires pour le traitement de texte
+beautifulsoup4>=4.12.0
+lxml>=4.9.0
+
+# Validation et nettoyage des données
+validators>=0.22.0
+
+# Interface en ligne de commande améliorée
+click>=8.1.0
+rich>=13.6.0
+
+# Sauvegarde et archivage (optionnel)
+pandas>=2.1.0
