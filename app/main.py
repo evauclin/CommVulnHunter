@@ -8,7 +8,16 @@ import numpy as np
 import pandas as pd
 import re
 from fastapi.middleware.cors import CORSMiddleware
+from datetime import datetime
+import sqlite3
+import threading
+import time
 
+# Import du système de feedback
+import sys
+import os
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+from feedbacks_collector import FeedbackCollector, start_feedback_monitoring
 app = FastAPI(title="Email Spam Detection API")
 print("tensorflow version:", tf.__version__)
 
@@ -32,7 +41,17 @@ with open('model/label_encoder.pkl', 'rb') as f:
 
 class TextInput(BaseModel):
     text: str
+class FeedbackInput(BaseModel):
+    email_text: str
+    predicted_label: str
+    user_satisfaction: str  # "yes" ou "no"
+    confidence_score: float = None
+    email_id: str = None  # Optionnel pour traçabilité
 
+class FeedbackResponse(BaseModel):
+    status: str
+    message: str
+    feedback_id: int = None
 
 def preprocess_text(text):
     """Preprocessing spécialisé pour LSTM (même logique que durant l'entraînement)"""
@@ -108,29 +127,108 @@ def read_root():
     return {
         "message": "API de détection de phishing avec LSTM",
         "status": "active",
-        "tensorflow_version": tf.__version__
+        "tensorflow_version": tf.__version__,
+        "feedback_enabled": True
     }
 
 
 # 🏥 Health check - VERSION UNIQUE
 @app.get("/health")
 def health_check():
+    stats = feedbacks_collector.get_feedback_stats()
     return {
         "status": "healthy",
         "model_loaded": model is not None,
         "tensorflow_version": tf.__version__,
-        "message": "ML API is running"
+        "message": "ML API is running",
+        "feedback_stats": {
+            "total_feedbacks": stats['total_feedbacks'],
+            "accuracy_rate": round(stats['accuracy_rate'] * 100, 2)
+        }
     }
 
+
+# Endpoint pour tester le système de feedback
+@app.post("/feedback/test")
+def test_feedback_system():
+    """
+    Endpoint de test pour vérifier le système de feedback
+    """
+    try:
+        # Créer quelques feedbacks de test
+        test_data = [
+            {
+                "email_text": "URGENT: Verify your account now or it will be suspended!",
+                "predicted_label": "phishing",
+                "user_satisfaction": "yes",
+                "confidence_score": 0.85
+            },
+            {
+                "email_text": "Meeting scheduled for tomorrow at 2 PM in conference room B",
+                "predicted_label": "phishing",
+                "user_satisfaction": "no",  # Faux positif
+                "confidence_score": 0.65
+            }
+        ]
+
+        results = []
+        for data in test_data:
+            feedback_collector.save_feedback(**data)
+            results.append(f"Feedback créé: {data['user_satisfaction']} pour {data['predicted_label']}")
+
+        stats = feedback_collector.get_feedback_stats()
+
+        return {
+            "status": "success",
+            "message": "Données de test créées",
+            "test_results": results,
+            "updated_stats": stats
+        }
+
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Erreur test: {e}")
+
+
+@app.get("/feedback/export")
+def export_feedback_data():
+    """
+    Exporter les données de feedback pour analyse (format JSON)
+    """
+    try:
+        conn = sqlite3.connect(feedback_collector.db_path)
+
+        # Exporter tous les feedbacks
+        df = pd.read_sql_query('''
+            SELECT 
+                email_text, 
+                predicted_label, 
+                user_satisfaction, 
+                correct_label,
+                confidence_score,
+                timestamp
+            FROM feedbacks 
+            ORDER BY timestamp DESC
+        ''', conn)
+
+        conn.close()
+
+        return {
+            "total_records": len(df),
+            "export_timestamp": datetime.now().isoformat(),
+            "data": df.to_dict('records')
+        }
+
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Erreur export: {e}")
 
 @app.post("/predict")
 def predict(text_input: TextInput):
     try:
-        print(f"📧 Analyse d'un email de {len(text_input.text)} caractères")
+        print(f"Analyse d'un email de {len(text_input.text)} caractères")
 
         processed_text = preprocess_text(text_input.text)
 
-        print(f"🔤 Texte preprocessé: {processed_text}...")
+        print(f"Texte preprocessé: {processed_text}...")
 
         sequence = tokenizer.texts_to_sequences([processed_text])
         padded_sequence = pad_sequences(sequence, maxlen=150, padding='post', truncating='post')
@@ -139,14 +237,14 @@ def predict(text_input: TextInput):
         numerical_features = extract_numerical_features(text_input.text)
         scaled_features = scaler.transform([numerical_features])
 
-        print("📊 Features numériques:", numerical_features)
-        print("📐 Features scaled shape:", scaled_features.shape)
-        print("📝 Sequence shape:", padded_sequence.shape)
+        print(" Features numériques:", numerical_features)
+        print(" Features scaled shape:", scaled_features.shape)
+        print(" Sequence shape:", padded_sequence.shape)
 
         prediction = model.predict([padded_sequence, scaled_features])
         predicted_class = label_encoder.inverse_transform([int(prediction > 0.5)])
 
-        print(f"🎯 Classe prédite: {predicted_class[0]} avec probabilité: {prediction[0][0]}")
+        print(f" Classe prédite: {predicted_class[0]} avec probabilité: {prediction[0][0]}")
 
         return {
             "prediction": predicted_class[0],
@@ -156,7 +254,7 @@ def predict(text_input: TextInput):
         }
 
     except Exception as e:
-        print(f"❌ Erreur lors de la prédiction: {e}")
+        print(f" Erreur lors de la prédiction: {e}")
         return {
             "error": str(e),
             "prediction": "error",
@@ -181,5 +279,12 @@ def predict_batch(texts: list[str]):
 if __name__ == "__main__":
     import uvicorn
 
-    print("🚀 Démarrage de l'API ML sur le port 80...")
+    print(" Démarrage de l'API ML sur le port 80...")
+    print("📊 Endpoints disponibles:")
+    print("   POST /predict - Prédiction ML")
+    print("   POST /feedback - Soumettre feedback")
+    print("   GET  /feedback/stats - Statistiques feedback")
+    print("   POST /feedback/trigger-retraining - Déclencher réentraînement")
+    print("   GET  /feedback/export - Exporter données feedback")
+    print("   POST /feedback/test - Tester le système")
     uvicorn.run(app, host="0.0.0.0", port=80)
