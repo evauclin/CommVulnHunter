@@ -1,4 +1,5 @@
-from fastapi import FastAPI
+# ✅ Imports corrects en tête
+from fastapi import FastAPI, HTTPException  # ✅ HTTPException depuis fastapi
 from pydantic import BaseModel
 import pickle
 import tensorflow as tf
@@ -13,14 +14,20 @@ import sqlite3
 import threading
 import time
 
-# Import du système de feedback
-import sys
-import os
-sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+# ✅ Import système feedback corrigé
 from feedbacks_collector import FeedbackCollector, start_feedback_monitoring
-app = FastAPI(title="Email Spam Detection API")
+
+# ✅ Créer l'app FastAPI AVANT de l'utiliser
+app = FastAPI(title="Email Spam Detection API with Feedback")
 print("tensorflow version:", tf.__version__)
 
+# ✅ Initialiser le système de feedback
+feedback_collector = FeedbackCollector()
+
+# ✅ Démarrer le monitoring automatique
+start_feedback_monitoring()
+
+# ✅ CORS middleware APRÈS création de l'app
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -39,8 +46,11 @@ with open('model/label_encoder.pkl', 'rb') as f:
     label_encoder = pickle.load(f)
 
 
+# Modèles Pydantic
 class TextInput(BaseModel):
     text: str
+
+
 class FeedbackInput(BaseModel):
     email_text: str
     predicted_label: str
@@ -48,10 +58,12 @@ class FeedbackInput(BaseModel):
     confidence_score: float = None
     email_id: str = None  # Optionnel pour traçabilité
 
+
 class FeedbackResponse(BaseModel):
     status: str
     message: str
     feedback_id: int = None
+
 
 def preprocess_text(text):
     """Preprocessing spécialisé pour LSTM (même logique que durant l'entraînement)"""
@@ -59,7 +71,6 @@ def preprocess_text(text):
         return ""
 
     text = str(text).lower()
-
 
     text = re.sub(r'http[s]?://(?:[a-zA-Z]|[0-9]|[$-_@.&+]|[!*\\(\\),]|(?:%[0-9a-fA-F][0-9a-fA-F]))+',
                   ' URL_TOKEN ', text)
@@ -87,7 +98,7 @@ def preprocess_text(text):
 
 
 def extract_numerical_features(text):
-    """Extraire des features numériques pour un seul texte (adapté de la version DataFrame)"""
+    """Extraire des features numériques pour un seul texte"""
     if pd.isna(text) or text is None:
         text = ""
 
@@ -122,20 +133,21 @@ def extract_numerical_features(text):
     return features
 
 
+# Endpoints principaux
 @app.get("/")
 def read_root():
     return {
-        "message": "API de détection de phishing avec LSTM",
+        "message": "API de détection de phishing avec LSTM et système de feedback",
         "status": "active",
         "tensorflow_version": tf.__version__,
         "feedback_enabled": True
     }
 
 
-# 🏥 Health check - VERSION UNIQUE
 @app.get("/health")
 def health_check():
-    stats = feedbacks_collector.get_feedback_stats()
+    # ✅ Utiliser l'instance feedback_collector
+    stats = feedback_collector.get_feedback_stats()
     return {
         "status": "healthy",
         "model_loaded": model is not None,
@@ -148,56 +160,144 @@ def health_check():
     }
 
 
-# Endpoint pour tester le système de feedback
-@app.post("/feedback/test")
-def test_feedback_system():
-    """
-    Endpoint de test pour vérifier le système de feedback
-    """
+@app.post("/predict")
+def predict(text_input: TextInput):
     try:
-        # Créer quelques feedbacks de test
-        test_data = [
-            {
-                "email_text": "URGENT: Verify your account now or it will be suspended!",
-                "predicted_label": "phishing",
-                "user_satisfaction": "yes",
-                "confidence_score": 0.85
-            },
-            {
-                "email_text": "Meeting scheduled for tomorrow at 2 PM in conference room B",
-                "predicted_label": "phishing",
-                "user_satisfaction": "no",  # Faux positif
-                "confidence_score": 0.65
-            }
-        ]
+        print(f"📧 Analyse d'un email de {len(text_input.text)} caractères")
 
-        results = []
-        for data in test_data:
-            feedback_collector.save_feedback(**data)
-            results.append(f"Feedback créé: {data['user_satisfaction']} pour {data['predicted_label']}")
+        processed_text = preprocess_text(text_input.text)
+        sequence = tokenizer.texts_to_sequences([processed_text])
+        padded_sequence = pad_sequences(sequence, maxlen=150, padding='post', truncating='post')
+
+        numerical_features = extract_numerical_features(text_input.text)
+        scaled_features = scaler.transform([numerical_features])
+
+        prediction = model.predict([padded_sequence, scaled_features])
+        predicted_class = label_encoder.inverse_transform([int(prediction > 0.5)])
+
+        confidence_level = "HIGH" if abs(prediction[0][0] - 0.5) > 0.3 else "MEDIUM" if abs(
+            prediction[0][0] - 0.5) > 0.1 else "LOW"
+
+        result = {
+            "prediction": predicted_class[0],
+            "probability": float(prediction[0][0]),
+            "confidence": confidence_level,
+            "timestamp": datetime.now().isoformat(),
+            "model_version": "lstm_v1"
+        }
+
+        print(f"🎯 Prédiction: {predicted_class[0]} (confiance: {prediction[0][0]:.3f})")
+
+        return result
+
+    except Exception as e:
+        print(f"❌ Erreur lors de la prédiction: {e}")
+        return {
+            "error": str(e),
+            "prediction": "error",
+            "probability": 0.0
+        }
+
+
+# 🆕 ENDPOINTS FEEDBACK
+
+@app.post("/feedback", response_model=FeedbackResponse)
+def submit_feedback(feedback: FeedbackInput):
+    """Soumettre un feedback utilisateur sur une prédiction"""
+    try:
+        print(f"📝 Nouveau feedback: {feedback.user_satisfaction} pour {feedback.predicted_label}")
+
+        # ✅ Utiliser l'instance feedback_collector
+        feedback_collector.save_feedback(
+            email_text=feedback.email_text,
+            predicted_label=feedback.predicted_label,
+            user_satisfaction=feedback.user_satisfaction,
+            confidence_score=feedback.confidence_score
+        )
 
         stats = feedback_collector.get_feedback_stats()
 
+        return FeedbackResponse(
+            status="success",
+            message=f"Feedback enregistré. Total: {stats['total_feedbacks']} feedbacks",
+            feedback_id=stats['total_feedbacks']
+        )
+
+    except Exception as e:
+        print(f"❌ Erreur feedback: {e}")
+        raise HTTPException(status_code=500, detail=f"Erreur lors de l'enregistrement: {e}")
+
+
+@app.get("/feedback/stats")
+def get_feedback_stats():
+    """Obtenir les statistiques des feedbacks"""
+    try:
+        stats = feedback_collector.get_feedback_stats()
+
+        # Historique des réentraînements
+        conn = sqlite3.connect(feedback_collector.db_path)
+        cursor = conn.cursor()
+
+        cursor.execute('''
+            SELECT timestamp, num_feedbacks, old_accuracy, new_accuracy, status 
+            FROM retraining_logs 
+            ORDER BY timestamp DESC 
+            LIMIT 5
+        ''')
+
+        retraining_history = [
+            {
+                "timestamp": row[0],
+                "num_feedbacks": row[1],
+                "old_accuracy": row[2],
+                "new_accuracy": row[3],
+                "status": row[4]
+            }
+            for row in cursor.fetchall()
+        ]
+
+        conn.close()
+
         return {
-            "status": "success",
-            "message": "Données de test créées",
-            "test_results": results,
-            "updated_stats": stats
+            "feedback_statistics": {
+                "total_feedbacks": stats['total_feedbacks'],
+                "negative_feedbacks": stats['negative_feedbacks'],
+                "unprocessed_feedbacks": stats['unprocessed_feedbacks'],
+                "accuracy_rate": round(stats['accuracy_rate'] * 100, 2),
+                "feedback_breakdown": stats['feedback_breakdown']
+            },
+            "retraining_history": retraining_history,
+            "next_retraining_at": f"{50 - stats['unprocessed_feedbacks']} feedbacks restants",
+            "last_update": datetime.now().isoformat()
         }
 
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Erreur test: {e}")
+        raise HTTPException(status_code=500, detail=f"Erreur stats: {e}")
+
+
+@app.post("/feedback/trigger-retraining")
+def trigger_manual_retraining():
+    """Déclencher manuellement un réentraînement (pour les admins)"""
+    try:
+        feedback_collector.trigger_retraining()
+
+        return {
+            "status": "success",
+            "message": "Réentraînement déclenché en arrière-plan",
+            "timestamp": datetime.now().isoformat()
+        }
+
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Erreur déclenchement: {e}")
 
 
 @app.get("/feedback/export")
 def export_feedback_data():
-    """
-    Exporter les données de feedback pour analyse (format JSON)
-    """
+    """Exporter les données de feedback pour analyse (format JSON)"""
     try:
+        # ✅ Utiliser l'instance feedback_collector
         conn = sqlite3.connect(feedback_collector.db_path)
 
-        # Exporter tous les feedbacks
         df = pd.read_sql_query('''
             SELECT 
                 email_text, 
@@ -221,45 +321,43 @@ def export_feedback_data():
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Erreur export: {e}")
 
-@app.post("/predict")
-def predict(text_input: TextInput):
+
+@app.post("/feedback/test")
+def test_feedback_system():
+    """Endpoint de test pour vérifier le système de feedback"""
     try:
-        print(f"Analyse d'un email de {len(text_input.text)} caractères")
+        test_data = [
+            {
+                "email_text": "URGENT: Verify your account now or it will be suspended!",
+                "predicted_label": "phishing",
+                "user_satisfaction": "yes",
+                "confidence_score": 0.85
+            },
+            {
+                "email_text": "Meeting scheduled for tomorrow at 2 PM in conference room B",
+                "predicted_label": "phishing",
+                "user_satisfaction": "no",  # Faux positif
+                "confidence_score": 0.65
+            }
+        ]
 
-        processed_text = preprocess_text(text_input.text)
+        results = []
+        for data in test_data:
+            # ✅ Utiliser l'instance feedback_collector
+            feedback_collector.save_feedback(**data)
+            results.append(f"Feedback créé: {data['user_satisfaction']} pour {data['predicted_label']}")
 
-        print(f"Texte preprocessé: {processed_text}...")
-
-        sequence = tokenizer.texts_to_sequences([processed_text])
-        padded_sequence = pad_sequences(sequence, maxlen=150, padding='post', truncating='post')
-        print(text_input.text)
-
-        numerical_features = extract_numerical_features(text_input.text)
-        scaled_features = scaler.transform([numerical_features])
-
-        print(" Features numériques:", numerical_features)
-        print(" Features scaled shape:", scaled_features.shape)
-        print(" Sequence shape:", padded_sequence.shape)
-
-        prediction = model.predict([padded_sequence, scaled_features])
-        predicted_class = label_encoder.inverse_transform([int(prediction > 0.5)])
-
-        print(f" Classe prédite: {predicted_class[0]} avec probabilité: {prediction[0][0]}")
+        stats = feedback_collector.get_feedback_stats()
 
         return {
-            "prediction": predicted_class[0],
-            "probability": float(prediction[0][0]),
-            "confidence": "HIGH" if abs(prediction[0][0] - 0.5) > 0.3 else "MEDIUM" if abs(
-                prediction[0][0] - 0.5) > 0.1 else "LOW",
+            "status": "success",
+            "message": "Données de test créées",
+            "test_results": results,
+            "updated_stats": stats
         }
 
     except Exception as e:
-        print(f" Erreur lors de la prédiction: {e}")
-        return {
-            "error": str(e),
-            "prediction": "error",
-            "probability": 0.0
-        }
+        raise HTTPException(status_code=500, detail=f"Erreur test: {e}")
 
 
 @app.post("/predict/batch")
@@ -279,7 +377,7 @@ def predict_batch(texts: list[str]):
 if __name__ == "__main__":
     import uvicorn
 
-    print(" Démarrage de l'API ML sur le port 80...")
+    print("🚀 Démarrage de l'API ML avec système de feedback sur le port 8000...")
     print("📊 Endpoints disponibles:")
     print("   POST /predict - Prédiction ML")
     print("   POST /feedback - Soumettre feedback")
@@ -287,4 +385,6 @@ if __name__ == "__main__":
     print("   POST /feedback/trigger-retraining - Déclencher réentraînement")
     print("   GET  /feedback/export - Exporter données feedback")
     print("   POST /feedback/test - Tester le système")
+
+    # ✅ Port corrigé à 800
     uvicorn.run(app, host="0.0.0.0", port=80)
