@@ -1,0 +1,222 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Email Filter - Détection de Spam ML & CSV</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css">
+    <!-- Le style reste identique -->
+    <style>
+        body { background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); min-height: 100vh; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; }
+        .email-item { border-left: 4px solid #28a745; transition: all 0.3s ease; cursor: pointer; margin-bottom: 10px; padding: 15px; background: white; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }
+        .email-item.spam { border-left-color: #dc3545; }
+        .email-item:hover { transform: translateX(5px); box-shadow: 0 4px 15px rgba(0,0,0,0.2); }
+        .email-item.active { background-color: #e3f2fd !important; border-color: #2196f3; box-shadow: 0 4px 20px rgba(33, 150, 243, 0.3); }
+        .card { backdrop-filter: blur(10px); background: rgba(255, 255, 255, 0.95); border: none; box-shadow: 0 8px 32px rgba(0, 0, 0, 0.1); }
+        .stats-card { text-align: center; padding: 2rem; color: white; border-radius: 15px; transition: transform 0.3s ease; }
+        .stats-card:hover { transform: translateY(-5px); }
+        .stats-primary { background: linear-gradient(135deg, #4299e1, #3182ce); }
+        .stats-success { background: linear-gradient(135deg, #48bb78, #38a169); }
+        .stats-danger { background: linear-gradient(135deg, #f56565, #e53e3e); }
+        .email-preview { background: #f8f9fa; border: 2px solid #dee2e6; border-radius: 10px; padding: 15px; font-family: 'Courier New', monospace; max-height: 300px; overflow-y: auto; white-space: pre-wrap; }
+        .analyze-section { background: linear-gradient(135deg, #2c3e50, #3498db); border-radius: 15px; padding: 25px; color: white; text-align: center; }
+        .btn-analyze { background: rgba(255,255,255,0.2); border: 2px solid rgba(255,255,255,0.3); color: white; font-weight: 600; padding: 12px 30px; border-radius: 25px; transition: all 0.3s ease; }
+        .btn-analyze:hover { background: rgba(255,255,255,0.3); transform: scale(1.05); color: white; }
+        .btn-analyze:disabled { opacity: 0.6; cursor: not-allowed; transform: none; }
+        .source-indicator { background: rgba(255, 255, 255, 0.9); border-radius: 10px; padding: 10px 15px; margin-bottom: 20px; border-left: 4px solid #17a2b8; }
+        .email-type-badge { font-size: 0.7rem; padding: 4px 8px; border-radius: 12px; font-weight: 600; text-transform: uppercase; }
+        #emailList { max-height: 500px; overflow-y: auto; padding: 0 15px; }
+        .search-controls { background: rgba(255, 255, 255, 0.9); border-radius: 15px; padding: 15px; margin-bottom: 20px; }
+        .ml-status { background: rgba(255, 255, 255, 0.1); border-radius: 10px; padding: 10px; margin-bottom: 15px; font-size: 0.85rem; }
+        .ml-status.online { border-left: 4px solid #28a745; }
+        .ml-status.offline { border-left: 4px solid #dc3545; }
+        .filter-buttons .btn { margin: 2px; }
+        ::-webkit-scrollbar { width: 8px; }
+        ::-webkit-scrollbar-track { background: #f1f1f1; border-radius: 4px; }
+        ::-webkit-scrollbar-thumb { background: #888; border-radius: 4px; }
+        ::-webkit-scrollbar-thumb:hover { background: #555; }
+        .loading-spinner { display: flex; justify-content: center; align-items: center; height: 100px; }
+        .error-message { background: #f8d7da; color: #721c24; padding: 10px; border-radius: 8px; border: 1px solid #f5c6cb; margin: 10px 0; }
+    </style>
+</head>
+<body>
+    <div class="container-fluid py-4">
+        <!-- L'intégralité du HTML reste identique -->
+        <div class="row mb-4"><div class="col-12"><div class="card"><div class="card-body"><div class="row align-items-center"><div class="col-md-6"><h2 class="mb-0"><i class="bi bi-cpu text-primary"></i> Email Filter ML Dashboard</h2><p class="text-muted mb-0">Détection de spam par Intelligence Artificielle</p></div><div class="col-md-6 text-end"><div class="btn-group" role="group"><button type="button" class="btn btn-success" onclick="loadLiveEmails()"><i class="bi bi-cloud-download"></i> Gmail CSV</button><button type="button" class="btn btn-primary" onclick="loadDemoEmails()"><i class="bi bi-file-text"></i> Demo</button><button type="button" class="btn btn-secondary" onclick="refreshEmails()"><i class="bi bi-arrow-clockwise"></i> Refresh</button><button type="button" class="btn btn-info" onclick="checkMLStatus()"><i class="bi bi-activity"></i> Vérifier ML</button></div></div></div></div></div></div></div>
+        <div id="sourceIndicator" class="source-indicator" style="display: none;"><strong> Source:</strong> <span id="sourceText">Chargement...</span></div>
+        <div class="search-controls"><div class="row align-items-center"><div class="col-md-6"><div class="input-group"><span class="input-group-text"><i class="bi bi-search"></i></span><input type="text" id="searchInput" class="form-control" placeholder="Rechercher dans les emails..." onkeyup="performSearch()"></div></div><div class="col-md-6"><div class="filter-buttons text-end"><button class="btn btn-outline-secondary btn-sm active" onclick="filterEmails('ALL')" data-filter="ALL"><i class="bi bi-envelope"></i> Tous</button><button class="btn btn-outline-success btn-sm" onclick="filterEmails('IMPORTANT')" data-filter="IMPORTANT"><i class="bi bi-check-circle"></i> Importants</button><button class="btn btn-outline-danger btn-sm" onclick="filterEmails('SPAM')" data-filter="SPAM"><i class="bi bi-x-circle"></i> Spam</button></div></div></div></div>
+        <div class="row mb-4"><div class="col-md-4"><div class="stats-card stats-primary"><div class="display-4" id="totalEmails">0</div><h5>Emails analysés</h5></div></div><div class="col-md-4"><div class="stats-card stats-success"><div class="display-4" id="successRate">0%</div><h5>Taux de réussite</h5></div></div><div class="col-md-4"><div class="stats-card stats-danger"><div class="display-4" id="spamCount">0</div><h5>Spams détectés</h5></div></div></div>
+        <div class="row"><div class="col-lg-7"><div class="card"><div class="card-header d-flex justify-content-between align-items-center"><h5 class="mb-0"><i class="bi bi-envelope"></i> Liste des emails</h5><span id="emailCounter" class="badge bg-secondary">0 emails</span></div><div class="card-body p-0"><div id="emailList"><div class="loading-spinner"><div class="spinner-border text-primary" role="status"><span class="visually-hidden">Chargement...</span></div><div class="ms-3">Chargement...</div></div></div></div></div></div><div class="col-lg-5"><div class="card"><div class="card-header"><h5 class="mb-0"><i class="bi bi-eye"></i> Aperçu de l'email</h5></div><div class="card-body"><div class="mb-3"><strong>ID:</strong><div id="emailId" class="text-muted small">Sélectionnez un email</div></div><div class="mb-3"><strong>De:</strong><div id="emailFrom" class="text-muted">Sélectionnez un email</div></div><div class="mb-3"><strong>Date:</strong><div id="emailDate" class="text-muted">-</div></div><div class="mb-3"><strong>Objet:</strong><div id="emailSubject" class="text-muted">Aucun email sélectionné</div></div><div class="mb-3"><div class="d-flex justify-content-between align-items-center mb-2"><strong>Contenu:</strong><div class="btn-group btn-group-sm" role="group"><input type="radio" class="btn-check" name="viewMode" id="textMode" checked><label class="btn btn-outline-secondary" for="textMode">Texte</label><input type="radio" class="btn-check" name="viewMode" id="htmlMode"><label class="btn btn-outline-secondary" for="htmlMode">HTML</label></div></div><div id="emailBody" class="email-preview">Sélectionnez un email dans la liste pour voir son contenu ici.</div></div>
+        <div class="analyze-section"><h6 class="mb-3"><i class="bi bi-cpu"></i> Analyse par Intelligence Artificielle</h6><div id="mlStatus" class="ml-status"><i class="bi bi-circle-fill text-warning"></i> Statut ML: Vérification en cours...</div><button id="analyzeBtn" class="btn btn-analyze mb-3" onclick="analyzeEmail()" disabled><i class="bi bi-brain"></i> ANALYSER AVEC IA</button><div id="analysisResult" class="mb-3"></div><div class="mt-3 p-3" style="background: rgba(255,255,255,0.1); border-radius: 10px;"><div class="mb-2">Êtes-vous satisfait de l'analyse ?</div><div><div class="form-check form-check-inline"><input class="form-check-input" type="radio" name="satisfaction" id="satisfactionYes" value="yes"><label class="form-check-label" for="satisfactionYes"><i class="bi bi-hand-thumbs-up"></i> Oui</label></div><div class="form-check form-check-inline"><input class="form-check-input" type="radio" name="satisfaction" id="satisfactionNo" value="no"><label class="form-check-label" for="satisfactionNo"><i class="bi bi-hand-thumbs-down"></i> Non</label></div></div></div></div>
+        </div></div></div></div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
+
+    <script src="csvEmailLoader.js" defer></script>
+
+    <script defer>
+        let currentFilter = 'ALL', currentSearchQuery = '', filteredEmails = [], mlStatusOnline = false;
+
+const getApiUrl = () => {
+    const hostname = window.location.hostname;
+    // Si on est en développement local
+    if (hostname === 'localhost' || hostname === '127.0.0.1') {
+        return 'http://localhost:80';
+    }
+    // Si on est sur AWS ou autre serveur
+    return `http://${hostname}:80`;
+};
+
+const mlApiUrl = getApiUrl();
+        async function loadLiveEmails() {
+            try {
+                await emailLoader.loadEmailsFromCSV('./emails_live.csv');
+                emailLoader.updateSourceIndicator(`Données de "emails_live.csv" (${emailLoader.emails.length} emails)`, 'success');
+                loadAndUpdate();
+            } catch (error) {
+                alert(`Erreur de chargement du fichier CSV. Assurez-vous d'utiliser un serveur local (ex: Live Server sur VS Code) et que le fichier 'emails_live.csv' est au bon endroit.`);
+            }
+        }
+
+        async function loadDemoEmails() {
+             try {
+                await emailLoader.loadEmailsFromCSV('./emails_demo.csv');
+                emailLoader.updateSourceIndicator(`Données de "emails_demo.csv" (${emailLoader.emails.length} emails)`, 'primary');
+                loadAndUpdate();
+            } catch (error) {
+                alert(`Erreur de chargement du fichier démo. Assurez-vous qu'il existe.`);
+            }
+        }
+
+        function loadAndUpdate() {
+            applyFiltersAndSearch();
+            emailLoader.updateStats();
+            selectEmail(filteredEmails.length > 0 ? 0 : -1);
+        }
+
+        function refreshEmails() { emailLoader.currentSource === 'csv_live' ? loadLiveEmails() : loadDemoEmails(); }
+
+        function applyFiltersAndSearch() {
+            let emails = emailLoader.emails;
+            if (currentFilter !== 'ALL') { emails = emails.filter(email => email.type === currentFilter); }
+            if (currentSearchQuery) {
+                const query = currentSearchQuery.toLowerCase();
+                emails = emails.filter(email =>
+                    (email.from && email.from.toLowerCase().includes(query)) ||
+                    (email.subject && email.subject.toLowerCase().includes(query)) ||
+                    (email.body && (email.body || '').toLowerCase().includes(query))
+                );
+            }
+            filteredEmails = emails;
+            emailLoader.displayEmails(document.getElementById('emailList'), filteredEmails);
+            document.getElementById('emailCounter').textContent = `${filteredEmails.length}/${emailLoader.emails.length} emails`;
+        }
+
+        function selectEmail(index) {
+            const email = filteredEmails[index];
+            const ids = ['emailId', 'emailFrom', 'emailDate', 'emailSubject', 'emailBody'];
+            if (!email) {
+                ids.forEach(id => document.getElementById(id).textContent = id === 'emailDate' ? '-' : (id === 'emailId' ? 'Sélectionnez un email' : 'Aucun email sélectionné'));
+                document.querySelectorAll('.email-item').forEach(item => item.classList.remove('active'));
+                return;
+            }
+            document.querySelectorAll('.email-item').forEach(item => item.classList.remove('active'));
+            const emailElement = document.querySelector(`.email-item[data-index="${index}"]`);
+            if (emailElement) emailElement.classList.add('active');
+
+            document.getElementById('emailId').textContent = email.id || 'N/A';
+            document.getElementById('emailFrom').textContent = email.from;
+            document.getElementById('emailDate').textContent = emailLoader.formatDate(email.date);
+            document.getElementById('emailSubject').textContent = email.subject;
+            document.getElementById('emailBody').dataset.textContent = email.body || '';
+            updateBodyDisplay();
+            document.getElementById('analyzeBtn').disabled = !mlStatusOnline;
+            document.getElementById('analysisResult').innerHTML = '';
+            document.querySelectorAll('input[name="satisfaction"]').forEach(input => input.checked = false);
+        }
+
+        // Les fonctions d'UI et de ML restent ici car elles manipulent le DOM de cette page
+        async function checkMLStatus() {
+            const statusElement = document.getElementById('mlStatus'), analyzeBtn = document.getElementById('analyzeBtn');
+            statusElement.innerHTML = '<i class="bi bi-arrow-clockwise spin"></i> Vérification du modèle ML...';
+            try {
+                const response = await fetch(`${mlApiUrl}/health`, { mode: 'cors', signal: AbortSignal.timeout(5000) });
+                if (response.ok) {
+                    const data = await response.json();
+                    mlStatusOnline = true;
+                    statusElement.innerHTML = `<i class="bi bi-circle-fill text-success"></i> Modèle ML: <strong>En ligne</strong> - ${data.status || 'Prêt'}`;
+                    statusElement.className = 'ml-status online';
+                    analyzeBtn.disabled = document.getElementById('emailId').textContent === 'Sélectionnez un email';
+                } else { throw new Error(`HTTP ${response.status}`); }
+            } catch (error) {
+                mlStatusOnline = false;
+                statusElement.innerHTML = `<i class="bi bi-circle-fill text-danger"></i> Modèle ML: <strong>Hors ligne</strong><br><small>${error.name === 'AbortError' ? 'Timeout' : 'Erreur connexion'}</small>`;
+                statusElement.className = 'ml-status offline';
+                analyzeBtn.disabled = true;
+            }
+        }
+
+        function cleanText(text) { return text ? text.replace(/"/g, "'").replace(/\n/g, ' ').replace(/\s+/g, ' ').trim() : ''; }
+
+        async function analyzeEmail() {
+            if (!mlStatusOnline) { showAnalysisError('Le modèle ML n\'est pas disponible.'); return; }
+            const resultDiv = document.getElementById('analysisResult'), analyzeBtn = document.getElementById('analyzeBtn');
+            const emailFrom = document.getElementById('emailFrom').textContent, emailSubject = document.getElementById('emailSubject').textContent, emailBody = document.getElementById('emailBody').textContent;
+            if (emailFrom === 'Sélectionnez un email') { showAnalysisError('Veuillez sélectionner un email complet.'); return; }
+            const rawEmailText = `From: ${emailFrom} Subject: ${emailSubject} Body: ${emailBody}`;
+
+            analyzeBtn.disabled = true;
+            resultDiv.innerHTML = `<div class="text-info"><div class="spinner-border spinner-border-sm me-2"></div><strong>Analyse IA en cours...</strong></div>`;
+            try {
+                const response = await fetch(`${mlApiUrl}/predict`, { method: 'POST', mode: 'cors', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ text: cleanText(rawEmailText) }), signal: AbortSignal.timeout(30000) });
+                if (!response.ok) throw new Error(`API Error ${response.status}: ${await response.text()}`);
+                displayMLResult(await response.json());
+            } catch (error) {
+                showAnalysisError(`Erreur ML: ${error.message}`);
+                checkMLStatus();
+            } finally {
+                analyzeBtn.disabled = !mlStatusOnline;
+            }
+        }
+
+        function displayMLResult(data) {
+            const confidence = Math.round((data.probability || 0) * 100);
+            const isSpam = data.prediction === 'phishing' || data.prediction === 'spam';
+            document.getElementById('analysisResult').innerHTML = `<div class="${isSpam ? 'text-danger' : 'text-success'}"><strong>${isSpam ? 'SPAM/PHISHING détecté' : 'Email LÉGITIME'}</strong><br>Confiance: <strong>${confidence}%</strong></div>`;
+        }
+
+        function showAnalysisError(message) { document.getElementById('analysisResult').innerHTML = `<div class="error-message">${message}</div>`; }
+        function performSearch() { currentSearchQuery = document.getElementById('searchInput').value.trim().toLowerCase(); applyFiltersAndSearch(); }
+        function filterEmails(type) { currentFilter = type; document.querySelectorAll('.filter-buttons .btn').forEach(btn => btn.classList.toggle('active', btn.dataset.filter === type)); applyFiltersAndSearch(); }
+
+        function updateBodyDisplay() {
+            const bodyElement = document.getElementById('emailBody'), rawContent = bodyElement.dataset.textContent || '';
+            if (document.getElementById('htmlMode').checked) {
+                bodyElement.innerHTML = rawContent.replace(/\n/g, '<br>');
+                bodyElement.style.fontFamily = 'inherit';
+                bodyElement.style.whiteSpace = 'normal';
+            } else {
+                bodyElement.textContent = rawContent; // Pas besoin de re-nettoyer, on garde le texte brut
+                bodyElement.style.fontFamily = "'Courier New', monospace";
+                bodyElement.style.whiteSpace = 'pre-wrap';
+            }
+        }
+
+        function handleFeedback(satisfaction) { document.getElementById('analysisResult').innerHTML += `<br><span class="small ${satisfaction === 'yes' ? 'text-success' : 'text-warning'}">Merci pour votre feedback !</span>`; }
+
+        document.addEventListener('DOMContentLoaded', () => {
+            console.log('Initialisation du dashboard ML...');
+            loadLiveEmails();
+            checkMLStatus();
+            document.querySelectorAll('input[name="satisfaction"]').forEach(i => i.addEventListener('change', (e) => handleFeedback(e.target.value)));
+            document.querySelectorAll('input[name="viewMode"]').forEach(i => i.addEventListener('change', updateBodyDisplay));
+        });
+
+        const style = document.createElement('style');
+        style.textContent = `.spin { animation: spin 1s linear infinite; } @keyframes spin { to { transform: rotate(360deg); } }`;
+        document.head.appendChild(style);
+    </script>
+</body>
+</html>
