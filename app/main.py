@@ -3,6 +3,10 @@ import pickle
 import re
 from pathlib import Path
 from typing import List
+import csv
+import os
+from datetime import datetime
+from typing import Optional
 
 import nltk
 import numpy as np
@@ -95,7 +99,23 @@ class BatchInput(BaseModel):
                 ]
             }
         }
+class FeedbackInput(BaseModel):
+    email_text: str
+    predicted_class: str
+    predicted_probability: float
+    user_satisfaction: str  # "yes" ou "no"
+    language_detected: str
 
+    class Config:
+        json_schema_extra = {
+            "example": {
+                "email_text": "URGENT: Click here to verify your account",
+                "predicted_class": "phishing",
+                "predicted_probability": 0.85,
+                "user_satisfaction": "yes",
+                "language_detected": "en"
+            }
+        }
 
 # --- Fonctions de Prétraitement ---
 def preprocess_text(text: str, language: str):
@@ -232,6 +252,49 @@ def predict_batch(batch: BatchInput):
 
     return {"results": results}
 
+
+@app.post("/feedback", summary="Enregistrer un feedback utilisateur")
+def save_feedback(feedback: FeedbackInput):
+    """
+    Enregistre le feedback d'un utilisateur sur une prédiction.
+    """
+    try:
+        # Nom du fichier CSV
+        csv_filename = "./data/user_feedbacks.csv"
+
+        # Préparer les données
+        feedback_data = {
+            "timestamp": datetime.now().isoformat(),
+            "email_text": feedback.email_text[:200],  # Limiter la taille
+            "predicted_class": feedback.predicted_class,
+            "predicted_probability": feedback.predicted_probability,
+            "user_satisfaction": feedback.user_satisfaction,
+            "language_detected": feedback.language_detected
+        }
+
+        # Écrire dans le CSV
+        file_exists = os.path.exists(csv_filename)
+
+        with open(csv_filename, 'a', newline='', encoding='utf-8') as csvfile:
+            fieldnames = list(feedback_data.keys())
+            writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
+
+            # Écrire l'en-tête si le fichier est nouveau
+            if not file_exists:
+                writer.writeheader()
+
+            writer.writerow(feedback_data)
+
+        print(f"📝 Feedback enregistré: {feedback.user_satisfaction}")
+
+        return {
+            "status": "success",
+            "message": "Feedback enregistré avec succès"
+        }
+
+    except Exception as e:
+        print(f"❌ Erreur feedback: {e}")
+        raise HTTPException(status_code=500, detail=f"Erreur: {e}")
 
 # --- Lancement de l'application ---
 if __name__ == "__main__":
