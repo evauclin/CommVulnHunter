@@ -6,7 +6,6 @@
     <title>Email Filter - Détection de Spam ML & CSV</title>
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css">
-    <!-- Le style reste identique -->
     <style>
         body { background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); min-height: 100vh; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; }
         .email-item { border-left: 4px solid #28a745; transition: all 0.3s ease; cursor: pointer; margin-bottom: 10px; padding: 15px; background: white; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }
@@ -38,38 +37,217 @@
         ::-webkit-scrollbar-thumb:hover { background: #555; }
         .loading-spinner { display: flex; justify-content: center; align-items: center; height: 100px; }
         .error-message { background: #f8d7da; color: #721c24; padding: 10px; border-radius: 8px; border: 1px solid #f5c6cb; margin: 10px 0; }
+        .feedback-section { background: rgba(255,255,255,0.1); border-radius: 10px; padding: 15px; margin-top: 15px; }
+        .feedback-message { margin-top: 10px; }
     </style>
 </head>
 <body>
     <div class="container-fluid py-4">
-        <!-- L'intégralité du HTML reste identique -->
-        <div class="row mb-4"><div class="col-12"><div class="card"><div class="card-body"><div class="row align-items-center"><div class="col-md-6"><h2 class="mb-0"><i class="bi bi-cpu text-primary"></i> Email Filter ML Dashboard</h2><p class="text-muted mb-0">Détection de spam par Intelligence Artificielle</p></div><div class="col-md-6 text-end"><div class="btn-group" role="group"><button type="button" class="btn btn-success" onclick="loadLiveEmails()"><i class="bi bi-cloud-download"></i> Gmail CSV</button><button type="button" class="btn btn-primary" onclick="loadDemoEmails()"><i class="bi bi-file-text"></i> Demo</button><button type="button" class="btn btn-secondary" onclick="refreshEmails()"><i class="bi bi-arrow-clockwise"></i> Refresh</button><button type="button" class="btn btn-info" onclick="checkMLStatus()"><i class="bi bi-activity"></i> Vérifier ML</button></div></div></div></div></div></div></div>
-        <div id="sourceIndicator" class="source-indicator" style="display: none;"><strong> Source:</strong> <span id="sourceText">Chargement...</span></div>
-        <div class="search-controls"><div class="row align-items-center"><div class="col-md-6"><div class="input-group"><span class="input-group-text"><i class="bi bi-search"></i></span><input type="text" id="searchInput" class="form-control" placeholder="Rechercher dans les emails..." onkeyup="performSearch()"></div></div><div class="col-md-6"><div class="filter-buttons text-end"><button class="btn btn-outline-secondary btn-sm active" onclick="filterEmails('ALL')" data-filter="ALL"><i class="bi bi-envelope"></i> Tous</button><button class="btn btn-outline-success btn-sm" onclick="filterEmails('IMPORTANT')" data-filter="IMPORTANT"><i class="bi bi-check-circle"></i> Importants</button><button class="btn btn-outline-danger btn-sm" onclick="filterEmails('SPAM')" data-filter="SPAM"><i class="bi bi-x-circle"></i> Spam</button></div></div></div></div>
-        <div class="row mb-4"><div class="col-md-4"><div class="stats-card stats-primary"><div class="display-4" id="totalEmails">0</div><h5>Emails analysés</h5></div></div><div class="col-md-4"><div class="stats-card stats-success"><div class="display-4" id="successRate">0%</div><h5>Taux de réussite</h5></div></div><div class="col-md-4"><div class="stats-card stats-danger"><div class="display-4" id="spamCount">0</div><h5>Spams détectés</h5></div></div></div>
-        <div class="row"><div class="col-lg-7"><div class="card"><div class="card-header d-flex justify-content-between align-items-center"><h5 class="mb-0"><i class="bi bi-envelope"></i> Liste des emails</h5><span id="emailCounter" class="badge bg-secondary">0 emails</span></div><div class="card-body p-0"><div id="emailList"><div class="loading-spinner"><div class="spinner-border text-primary" role="status"><span class="visually-hidden">Chargement...</span></div><div class="ms-3">Chargement...</div></div></div></div></div></div><div class="col-lg-5"><div class="card"><div class="card-header"><h5 class="mb-0"><i class="bi bi-eye"></i> Aperçu de l'email</h5></div><div class="card-body"><div class="mb-3"><strong>ID:</strong><div id="emailId" class="text-muted small">Sélectionnez un email</div></div><div class="mb-3"><strong>De:</strong><div id="emailFrom" class="text-muted">Sélectionnez un email</div></div><div class="mb-3"><strong>Date:</strong><div id="emailDate" class="text-muted">-</div></div><div class="mb-3"><strong>Objet:</strong><div id="emailSubject" class="text-muted">Aucun email sélectionné</div></div><div class="mb-3"><div class="d-flex justify-content-between align-items-center mb-2"><strong>Contenu:</strong><div class="btn-group btn-group-sm" role="group"><input type="radio" class="btn-check" name="viewMode" id="textMode" checked><label class="btn btn-outline-secondary" for="textMode">Texte</label><input type="radio" class="btn-check" name="viewMode" id="htmlMode"><label class="btn btn-outline-secondary" for="htmlMode">HTML</label></div></div><div id="emailBody" class="email-preview">Sélectionnez un email dans la liste pour voir son contenu ici.</div></div>
-        <div class="analyze-section"><h6 class="mb-3"><i class="bi bi-cpu"></i> Analyse par Intelligence Artificielle</h6><div id="mlStatus" class="ml-status"><i class="bi bi-circle-fill text-warning"></i> Statut ML: Vérification en cours...</div><button id="analyzeBtn" class="btn btn-analyze mb-3" onclick="analyzeEmail()" disabled><i class="bi bi-brain"></i> ANALYSER AVEC IA</button><div id="analysisResult" class="mb-3"></div><div class="mt-3 p-3" style="background: rgba(255,255,255,0.1); border-radius: 10px;"><div class="mb-2">Êtes-vous satisfait de l'analyse ?</div><div><div class="form-check form-check-inline"><input class="form-check-input" type="radio" name="satisfaction" id="satisfactionYes" value="yes"><label class="form-check-label" for="satisfactionYes"><i class="bi bi-hand-thumbs-up"></i> Oui</label></div><div class="form-check form-check-inline"><input class="form-check-input" type="radio" name="satisfaction" id="satisfactionNo" value="no"><label class="form-check-label" for="satisfactionNo"><i class="bi bi-hand-thumbs-down"></i> Non</label></div></div></div></div>
-        </div></div></div></div>
+        <div class="row mb-4">
+            <div class="col-12">
+                <div class="card">
+                    <div class="card-body">
+                        <div class="row align-items-center">
+                            <div class="col-md-6">
+                                <h2 class="mb-0">
+                                    <i class="bi bi-cpu text-primary"></i> Email Filter ML Dashboard
+                                </h2>
+                                <p class="text-muted mb-0">Détection de spam par Intelligence Artificielle</p>
+                            </div>
+                            <div class="col-md-6 text-end">
+                                <div class="btn-group" role="group">
+                                    <button type="button" class="btn btn-success" onclick="loadLiveEmails()">
+                                        <i class="bi bi-cloud-download"></i> Gmail CSV
+                                    </button>
+                                    <button type="button" class="btn btn-primary" onclick="loadDemoEmails()">
+                                        <i class="bi bi-file-text"></i> Demo
+                                    </button>
+                                    <button type="button" class="btn btn-secondary" onclick="refreshEmails()">
+                                        <i class="bi bi-arrow-clockwise"></i> Refresh
+                                    </button>
+                                    <button type="button" class="btn btn-info" onclick="checkMLStatus()">
+                                        <i class="bi bi-activity"></i> Vérifier ML
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div id="sourceIndicator" class="source-indicator" style="display: none;">
+            <strong>Source:</strong> <span id="sourceText">Chargement...</span>
+        </div>
+
+        <div class="search-controls">
+            <div class="row align-items-center">
+                <div class="col-md-6">
+                    <div class="input-group">
+                        <span class="input-group-text"><i class="bi bi-search"></i></span>
+                        <input type="text" id="searchInput" class="form-control" placeholder="Rechercher dans les emails..." onkeyup="performSearch()">
+                    </div>
+                </div>
+                <div class="col-md-6">
+                    <div class="filter-buttons text-end">
+                        <button class="btn btn-outline-secondary btn-sm active" onclick="filterEmails('ALL')" data-filter="ALL">
+                            <i class="bi bi-envelope"></i> Tous
+                        </button>
+                        <button class="btn btn-outline-success btn-sm" onclick="filterEmails('IMPORTANT')" data-filter="IMPORTANT">
+                            <i class="bi bi-check-circle"></i> Importants
+                        </button>
+                        <button class="btn btn-outline-danger btn-sm" onclick="filterEmails('SPAM')" data-filter="SPAM">
+                            <i class="bi bi-x-circle"></i> Spam
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="row mb-4">
+            <div class="col-md-4">
+                <div class="stats-card stats-primary">
+                    <div class="display-4" id="totalEmails">0</div>
+                    <h5>Emails analysés</h5>
+                </div>
+            </div>
+            <div class="col-md-4">
+                <div class="stats-card stats-success">
+                    <div class="display-4" id="successRate">0%</div>
+                    <h5>Taux de réussite</h5>
+                </div>
+            </div>
+            <div class="col-md-4">
+                <div class="stats-card stats-danger">
+                    <div class="display-4" id="spamCount">0</div>
+                    <h5>Spams détectés</h5>
+                </div>
+            </div>
+        </div>
+
+        <div class="row">
+            <div class="col-lg-7">
+                <div class="card">
+                    <div class="card-header d-flex justify-content-between align-items-center">
+                        <h5 class="mb-0"><i class="bi bi-envelope"></i> Liste des emails</h5>
+                        <span id="emailCounter" class="badge bg-secondary">0 emails</span>
+                    </div>
+                    <div class="card-body p-0">
+                        <div id="emailList">
+                            <div class="loading-spinner">
+                                <div class="spinner-border text-primary" role="status">
+                                    <span class="visually-hidden">Chargement...</span>
+                                </div>
+                                <div class="ms-3">Chargement...</div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="col-lg-5">
+                <div class="card">
+                    <div class="card-header">
+                        <h5 class="mb-0"><i class="bi bi-eye"></i> Aperçu de l'email</h5>
+                    </div>
+                    <div class="card-body">
+                        <div class="mb-3">
+                            <strong>ID:</strong>
+                            <div id="emailId" class="text-muted small">Sélectionnez un email</div>
+                        </div>
+                        <div class="mb-3">
+                            <strong>De:</strong>
+                            <div id="emailFrom" class="text-muted">Sélectionnez un email</div>
+                        </div>
+                        <div class="mb-3">
+                            <strong>Date:</strong>
+                            <div id="emailDate" class="text-muted">-</div>
+                        </div>
+                        <div class="mb-3">
+                            <strong>Objet:</strong>
+                            <div id="emailSubject" class="text-muted">Aucun email sélectionné</div>
+                        </div>
+                        <div class="mb-3">
+                            <div class="d-flex justify-content-between align-items-center mb-2">
+                                <strong>Contenu:</strong>
+                                <div class="btn-group btn-group-sm" role="group">
+                                    <input type="radio" class="btn-check" name="viewMode" id="textMode" checked>
+                                    <label class="btn btn-outline-secondary" for="textMode">Texte</label>
+                                    <input type="radio" class="btn-check" name="viewMode" id="htmlMode">
+                                    <label class="btn btn-outline-secondary" for="htmlMode">HTML</label>
+                                </div>
+                            </div>
+                            <div id="emailBody" class="email-preview">
+                                Sélectionnez un email dans la liste pour voir son contenu ici.
+                            </div>
+                        </div>
+
+                        <div class="analyze-section">
+                            <h6 class="mb-3">
+                                <i class="bi bi-cpu"></i> Analyse par Intelligence Artificielle
+                            </h6>
+                            <div id="mlStatus" class="ml-status">
+                                <i class="bi bi-circle-fill text-warning"></i> Statut ML: Vérification en cours...
+                            </div>
+                            <button id="analyzeBtn" class="btn btn-analyze mb-3" onclick="analyzeEmail()" disabled>
+                                <i class="bi bi-brain"></i> ANALYSER AVEC IA
+                            </button>
+                            <div id="analysisResult" class="mb-3"></div>
+
+                            <div class="feedback-section">
+                                <div class="mb-2">
+                                    <strong><i class="bi bi-star"></i> Êtes-vous satisfait de l'analyse ?</strong>
+                                </div>
+                                <div class="d-flex gap-3 justify-content-center">
+                                    <div class="form-check">
+                                        <input class="form-check-input" type="radio" name="satisfaction" id="satisfactionYes" value="yes" disabled>
+                                        <label class="form-check-label" for="satisfactionYes">
+                                            <i class="bi bi-hand-thumbs-up text-success"></i> Correcte
+                                        </label>
+                                    </div>
+                                    <div class="form-check">
+                                        <input class="form-check-input" type="radio" name="satisfaction" id="satisfactionNo" value="no" disabled>
+                                        <label class="form-check-label" for="satisfactionNo">
+                                            <i class="bi bi-hand-thumbs-down text-danger"></i> Incorrecte
+                                        </label>
+                                    </div>
+                                </div>
+                                <small class="text-muted d-block mt-2 text-center">
+                                    Votre feedback nous aide à améliorer le modèle
+                                </small>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
     </div>
 
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
-
     <script src="csvEmailLoader.js" defer></script>
 
     <script defer>
-        let currentFilter = 'ALL', currentSearchQuery = '', filteredEmails = [], mlStatusOnline = false;
+        // Variables globales
+        let currentFilter = 'ALL';
+        let currentSearchQuery = '';
+        let filteredEmails = [];
+        let mlStatusOnline = false;
 
-const getApiUrl = () => {
-    const hostname = window.location.hostname;
-    // Si on est en développement local
-    if (hostname === 'localhost' || hostname === '127.0.0.1') {
-        return 'http://localhost:80';
-    }
-    // Si on est sur AWS ou autre serveur
-    return `http://${hostname}:80`;
-};
+        // Variables pour le feedback
+        let currentEmailData = null;
+        let currentAnalysisResult = null;
 
-const mlApiUrl = getApiUrl();
+        const getApiUrl = () => {
+            const hostname = window.location.hostname;
+            if (hostname === 'localhost' || hostname === '127.0.0.1') {
+                return 'http://localhost:8000';
+            }
+            return `http://${hostname}:8000`;
+        };
+
+        const mlApiUrl = getApiUrl();
+
+        // Fonctions de chargement des emails
         async function loadLiveEmails() {
             try {
                 await emailLoader.loadEmailsFromCSV('./emails_live.csv');
@@ -81,7 +259,7 @@ const mlApiUrl = getApiUrl();
         }
 
         async function loadDemoEmails() {
-             try {
+            try {
                 await emailLoader.loadEmailsFromCSV('./emails_demo.csv');
                 emailLoader.updateSourceIndicator(`Données de "emails_demo.csv" (${emailLoader.emails.length} emails)`, 'primary');
                 loadAndUpdate();
@@ -92,15 +270,21 @@ const mlApiUrl = getApiUrl();
 
         function loadAndUpdate() {
             applyFiltersAndSearch();
-            emailLoader.updateStats();
-            selectEmail(filteredEmails.length > 0 ? 0 : -1);
+            emailLoader.updateStatsDisplay();
+            if (filteredEmails.length > 0) {
+                selectEmail(0);
+            }
         }
 
-        function refreshEmails() { emailLoader.currentSource === 'csv_live' ? loadLiveEmails() : loadDemoEmails(); }
+        function refreshEmails() {
+            emailLoader.currentSource === 'csv_live' ? loadLiveEmails() : loadDemoEmails();
+        }
 
         function applyFiltersAndSearch() {
             let emails = emailLoader.emails;
-            if (currentFilter !== 'ALL') { emails = emails.filter(email => email.type === currentFilter); }
+            if (currentFilter !== 'ALL') {
+                emails = emails.filter(email => email.type === currentFilter);
+            }
             if (currentSearchQuery) {
                 const query = currentSearchQuery.toLowerCase();
                 emails = emails.filter(email =>
@@ -114,42 +298,100 @@ const mlApiUrl = getApiUrl();
             document.getElementById('emailCounter').textContent = `${filteredEmails.length}/${emailLoader.emails.length} emails`;
         }
 
+        // Fonction selectEmail modifiée avec feedback
         function selectEmail(index) {
+            // Réinitialiser la sélection précédente
+            document.querySelectorAll('.email-item').forEach(item => item.classList.remove('active'));
+
             const email = filteredEmails[index];
-            const ids = ['emailId', 'emailFrom', 'emailDate', 'emailSubject', 'emailBody'];
             if (!email) {
-                ids.forEach(id => document.getElementById(id).textContent = id === 'emailDate' ? '-' : (id === 'emailId' ? 'Sélectionnez un email' : 'Aucun email sélectionné'));
-                document.querySelectorAll('.email-item').forEach(item => item.classList.remove('active'));
+                resetEmailDisplay();
+                resetAnalysisAndFeedback();
                 return;
             }
-            document.querySelectorAll('.email-item').forEach(item => item.classList.remove('active'));
-            const emailElement = document.querySelector(`.email-item[data-index="${index}"]`);
+
+            // Stocker les données de l'email pour le feedback
+            currentEmailData = {
+                id: email.id || `email_${index}`,
+                from: email.from || '',
+                subject: email.subject || '',
+                body: email.body || '',
+                type: email.type || 'unknown',
+                fullText: `From: ${email.from || ''} Subject: ${email.subject || ''} Body: ${email.body || ''}`
+            };
+
+            // Sélectionner visuellement l'email
+            const emailElement = document.querySelector(`[data-index="${index}"]`);
             if (emailElement) emailElement.classList.add('active');
 
+            // Mettre à jour l'affichage
             document.getElementById('emailId').textContent = email.id || 'N/A';
             document.getElementById('emailFrom').textContent = email.from;
             document.getElementById('emailDate').textContent = emailLoader.formatDate(email.date);
             document.getElementById('emailSubject').textContent = email.subject;
             document.getElementById('emailBody').dataset.textContent = email.body || '';
+
             updateBodyDisplay();
+
             document.getElementById('analyzeBtn').disabled = !mlStatusOnline;
-            document.getElementById('analysisResult').innerHTML = '';
-            document.querySelectorAll('input[name="satisfaction"]').forEach(input => input.checked = false);
+
+            // Réinitialiser l'analyse et le feedback
+            resetAnalysisAndFeedback();
         }
 
-        // Les fonctions d'UI et de ML restent ici car elles manipulent le DOM de cette page
+        function resetEmailDisplay() {
+            const elements = ['emailId', 'emailFrom', 'emailDate', 'emailSubject'];
+            elements.forEach(id => {
+                const element = document.getElementById(id);
+                if (element) {
+                    element.textContent = id === 'emailDate' ? '-' :
+                                        id === 'emailId' ? 'Sélectionnez un email' : 'Aucun email sélectionné';
+                }
+            });
+
+            const bodyElement = document.getElementById('emailBody');
+            if (bodyElement) {
+                bodyElement.textContent = 'Sélectionnez un email dans la liste pour voir son contenu ici.';
+            }
+        }
+
+        function resetAnalysisAndFeedback() {
+            currentAnalysisResult = null;
+
+            const analysisResult = document.getElementById('analysisResult');
+            if (analysisResult) {
+                analysisResult.innerHTML = '';
+            }
+
+            // Désactiver et décocher les boutons de feedback
+            document.querySelectorAll('input[name="satisfaction"]').forEach(input => {
+                input.checked = false;
+                input.disabled = true;
+            });
+        }
+
+        // Fonctions ML
         async function checkMLStatus() {
-            const statusElement = document.getElementById('mlStatus'), analyzeBtn = document.getElementById('analyzeBtn');
+            const statusElement = document.getElementById('mlStatus');
+            const analyzeBtn = document.getElementById('analyzeBtn');
+
             statusElement.innerHTML = '<i class="bi bi-arrow-clockwise spin"></i> Vérification du modèle ML...';
+
             try {
-                const response = await fetch(`${mlApiUrl}/health`, { mode: 'cors', signal: AbortSignal.timeout(5000) });
+                const response = await fetch(`${mlApiUrl}/health`, {
+                    mode: 'cors',
+                    signal: AbortSignal.timeout(5000)
+                });
+
                 if (response.ok) {
                     const data = await response.json();
                     mlStatusOnline = true;
                     statusElement.innerHTML = `<i class="bi bi-circle-fill text-success"></i> Modèle ML: <strong>En ligne</strong> - ${data.status || 'Prêt'}`;
                     statusElement.className = 'ml-status online';
                     analyzeBtn.disabled = document.getElementById('emailId').textContent === 'Sélectionnez un email';
-                } else { throw new Error(`HTTP ${response.status}`); }
+                } else {
+                    throw new Error(`HTTP ${response.status}`);
+                }
             } catch (error) {
                 mlStatusOnline = false;
                 statusElement.innerHTML = `<i class="bi bi-circle-fill text-danger"></i> Modèle ML: <strong>Hors ligne</strong><br><small>${error.name === 'AbortError' ? 'Timeout' : 'Erreur connexion'}</small>`;
@@ -158,20 +400,45 @@ const mlApiUrl = getApiUrl();
             }
         }
 
-        function cleanText(text) { return text ? text.replace(/"/g, "'").replace(/\n/g, ' ').replace(/\s+/g, ' ').trim() : ''; }
+        function cleanText(text) {
+            return text ? text.replace(/"/g, "'").replace(/\n/g, ' ').replace(/\s+/g, ' ').trim() : '';
+        }
 
         async function analyzeEmail() {
-            if (!mlStatusOnline) { showAnalysisError('Le modèle ML n\'est pas disponible.'); return; }
-            const resultDiv = document.getElementById('analysisResult'), analyzeBtn = document.getElementById('analyzeBtn');
-            const emailFrom = document.getElementById('emailFrom').textContent, emailSubject = document.getElementById('emailSubject').textContent, emailBody = document.getElementById('emailBody').textContent;
-            if (emailFrom === 'Sélectionnez un email') { showAnalysisError('Veuillez sélectionner un email complet.'); return; }
+            if (!mlStatusOnline) {
+                showAnalysisError('Le modèle ML n\'est pas disponible.');
+                return;
+            }
+
+            const resultDiv = document.getElementById('analysisResult');
+            const analyzeBtn = document.getElementById('analyzeBtn');
+            const emailFrom = document.getElementById('emailFrom').textContent;
+            const emailSubject = document.getElementById('emailSubject').textContent;
+            const emailBody = document.getElementById('emailBody').textContent;
+
+            if (emailFrom === 'Sélectionnez un email') {
+                showAnalysisError('Veuillez sélectionner un email complet.');
+                return;
+            }
+
             const rawEmailText = `From: ${emailFrom} Subject: ${emailSubject} Body: ${emailBody}`;
 
             analyzeBtn.disabled = true;
             resultDiv.innerHTML = `<div class="text-info"><div class="spinner-border spinner-border-sm me-2"></div><strong>Analyse IA en cours...</strong></div>`;
+
             try {
-                const response = await fetch(`${mlApiUrl}/predict`, { method: 'POST', mode: 'cors', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ text: cleanText(rawEmailText) }), signal: AbortSignal.timeout(30000) });
-                if (!response.ok) throw new Error(`API Error ${response.status}: ${await response.text()}`);
+                const response = await fetch(`${mlApiUrl}/predict`, {
+                    method: 'POST',
+                    mode: 'cors',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ text: cleanText(rawEmailText) }),
+                    signal: AbortSignal.timeout(30000)
+                });
+
+                if (!response.ok) {
+                    throw new Error(`API Error ${response.status}: ${await response.text()}`);
+                }
+
                 displayMLResult(await response.json());
             } catch (error) {
                 showAnalysisError(`Erreur ML: ${error.message}`);
@@ -181,42 +448,236 @@ const mlApiUrl = getApiUrl();
             }
         }
 
+        // Fonction displayMLResult modifiée pour activer le feedback
         function displayMLResult(data) {
             const confidence = Math.round((data.probability || 0) * 100);
             const isSpam = data.prediction === 'phishing' || data.prediction === 'spam';
-            document.getElementById('analysisResult').innerHTML = `<div class="${isSpam ? 'text-danger' : 'text-success'}"><strong>${isSpam ? 'SPAM/PHISHING détecté' : 'Email LÉGITIME'}</strong><br>Confiance: <strong>${confidence}%</strong></div>`;
+
+            // Stocker le résultat pour le feedback
+            currentAnalysisResult = {
+                prediction: data.prediction,
+                probability: data.probability,
+                confidence: confidence,
+                language_detected: data.language_detected || 'en',
+                isSpam: isSpam,
+                timestamp: new Date().toISOString()
+            };
+
+            // Afficher le résultat
+            const resultHtml = `
+                <div class="analysis-result ${isSpam ? 'text-danger' : 'text-success'}">
+                    <div class="d-flex align-items-center mb-2">
+                        <i class="bi bi-${isSpam ? 'shield-x' : 'shield-check'} me-2"></i>
+                        <strong>${isSpam ? 'SPAM/PHISHING détecté' : 'Email LÉGITIME'}</strong>
+                    </div>
+                    <div class="mb-1">
+                        <small>Confiance: <strong>${confidence}%</strong></small>
+                    </div>
+                    <div>
+                        <small class="text-muted">Langue: ${data.language_detected || 'en'}</small>
+                    </div>
+                </div>
+            `;
+
+            document.getElementById('analysisResult').innerHTML = resultHtml;
+
+            // Activer les boutons de feedback
+            document.querySelectorAll('input[name="satisfaction"]').forEach(input => {
+                input.disabled = false;
+            });
+
+            console.log('✅ Analyse terminée, feedback activé');
         }
 
-        function showAnalysisError(message) { document.getElementById('analysisResult').innerHTML = `<div class="error-message">${message}</div>`; }
-        function performSearch() { currentSearchQuery = document.getElementById('searchInput').value.trim().toLowerCase(); applyFiltersAndSearch(); }
-        function filterEmails(type) { currentFilter = type; document.querySelectorAll('.filter-buttons .btn').forEach(btn => btn.classList.toggle('active', btn.dataset.filter === type)); applyFiltersAndSearch(); }
+        // Fonctions de feedback
+        async function sendFeedback(satisfaction) {
+            if (!currentEmailData || !currentAnalysisResult) {
+                console.warn('Données manquantes pour le feedback');
+                showFeedbackMessage('Erreur: données manquantes', 'error');
+                return;
+            }
+
+            try {
+                const feedbackData = {
+                    email_text: currentEmailData.fullText.substring(0, 500),
+                    predicted_class: currentAnalysisResult.prediction,
+                    predicted_probability: currentAnalysisResult.probability,
+                    user_satisfaction: satisfaction,
+                    language_detected: currentAnalysisResult.language_detected
+                };
+
+                console.log('📤 Envoi du feedback:', feedbackData);
+                showFeedbackMessage('Envoi du feedback...', 'info');
+
+                const response = await fetch(`${mlApiUrl}/feedback`, {
+                    method: 'POST',
+                    mode: 'cors',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(feedbackData),
+                    signal: AbortSignal.timeout(10000)
+                });
+
+                if (!response.ok) {
+                    const errorText = await response.text();
+                    throw new Error(`HTTP ${response.status}: ${errorText}`);
+                }
+
+                const result = await response.json();
+                console.log('✅ Feedback envoyé:', result);
+                showFeedbackMessage('✅ Merci pour votre feedback !', 'success');
+
+                // Désactiver les boutons après envoi
+                document.querySelectorAll('input[name="satisfaction"]').forEach(input => {
+                    input.disabled = true;
+                });
+
+            } catch (error) {
+                console.error('❌ Erreur feedback:', error);
+                showFeedbackMessage('❌ Erreur lors de l\'envoi', 'error');
+
+                // Réactiver les boutons en cas d'erreur
+                document.querySelectorAll('input[name="satisfaction"]').forEach(input => {
+                    input.disabled = false;
+                    input.checked = false;
+                });
+            }
+        }
+
+        function showFeedbackMessage(message, type = 'info') {
+            const analysisResult = document.getElementById('analysisResult');
+            if (!analysisResult) return;
+
+            // Supprimer les anciens messages
+            const existingMessages = analysisResult.querySelectorAll('.feedback-message');
+            existingMessages.forEach(msg => msg.remove());
+
+            // Créer le message
+            const messageDiv = document.createElement('div');
+            messageDiv.className = `feedback-message alert alert-sm mt-2 py-2`;
+
+            if (type === 'success') {
+                messageDiv.classList.add('alert-success');
+            } else if (type === 'error') {
+                messageDiv.classList.add('alert-danger');
+            } else {
+                messageDiv.classList.add('alert-info');
+            }
+
+            messageDiv.innerHTML = `<small>${message}</small>`;
+            analysisResult.appendChild(messageDiv);
+
+            // Auto-suppression
+            if (type !== 'error') {
+                setTimeout(() => {
+                    if (messageDiv.parentNode) {
+                        messageDiv.remove();
+                    }
+                }, type === 'success' ? 4000 : 2000);
+            }
+        }
+
+        function handleFeedback(satisfaction) {
+            console.log(`📝 Feedback: ${satisfaction}`);
+
+            if (!currentAnalysisResult) {
+                showFeedbackMessage('Veuillez d\'abord analyser un email', 'error');
+                return;
+            }
+
+            const isPositive = satisfaction === 'yes';
+            const predictionText = currentAnalysisResult.isSpam ? 'SPAM/PHISHING' : 'LÉGITIME';
+            const confirmMessage = isPositive
+                ? `Confirmer que la prédiction "${predictionText}" est correcte ?`
+                : `Signaler que la prédiction "${predictionText}" est incorrecte ?`;
+
+            if (confirm(confirmMessage)) {
+                sendFeedback(satisfaction);
+            } else {
+                document.querySelectorAll('input[name="satisfaction"]').forEach(input => {
+                    input.checked = false;
+                });
+            }
+        }
+
+        // Autres fonctions utilitaires
+        function showAnalysisError(message) {
+            document.getElementById('analysisResult').innerHTML = `<div class="error-message">${message}</div>`;
+        }
+
+        function performSearch() {
+            currentSearchQuery = document.getElementById('searchInput').value.trim().toLowerCase();
+            applyFiltersAndSearch();
+        }
+
+        function filterEmails(type) {
+            currentFilter = type;
+            document.querySelectorAll('.filter-buttons .btn').forEach(btn => {
+                btn.classList.toggle('active', btn.dataset.filter === type);
+            });
+            applyFiltersAndSearch();
+        }
 
         function updateBodyDisplay() {
-            const bodyElement = document.getElementById('emailBody'), rawContent = bodyElement.dataset.textContent || '';
+            const bodyElement = document.getElementById('emailBody');
+            const rawContent = bodyElement.dataset.textContent || '';
+
             if (document.getElementById('htmlMode').checked) {
                 bodyElement.innerHTML = rawContent.replace(/\n/g, '<br>');
                 bodyElement.style.fontFamily = 'inherit';
                 bodyElement.style.whiteSpace = 'normal';
             } else {
-                bodyElement.textContent = rawContent; // Pas besoin de re-nettoyer, on garde le texte brut
+                bodyElement.textContent = rawContent;
                 bodyElement.style.fontFamily = "'Courier New', monospace";
                 bodyElement.style.whiteSpace = 'pre-wrap';
             }
         }
 
-        function handleFeedback(satisfaction) { document.getElementById('analysisResult').innerHTML += `<br><span class="small ${satisfaction === 'yes' ? 'text-success' : 'text-warning'}">Merci pour votre feedback !</span>`; }
-
+        // Initialisation
         document.addEventListener('DOMContentLoaded', () => {
-            console.log('Initialisation du dashboard ML...');
+            console.log('🚀 Initialisation du dashboard ML...');
+
+            // Charger les emails
             loadLiveEmails();
+
+            // Vérifier le statut ML
             checkMLStatus();
-            document.querySelectorAll('input[name="satisfaction"]').forEach(i => i.addEventListener('change', (e) => handleFeedback(e.target.value)));
-            document.querySelectorAll('input[name="viewMode"]').forEach(i => i.addEventListener('change', updateBodyDisplay));
+
+            // Event listeners pour le feedback
+            document.querySelectorAll('input[name="satisfaction"]').forEach(input => {
+                input.addEventListener('change', function(e) {
+                    if (this.checked) {
+                        handleFeedback(this.value);
+                    }
+                });
+            });
+
+            // Event listeners pour les modes d'affichage
+            document.querySelectorAll('input[name="viewMode"]').forEach(input => {
+                input.addEventListener('change', updateBodyDisplay);
+            });
+
+            console.log('✅ Système de feedback initialisé');
         });
 
+        // Styles pour l'animation de rotation
         const style = document.createElement('style');
-        style.textContent = `.spin { animation: spin 1s linear infinite; } @keyframes spin { to { transform: rotate(360deg); } }`;
+        style.textContent = `
+            .spin {
+                animation: spin 1s linear infinite;
+            }
+            @keyframes spin {
+                to { transform: rotate(360deg); }
+            }
+        `;
         document.head.appendChild(style);
+
+        // Fonction de debug (optionnelle)
+        function debugFeedbackState() {
+            console.log('🔍 État du feedback:');
+            console.log('  currentEmailData:', currentEmailData);
+            console.log('  currentAnalysisResult:', currentAnalysisResult);
+            console.log('  mlStatusOnline:', mlStatusOnline);
+        }
     </script>
 </body>
 </html>
