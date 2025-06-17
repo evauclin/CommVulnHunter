@@ -33,45 +33,122 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+#Variables globales pour les artefacts
+model = None
+tokenizer = None
+scaler = None
+label_encoder = None
+MAX_SEQUENCE_LENGTH = None
+SUSPICIOUS_WORDS_SET = set()
+STOP_WORDS = {}
+
 
 # --- Chargement des Artefacts du Modèle ---
-try:
-    print("🚀 Démarrage de l'API et chargement des artefacts...")
-    current_dir = Path(__file__).parent
-    model_dir = current_dir / "model"
+def load_model_artifacts():
+    """Charge tous les artefacts du modèle avec gestion d'erreurs"""
+    global model, tokenizer, scaler, label_encoder, MAX_SEQUENCE_LENGTH, SUSPICIOUS_WORDS_SET, STOP_WORDS
 
-    model = load_model(model_dir / "best_lstm_model.keras")
-    with open(model_dir / "tokenizer.pkl", "rb") as f:
-        tokenizer = pickle.load(f)
-    with open(model_dir / "scaler.pkl", "rb") as f:
-        scaler = pickle.load(f)
-    with open(model_dir / "label_encoder.pkl", "rb") as f:
-        label_encoder = pickle.load(f)
-
-    with open(model_dir / "model_metadata.json", "r") as f:
-        metadata = json.load(f)
-    MAX_SEQUENCE_LENGTH = metadata['config']['max_sequence_length']
-
-    with open(model_dir / "suspicious_words.json", 'r') as f:
-        suspicious_words_data = json.load(f)
-    SUSPICIOUS_WORDS_SET = set(suspicious_words_data.get('en', []) + suspicious_words_data.get('fr', []))
-
-    # Préparation des stopwords NLTK pour les langues supportées
     try:
-        nltk.data.find('corpora/stopwords')
-    except LookupError:
-        print("📥 Téléchargement des données NLTK (stopwords)...")
-        nltk.download('stopwords', quiet=True)
-    STOP_WORDS = {
-        'en': set(nltk.corpus.stopwords.words('english')),
-        'fr': set(nltk.corpus.stopwords.words('french'))
-    }
-    print(f"✅ Artefacts chargés (max_len: {MAX_SEQUENCE_LENGTH}, stopwords: fr/en).")
-    print("\n🎉 API prête à recevoir des requêtes !")
+        print("🚀 Démarrage de l'API et chargement des artefacts...")
+        current_dir = Path(__file__).parent
+        model_dir = current_dir / "model"
 
-except Exception as e:
-    print(f"❌ ERREUR CRITIQUE AU DÉMARRAGE: {e}")
-    model = None
+        # 1. CHARGER D'ABORD LES MÉTADONNÉES
+        metadata_file = model_dir / "model_metadata.json"
+        if not metadata_file.exists():
+            raise FileNotFoundError("Fichier model_metadata.json manquant")
+
+        with open(metadata_file, "r") as f:
+            metadata = json.load(f)
+
+        # Extraire la configuration critique
+        config = metadata.get('config', {})
+        MAX_SEQUENCE_LENGTH = config.get('max_sequence_length')
+        max_vocab_size = config.get('max_vocab_size')
+
+        if MAX_SEQUENCE_LENGTH is None:
+            raise ValueError("max_sequence_length non trouvé dans les métadonnées")
+
+        print(f"✅ Configuration chargée:")
+        print(f"  max_sequence_length: {MAX_SEQUENCE_LENGTH}")
+        print(f"  max_vocab_size: {max_vocab_size}")
+
+        # 2. CHARGER LES ARTEFACTS DANS LE BON ORDRE
+        print("📦 Chargement des artefacts...")
+
+        # Tokenizer
+        with open(model_dir / "tokenizer.pkl", "rb") as f:
+            tokenizer = pickle.load(f)
+        print(f"✅ Tokenizer chargé (vocab: {len(tokenizer.word_index)} mots)")
+
+        # Scaler
+        with open(model_dir / "scaler.pkl", "rb") as f:
+            scaler = pickle.load(f)
+        print("✅ Scaler chargé")
+
+        # Label encoder
+        with open(model_dir / "label_encoder.pkl", "rb") as f:
+            label_encoder = pickle.load(f)
+        print(f"✅ Label encoder chargé (classes: {label_encoder.classes_})")
+
+        # Modèle (en dernier pour vérifier la compatibilité)
+        model_file = model_dir / "best_lstm_model.keras"
+        if not model_file.exists():
+            raise FileNotFoundError("Fichier best_lstm_model.keras manquant")
+
+        model = load_model(model_file)
+        print("✅ Modèle LSTM chargé")
+
+        # Vérifier les dimensions du modèle
+        print(f"🔍 Vérification des dimensions:")
+        for i, input_layer in enumerate(model.inputs):
+            print(f"  Input {i}: {input_layer.name} - Shape: {input_layer.shape}")
+
+        # 3. CHARGER LES RESSOURCES SUPPLÉMENTAIRES
+        # Mots suspects
+        suspicious_words_file = model_dir / "suspicious_words.json"
+        if suspicious_words_file.exists():
+            with open(suspicious_words_file, 'r') as f:
+                suspicious_words_data = json.load(f)
+            SUSPICIOUS_WORDS_SET = set(suspicious_words_data.get('en', []) + suspicious_words_data.get('fr', []))
+            print(f"✅ Mots suspects chargés ({len(SUSPICIOUS_WORDS_SET)} mots)")
+        else:
+            print("⚠️ Fichier suspicious_words.json manquant, utilisation d'une liste vide")
+
+        # Stopwords NLTK
+        try:
+            nltk.data.find('corpora/stopwords')
+        except LookupError:
+            print("📥 Téléchargement des données NLTK...")
+            nltk.download('stopwords', quiet=True)
+
+        STOP_WORDS = {
+            'en': set(nltk.corpus.stopwords.words('english')),
+            'fr': set(nltk.corpus.stopwords.words('french'))
+        }
+        print("✅ Stopwords chargés")
+
+        print(f"\n🎉 API prête ! Longueur de séquence configurée: {MAX_SEQUENCE_LENGTH}")
+        return True
+
+    except Exception as e:
+        print(f"❌ ERREUR CRITIQUE AU DÉMARRAGE: {e}")
+        print(f"❌ Type d'erreur: {type(e).__name__}")
+
+        # Lister les fichiers présents pour debug
+        if 'model_dir' in locals():
+            print(f"📁 Fichiers dans {model_dir}:")
+            try:
+                for file in model_dir.iterdir():
+                    print(f"  - {file.name}")
+            except:
+                print("  Impossible de lister les fichiers")
+
+        return False
+
+
+# Charger les artefacts au démarrage
+model_loaded = load_model_artifacts()
 
 
 # --- Modèles de Données Pydantic ---
@@ -162,46 +239,82 @@ def extract_numerical_features(text: str):
 # --- Logique de prédiction principale ---
 def perform_prediction(text: str):
     """Fonction cœur qui détecte la langue et effectue une prédiction."""
-    # Détection automatique de la langue
+    if not model_loaded:
+        raise HTTPException(status_code=503, detail="Modèle non chargé")
+
     try:
-        # On ne garde que les 1000 premiers caractères pour une détection rapide et fiable
-        detected = detect(text[:1000])
-        lang = detected.language if detected and detected.is_reliable else 'en'
-        # Si la langue détectée n'est pas supportée par notre modèle, on utilise 'en' par défaut
-        if lang not in ['fr', 'en']:
-            lang = 'en'
-    except Exception:
-        lang = 'en'  # En cas d'erreur, fallback sur l'anglais
+        # Détection automatique de la langue
+        try:
+            detected_lang = detect(text[:1000])
+            lang = detected_lang if detected_lang in ['fr', 'en'] else 'en'
+        except Exception:
+            lang = 'en'  # Fallback sur l'anglais
 
-    # Séquence textuelle
-    processed_text = preprocess_text(text, lang)
-    sequence = tokenizer.texts_to_sequences([processed_text])
-    padded_sequence = pad_sequences(
-        sequence,
-        maxlen=MAX_SEQUENCE_LENGTH,
-        padding='post',
-        truncating='post'
-    )
+        print(f"🌍 Langue détectée: {lang}")
 
-    # Features numériques
-    numerical_features = extract_numerical_features(text)
-    scaled_features = scaler.transform([numerical_features])
+        # Prétraitement du texte
+        processed_text = preprocess_text(text, lang)
+        print(f"📝 Texte prétraité: {processed_text[:100]}...")
 
-    # Prédiction du modèle
-    prediction_proba = model.predict([padded_sequence, scaled_features])[0][0]
-    prediction_int = int(prediction_proba > 0.5)
-    predicted_class = label_encoder.inverse_transform([prediction_int])[0]
+        # Création des séquences avec la BONNE longueur
+        sequence = tokenizer.texts_to_sequences([processed_text])
+        print(f"🔢 Séquence brute: longueur = {len(sequence[0]) if sequence[0] else 0}")
 
-    confidence = "HIGH" if abs(prediction_proba - 0.5) > 0.4 else "MEDIUM" if abs(
-        prediction_proba - 0.5) > 0.2 else "LOW"
+        # CRITIQUE: Utiliser MAX_SEQUENCE_LENGTH du modèle
+        padded_sequence = pad_sequences(
+            sequence,
+            maxlen=MAX_SEQUENCE_LENGTH,  # Utiliser la longueur correcte
+            padding='post',
+            truncating='post'
+        )
+        print(f"📏 Séquence paddée: shape = {padded_sequence.shape}")
 
-    return {
-        "prediction": predicted_class,
-        "probability": float(prediction_proba),
-        "confidence": confidence,
-        "language_detected": lang
-    }
+        # Features numériques
+        numerical_features = extract_numerical_features(text)
+        scaled_features = scaler.transform([numerical_features])
+        print(f"🔢 Features numériques: shape = {scaled_features.shape}")
 
+        # Vérification finale des dimensions
+        expected_text_shape = (1, MAX_SEQUENCE_LENGTH)
+        expected_num_shape = (1, 10)  # Nombre de features numériques
+
+        if padded_sequence.shape != expected_text_shape:
+            raise ValueError(f"Dimension texte incorrecte: {padded_sequence.shape} != {expected_text_shape}")
+        if scaled_features.shape != expected_num_shape:
+            raise ValueError(f"Dimension features incorrecte: {scaled_features.shape} != {expected_num_shape}")
+
+        print(f"✅ Dimensions validées, prédiction en cours...")
+
+        # Prédiction du modèle
+        prediction_proba = model.predict([padded_sequence, scaled_features], verbose=0)[0][0]
+        prediction_int = int(prediction_proba > 0.5)
+        predicted_class = label_encoder.inverse_transform([prediction_int])[0]
+
+        # Calcul de la confiance
+        confidence_score = abs(prediction_proba - 0.5) * 2
+        if confidence_score > 0.8:
+            confidence = "HIGH"
+        elif confidence_score > 0.4:
+            confidence = "MEDIUM"
+        else:
+            confidence = "LOW"
+
+        print(f"✅ Prédiction réussie: {predicted_class} (prob: {prediction_proba:.4f}, conf: {confidence})")
+
+        return {
+            "prediction": predicted_class,
+            "probability": float(prediction_proba),
+            "confidence": confidence,
+            "language_detected": lang
+        }
+
+    except Exception as e:
+        print(f"❌ Erreur dans perform_prediction: {e}")
+        print(f"❌ Type d'erreur: {type(e).__name__}")
+        import traceback
+        print(f"❌ Traceback complet:")
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=f"Erreur de prédiction: {str(e)}")
 
 # --- Endpoints de l'API ---
 @app.get("/", summary="Message de bienvenue")
@@ -209,6 +322,8 @@ def read_root():
     return {
         "message": "Bienvenue sur l'API de détection de phishing (LSTM Hybride FR/EN)",
         "version": app.version,
+        "documentation": "/docs",
+        "max_sequence_length": MAX_SEQUENCE_LENGTH,
         "documentation": "/docs"
     }
 
@@ -217,7 +332,12 @@ def read_root():
 def health_check():
     if model is None:
         raise HTTPException(status_code=503, detail="Service Unavailable: Model not loaded")
-    return {"status": "healthy"}
+    return {
+        "status": "healthy",
+        "model_loaded": True,
+        "max_sequence_length": MAX_SEQUENCE_LENGTH,
+        "vocab_size": len(tokenizer.word_index) if tokenizer else 0
+    }
 
 
 @app.post("/predict", summary="Prédire sur un seul texte")
@@ -225,12 +345,16 @@ def predict(item: TextInput):
     """
     Analyse un texte, détecte sa langue (fr/en) et prédit s'il s'agit d'un phishing.
     """
+    if not model_loaded:
+        raise HTTPException(status_code=503, detail="Modèle non disponible")
     try:
         print(f"📧 Analyse d'un texte de {len(item.text)} caractères...")
         result = perform_prediction(item.text)
         print(
             f"🎯 Résultat ({result['language_detected']}): {result['prediction']} (Proba: {result['probability']:.4f})")
         return result
+    except HTTPException:
+        raise
     except Exception as e:
         print(f"❌ Erreur lors de la prédiction: {e}")
         raise HTTPException(status_code=500, detail=f"Erreur interne du serveur: {e}")
@@ -259,8 +383,12 @@ def save_feedback(feedback: FeedbackInput):
     Enregistre le feedback d'un utilisateur sur une prédiction.
     """
     try:
+        # Créer le dossier data s'il n'existe pas
+        data_dir = Path("./data")
+        data_dir.mkdir(exist_ok=True)
+
         # Nom du fichier CSV
-        csv_filename = "./data/user_feedbacks.csv"
+        csv_filename = data_dir / "user_feedbacks.csv"
 
         # Préparer les données
         feedback_data = {
@@ -273,7 +401,7 @@ def save_feedback(feedback: FeedbackInput):
         }
 
         # Écrire dans le CSV
-        file_exists = os.path.exists(csv_filename)
+        file_exists = csv_filename.exists()
 
         with open(csv_filename, 'a', newline='', encoding='utf-8') as csvfile:
             fieldnames = list(feedback_data.keys())
@@ -285,16 +413,48 @@ def save_feedback(feedback: FeedbackInput):
 
             writer.writerow(feedback_data)
 
-        print(f"📝 Feedback enregistré: {feedback.user_satisfaction}")
+        print(f"📝 Feedback enregistré: {feedback.user_satisfaction} pour {feedback.predicted_class}")
 
         return {
             "status": "success",
-            "message": "Feedback enregistré avec succès"
+            "message": "Feedback enregistré avec succès",
+            "saved_to": str(csv_filename)
         }
 
     except Exception as e:
         print(f"❌ Erreur feedback: {e}")
         raise HTTPException(status_code=500, detail=f"Erreur: {e}")
+
+
+# --- Endpoint de diagnostic ---
+@app.get("/debug/model-info", summary="Informations de diagnostic du modèle")
+def get_model_info():
+    """Endpoint pour diagnostiquer les problèmes de modèle"""
+    if not model_loaded:
+        return {"error": "Modèle non chargé", "model_loaded": False}
+
+    try:
+        info = {
+            "model_loaded": model_loaded,
+            "max_sequence_length": MAX_SEQUENCE_LENGTH,
+            "tokenizer_vocab_size": len(tokenizer.word_index) if tokenizer else 0,
+            "model_inputs": [],
+            "suspicious_words_count": len(SUSPICIOUS_WORDS_SET),
+            "stopwords_languages": list(STOP_WORDS.keys()),
+            "label_classes": label_encoder.classes_.tolist() if label_encoder else []
+        }
+
+        if model:
+            for i, input_layer in enumerate(model.inputs):
+                info["model_inputs"].append({
+                    "index": i,
+                    "name": input_layer.name,
+                    "shape": input_layer.shape.as_list()
+                })
+
+        return info
+    except Exception as e:
+        return {"error": str(e), "model_loaded": model_loaded}
 
 # --- Lancement de l'application ---
 if __name__ == "__main__":
