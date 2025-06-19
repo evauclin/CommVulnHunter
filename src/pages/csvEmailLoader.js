@@ -566,6 +566,19 @@ function selectEmail(index) {
     if (email) {
         const formatted = emailLoader.formatEmailForDisplay(email);
 
+        // SAUVEGARDER POUR LE FEEDBACK (AJOUT IMPORTANT)
+        if (typeof currentEmailData !== 'undefined') {
+            currentEmailData = {
+                id: email.id || `email_${index}`,
+                from: formatted.cleanFrom || email.from || '',
+                subject: formatted.cleanSubject || email.subject || '',
+                body: formatted.cleanBody || email.body || '',
+                type: email.type || 'unknown',
+                fullText: `From: ${formatted.cleanFrom || email.from || ''} Subject: ${formatted.cleanSubject || email.subject || ''} Body: ${formatted.cleanBody || email.body || ''}`
+            };
+            console.log('📧 currentEmailData sauvegardé depuis csvEmailLoader:', currentEmailData);
+        }
+
         const elements = {
             id: document.getElementById('emailId'),
             from: document.getElementById('emailFrom'),
@@ -583,11 +596,17 @@ function selectEmail(index) {
         if (elements.body) {
             elements.body.dataset.textContent = formatted.cleanBody;
             elements.body.dataset.htmlContent = email.body;
-            updateBodyDisplay();
+            if (typeof updateBodyDisplay === 'function') {
+                updateBodyDisplay();
+            }
         }
 
         if (elements.analyzeBtn) {
             elements.analyzeBtn.dataset.emailType = email.type;
+            // Activer le bouton si ML est en ligne
+            if (typeof mlStatusOnline !== 'undefined') {
+                elements.analyzeBtn.disabled = !mlStatusOnline;
+            }
         }
 
         // Reset analysis
@@ -596,10 +615,15 @@ function selectEmail(index) {
 
         document.querySelectorAll('input[name="satisfaction"]').forEach(input => {
             input.checked = false;
+            input.disabled = true;
         });
+
+        // Réinitialiser l'analyse
+        if (typeof resetAnalysisAndFeedback === 'function') {
+            resetAnalysisAndFeedback();
+        }
     }
 }
-
 function refreshEmails() {
     console.log('🔄 Actualisation des emails...');
     if (emailLoader.currentSource === 'csv_live') {

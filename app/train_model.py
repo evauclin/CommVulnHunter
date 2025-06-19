@@ -553,6 +553,51 @@ class LSTMPhishingDetector:
 
         return predictions_decoded, probabilities.flatten()
 
+    def retrain_from_feedback(self, feedback_df, main_dataset_path=None, sample_size=2000):
+        """Réentraîne le modèle avec des feedbacks négatifs"""
+        print(f"\n🔄 RÉENTRAÎNEMENT À PARTIR DES FEEDBACKS")
+
+        # 1. Combiner feedbacks + dataset principal
+        if main_dataset_path:
+            try:
+                main_df = self.load_data(main_dataset_path, sample_size=sample_size)
+                if main_df is not None:
+                    combined_df = pd.concat([main_df, feedback_df], ignore_index=True)
+                else:
+                    combined_df = feedback_df
+            except:
+                combined_df = feedback_df
+        else:
+            combined_df = feedback_df
+
+        # 2. Division des données (COMME DANS VOTRE main() EXISTANTE)
+        combined_df['stratify_col'] = combined_df['label'].astype(str) + '_' + combined_df['language'].astype(str)
+        X = combined_df[['text', 'language', 'stratify_col']]
+        y = combined_df['label']
+
+        X_train, X_temp, y_train, y_temp = train_test_split(
+            X, y, test_size=0.3, random_state=42, stratify=combined_df['stratify_col']
+        )
+        X_val, X_test, y_val, y_test = train_test_split(
+            X_temp, y_temp, test_size=0.5, random_state=42, stratify=X_temp['stratify_col']
+        )
+
+        # 3. Préparer les séquences (COMME DANS VOTRE main() EXISTANTE)
+        X_text_train, X_num_train = self.prepare_sequences(X_train, is_training=True)
+        X_text_val, X_num_val = self.prepare_sequences(X_val, is_training=False)
+        X_text_test, X_num_test = self.prepare_sequences(X_test, is_training=False)
+
+        # 4. Entraîner (COMME DANS VOTRE train_model() EXISTANTE)
+        history = self.train_model(
+            X_text_train, X_num_train, y_train,
+            X_text_val, X_num_val, y_val
+        )
+
+        # 5. Évaluer
+        metrics = self.evaluate_model(X_text_test, X_num_test, y_test)
+
+        return history, metrics, X_text_test, X_num_test, y_test
+
 def main():
     config = {
         'embedding_dim': 128,

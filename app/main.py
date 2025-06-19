@@ -7,7 +7,9 @@ import csv
 import os
 from datetime import datetime
 from typing import Optional
-
+import json
+import pickle
+import re
 import nltk
 import numpy as np
 import pandas as pd
@@ -18,6 +20,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from tensorflow.keras.models import load_model
 from tensorflow.keras.preprocessing.sequence import pad_sequences
+
 
 # --- Configuration et Initialisation ---
 app = FastAPI(
@@ -38,9 +41,13 @@ model = None
 tokenizer = None
 scaler = None
 label_encoder = None
-MAX_SEQUENCE_LENGTH = None
+MAX_SEQUENCE_LENGTH = 566
 SUSPICIOUS_WORDS_SET = set()
 STOP_WORDS = {}
+NEGATIVE_FEEDBACK_THRESHOLD = 10
+FEEDBACK_THRESHOLD = 10
+
+FEEDBACK_CSV_PATH = Path("./data/user_feedbacks.csv")
 
 
 # --- Chargement des Artefacts du Modèle ---
@@ -63,11 +70,11 @@ def load_model_artifacts():
 
         # Extraire la configuration critique
         config = metadata.get('config', {})
-        MAX_SEQUENCE_LENGTH = config.get('max_sequence_length')
+       # MAX_SEQUENCE_LENGTH = config.get('max_sequence_length')
         max_vocab_size = config.get('max_vocab_size')
 
-        if MAX_SEQUENCE_LENGTH is None:
-            raise ValueError("max_sequence_length non trouvé dans les métadonnées")
+      #  if MAX_SEQUENCE_LENGTH is None:
+        #     raise ValueError("max_sequence_length non trouvé dans les métadonnées")
 
         print(f"✅ Configuration chargée:")
         print(f"  max_sequence_length: {MAX_SEQUENCE_LENGTH}")
@@ -258,8 +265,15 @@ def perform_prediction(text: str):
 
         # Création des séquences avec la BONNE longueur
         sequence = tokenizer.texts_to_sequences([processed_text])
-        print(f"🔢 Séquence brute: longueur = {len(sequence[0]) if sequence[0] else 0}")
+        # FILTRER les indices qui dépassent la taille du vocabulaire du modèle
+        MAX_VOCAB_INDEX = 10000  # Limite du modèle
+        if sequence[0]:  # Si la séquence n'est pas vide
+            # Remplacer les indices >= 10000 par 1 (token OOV)
+            sequence[0] = [idx if idx < MAX_VOCAB_INDEX else 1 for idx in sequence[0]]
 
+        print(f"🔢 Séquence filtrée: longueur = {len(sequence[0]) if sequence[0] else 0}")
+        print(f"🔢 Séquence brute: longueur = {len(sequence[0]) if sequence[0] else 0}")
+        MAX_SEQUENCE_LENGTH = 566
         # CRITIQUE: Utiliser MAX_SEQUENCE_LENGTH du modèle
         padded_sequence = pad_sequences(
             sequence,
@@ -316,6 +330,266 @@ def perform_prediction(text: str):
         traceback.print_exc()
         raise HTTPException(status_code=500, detail=f"Erreur de prédiction: {str(e)}")
 
+
+# --- Fonctions de Gestion des Feedbacks Intelligents ---
+def count_negative_feedbacks() -> int:
+    """Compte uniquement les feedbacks négatifs non traités"""
+    try:
+        if not FEEDBACK_CSV_PATH.exists():
+            return 0
+
+        df = pd.read_csv(FEEDBACK_CSV_PATH)
+
+        # Compter seulement les feedbacks négatifs ET non traités
+        negative_unprocessed = len(df[
+                                       (df['user_satisfaction'] == 'no') &
+                                       (df['processed'] == False)
+                                       ])
+
+        print(f"📊 Feedbacks négatifs non traités: {negative_unprocessed}")
+        return negative_unprocessed
+
+    except Exception as e:
+        print(f"❌ Erreur lors du comptage des feedbacks négatifs: {e}")
+        return 0
+
+
+def prepare_negative_feedback_dataset() -> Optional[pd.DataFrame]:
+    """Prépare un dataset UNIQUEMENT avec les feedbacks négatifs"""
+    try:
+        if not FEEDBACK_CSV_PATH.exists():
+            return None
+
+        df = pd.read_csv(FEEDBACK_CSV_PATH)
+
+        # Filtrer: feedbacks négatifs ET non traités
+        negative_df = df[
+            (df['user_satisfaction'] == 'no') &
+            (df['processed'] == False)
+            ].copy()
+
+        if len(negative_df) == 0:
+            return None
+
+        # Pour les feedbacks négatifs, inverser la prédiction = label correct
+        def get_correct_label(row):
+            return 'legitimate' if row['predicted_class'] == 'phishing' else 'phishing'
+
+        negative_df['correct_label'] = negative_df.apply(get_correct_label, axis=1)
+
+        # Créer le dataset final
+        retrain_df = pd.DataFrame({
+            'text': negative_df['email_text'],
+            'label': negative_df['correct_label'],
+            'language': negative_df['language_detected']
+        })
+
+        print(f"📋 Dataset de feedbacks négatifs: {len(retrain_df)} échantillons")
+        print(f"  Distribution: {retrain_df['label'].value_counts().to_dict()}")
+
+        return retrain_df
+
+    except Exception as e:
+        print(f"❌ Erreur lors de la préparation du dataset négatif: {e}")
+        return None
+
+
+def mark_negative_feedbacks_processed():
+    """Marque UNIQUEMENT les feedbacks négatifs comme traités"""
+    try:
+        if not FEEDBACK_CSV_PATH.exists():
+            return
+
+        df = pd.read_csv(FEEDBACK_CSV_PATH)
+
+        # Marquer seulement les feedbacks négatifs ET non traités
+        mask = (df['user_satisfaction'] == 'no') & (df['processed'] == False)
+        df.loc[mask, 'processed'] = True
+
+        processed_count = mask.sum()
+
+        df.to_csv(FEEDBACK_CSV_PATH, index=False)
+
+        print(f"✅ {processed_count} feedbacks négatifs marqués comme traités")
+        print(f"📝 Feedbacks positifs conservés pour analyse future")
+
+    except Exception as e:
+        print(f"❌ Erreur lors du marquage des feedbacks négatifs: {e}")
+
+
+def evaluate_and_compare_models(new_detector, X_text_test, X_num_test, y_test):
+    """
+    Compare les performances du nouveau modèle vs ancien modèle
+    Retourne True si le nouveau modèle est meilleur
+    """
+    try:
+        print("🏆 COMPARAISON DES PERFORMANCES")
+        print("=" * 40)
+
+        # 1. Évaluer l'ancien modèle (modèle actuel)
+        global model
+        if model is None:
+            print("⚠️ Aucun modèle ancien à comparer, acceptation du nouveau")
+            return True, {}
+
+        y_test_encoded = new_detector.label_encoder.transform(y_test)
+
+        # Prédictions ancien modèle
+        old_pred_proba = model.predict([X_text_test, X_num_test], verbose=0)
+        old_pred = (old_pred_proba > 0.5).astype(int)
+
+        # Prédictions nouveau modèle
+        new_pred_proba = new_detector.model.predict([X_text_test, X_num_test], verbose=0)
+        new_pred = (new_pred_proba > 0.5).astype(int)
+
+        # Calculer les métriques
+        from sklearn.metrics import accuracy_score, f1_score, precision_score, recall_score
+
+        old_accuracy = accuracy_score(y_test_encoded, old_pred)
+        new_accuracy = accuracy_score(y_test_encoded, new_pred)
+
+        old_f1 = f1_score(y_test_encoded, old_pred)
+        new_f1 = f1_score(y_test_encoded, new_pred)
+
+        old_precision = precision_score(y_test_encoded, old_pred)
+        new_precision = precision_score(y_test_encoded, new_pred)
+
+        old_recall = recall_score(y_test_encoded, old_pred)
+        new_recall = recall_score(y_test_encoded, new_pred)
+
+        # Affichage des résultats
+        print(f"📊 ANCIEN MODÈLE:")
+        print(f"  Accuracy:  {old_accuracy:.4f}")
+        print(f"  F1-Score:  {old_f1:.4f}")
+        print(f"  Precision: {old_precision:.4f}")
+        print(f"  Recall:    {old_recall:.4f}")
+
+        print(f"📊 NOUVEAU MODÈLE:")
+        print(f"  Accuracy:  {new_accuracy:.4f}")
+        print(f"  F1-Score:  {new_f1:.4f}")
+        print(f"  Precision: {new_precision:.4f}")
+        print(f"  Recall:    {new_recall:.4f}")
+
+        # Calculer l'amélioration
+        accuracy_improvement = new_accuracy - old_accuracy
+        f1_improvement = new_f1 - old_f1
+
+        print(f"📈 AMÉLIORATION:")
+        print(f"  Accuracy:  {accuracy_improvement:+.4f}")
+        print(f"  F1-Score:  {f1_improvement:+.4f}")
+
+        # Critères de décision (vous pouvez ajuster ces seuils)
+        MIN_ACCURACY_IMPROVEMENT = 0.01  # 1% d'amélioration minimum
+        MIN_F1_IMPROVEMENT = 0.01
+
+        is_better = (
+                accuracy_improvement >= MIN_ACCURACY_IMPROVEMENT or
+                f1_improvement >= MIN_F1_IMPROVEMENT
+        )
+
+        if is_better:
+            print("✅ NOUVEAU MODÈLE ACCEPTÉ - Performances améliorées!")
+        else:
+            print("❌ NOUVEAU MODÈLE REJETÉ - Pas d'amélioration significative")
+
+        return is_better, {
+            'old_accuracy': old_accuracy,
+            'new_accuracy': new_accuracy,
+            'old_f1': old_f1,
+            'new_f1': new_f1,
+            'accuracy_improvement': accuracy_improvement,
+            'f1_improvement': f1_improvement
+        }
+
+    except Exception as e:
+        print(f"❌ Erreur lors de la comparaison: {e}")
+        # En cas d'erreur, accepter le nouveau modèle par sécurité
+        return True, {}
+
+
+async def trigger_intelligent_retraining():
+    """Réentraînement intelligent basé sur feedbacks négatifs"""
+    global IS_RETRAINING, model, tokenizer, scaler, label_encoder
+
+    with RETRAIN_LOCK:
+        if IS_RETRAINING:
+            return {"status": "already_running"}
+        IS_RETRAINING = True
+
+    try:
+        print("🧠 RÉENTRAÎNEMENT INTELLIGENT")
+
+        # 1. Vérifier les feedbacks négatifs
+        negative_count = count_negative_feedbacks()
+        if negative_count < NEGATIVE_FEEDBACK_THRESHOLD:
+            return {"status": "insufficient_negative_feedback"}
+
+        # 2. Préparer les feedbacks négatifs
+        negative_df = prepare_negative_feedback_dataset()
+        if negative_df is None:
+            return {"status": "no_negative_data"}
+
+        # 3. Créer nouveau détecteur
+        from train_model import LSTMPhishingDetector
+
+        config = {
+            'epochs': 10,
+            'batch_size': 64,
+            'learning_rate': 0.0005,
+            'patience': 3
+        }
+
+        new_detector = LSTMPhishingDetector(config)
+
+        # 4. RÉENTRAÎNER avec la nouvelle fonction
+        history, metrics, X_text_test, X_num_test, y_test = new_detector.retrain_from_feedback(
+            negative_df,
+            main_dataset_path='full_merged_dataset_fr_en_spam.csv',
+            sample_size=2000
+        )
+
+        # 5. Comparer les modèles
+        is_better, comparison = evaluate_and_compare_models(
+            new_detector, X_text_test, X_num_test, y_test
+        )
+
+        if not is_better:
+            print("❌ NOUVEAU MODÈLE REJETÉ")
+            return {"status": "model_rejected"}
+
+        # 6. Remplacer le modèle
+        print("✅ NOUVEAU MODÈLE ACCEPTÉ")
+
+        # Sauvegarder les nouveaux artefacts
+        new_detector.save_model_artifacts("best_lstm_model")
+
+        # Recharger dans l'API
+        success = load_model_artifacts()
+        if not success:
+            return {"status": "reload_failed"}
+
+        # Marquer les feedbacks comme traités
+        mark_negative_feedbacks_processed()
+
+        return {"status": "success", "metrics": comparison}
+
+    except Exception as e:
+        print(f"❌ ERREUR: {e}")
+        return {"status": "error", "message": str(e)}
+
+    finally:
+        with RETRAIN_LOCK:
+            IS_RETRAINING = False
+
+
+
+
+
+
+
+
+
+
 # --- Endpoints de l'API ---
 @app.get("/", summary="Message de bienvenue")
 def read_root():
@@ -332,11 +606,17 @@ def read_root():
 def health_check():
     if model is None:
         raise HTTPException(status_code=503, detail="Service Unavailable: Model not loaded")
+
+    negative_feedbacks = count_negative_feedbacks()
+
     return {
         "status": "healthy",
         "model_loaded": True,
         "max_sequence_length": MAX_SEQUENCE_LENGTH,
-        "vocab_size": len(tokenizer.word_index) if tokenizer else 0
+        "vocab_size": len(tokenizer.word_index) if tokenizer else 0,
+        "is_retraining": IS_RETRAINING,
+        "negative_feedbacks": negative_feedbacks,
+        "negative_threshold": NEGATIVE_FEEDBACK_THRESHOLD
     }
 
 
@@ -377,49 +657,85 @@ def predict_batch(batch: BatchInput):
     return {"results": results}
 
 
-@app.post("/feedback", summary="Enregistrer un feedback utilisateur")
-def save_feedback(feedback: FeedbackInput):
+@app.get("/feedbacks", summary="Voir les feedbacks utilisateur")
+def get_feedbacks():
     """
-    Enregistre le feedback d'un utilisateur sur une prédiction.
+    Récupère tous les feedbacks enregistrés
     """
     try:
-        # Créer le dossier data s'il n'existe pas
-        data_dir = Path("./data")
-        data_dir.mkdir(exist_ok=True)
+        csv_filename = Path("./data/user_feedbacks.csv")
 
-        # Nom du fichier CSV
-        csv_filename = data_dir / "user_feedbacks.csv"
+        if not csv_filename.exists():
+            return {
+                "message": "Aucun feedback enregistré pour le moment",
+                "feedbacks": [],
+                "count": 0
+            }
 
-        # Préparer les données
+        feedbacks = []
+        with open(csv_filename, 'r', encoding='utf-8') as csvfile:
+            reader = csv.DictReader(csvfile)
+            for row in reader:
+                feedbacks.append(row)
+
+        return {
+            "message": "Feedbacks récupérés avec succès",
+            "count": len(feedbacks),
+            "feedbacks": feedbacks,
+            "file_location": str(csv_filename)
+        }
+
+    except Exception as e:
+        print(f"❌ Erreur lecture feedbacks: {e}")
+        raise HTTPException(status_code=500, detail=f"Erreur: {e}")
+
+@app.post("/feedback", summary="Enregistrer un feedback avec réentraînement intelligent")
+async def save_feedback(feedback: FeedbackInput, background_tasks: BackgroundTasks):
+    """
+    Enregistre le feedback et déclenche un réentraînement intelligent
+    après 10 feedbacks NÉGATIFS
+    """
+    try:
         feedback_data = {
             "timestamp": datetime.now().isoformat(),
-            "email_text": feedback.email_text[:200],  # Limiter la taille
+            "email_text": feedback.email_text[:500],
             "predicted_class": feedback.predicted_class,
             "predicted_probability": feedback.predicted_probability,
             "user_satisfaction": feedback.user_satisfaction,
             "language_detected": feedback.language_detected
         }
 
-        # Écrire dans le CSV
-        file_exists = csv_filename.exists()
+        if not save_feedback_to_csv(feedback_data):
+            raise HTTPException(status_code=500, detail="Erreur sauvegarde feedback")
 
-        with open(csv_filename, 'a', newline='', encoding='utf-8') as csvfile:
-            fieldnames = list(feedback_data.keys())
-            writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
+        # Compter UNIQUEMENT les feedbacks négatifs
+        negative_count = count_negative_feedbacks()
 
-            # Écrire l'en-tête si le fichier est nouveau
-            if not file_exists:
-                writer.writeheader()
+        print(f"📝 Feedback enregistré: {feedback.user_satisfaction}")
+        print(f"📊 Feedbacks négatifs: {negative_count}/{NEGATIVE_FEEDBACK_THRESHOLD}")
 
-            writer.writerow(feedback_data)
+        # Déclencher le réentraînement SEULEMENT pour les feedbacks négatifs
+        should_retrain = (
+                feedback.user_satisfaction == "no" and
+                negative_count >= NEGATIVE_FEEDBACK_THRESHOLD and
+                not IS_RETRAINING
+        )
 
-        print(f"📝 Feedback enregistré: {feedback.user_satisfaction} pour {feedback.predicted_class}")
-
-        return {
+        response = {
             "status": "success",
             "message": "Feedback enregistré avec succès",
-            "saved_to": str(csv_filename)
+            "feedback_type": feedback.user_satisfaction,
+            "negative_feedbacks": negative_count,
+            "negative_threshold": NEGATIVE_FEEDBACK_THRESHOLD,
+            "will_retrain": should_retrain
         }
+
+        if should_retrain:
+            print(f"🚀 Seuil de {NEGATIVE_FEEDBACK_THRESHOLD} feedbacks NÉGATIFS atteint!")
+            background_tasks.add_task(trigger_intelligent_retraining)
+            response["message"] += " - Réentraînement intelligent déclenché!"
+
+        return response
 
     except Exception as e:
         print(f"❌ Erreur feedback: {e}")

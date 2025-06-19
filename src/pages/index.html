@@ -319,7 +319,9 @@
                 type: email.type || 'unknown',
                 fullText: `From: ${email.from || ''} Subject: ${email.subject || ''} Body: ${email.body || ''}`
             };
-
+            // DEBUG - Vérifier que les données sont bien stockées
+            console.log('📧 Email sélectionné:', currentEmailData);
+            console.log('✅ Données prêtes pour feedback');
             // Sélectionner visuellement l'email
             const emailElement = document.querySelector(`[data-index="${index}"]`);
             if (emailElement) emailElement.classList.add('active');
@@ -579,8 +581,27 @@
         function handleFeedback(satisfaction) {
             console.log(`📝 Feedback: ${satisfaction}`);
 
+            // Vérifications améliorées avec debug
+            console.log('🔍 État des variables:');
+            console.log('  currentEmailData:', currentEmailData);
+            console.log('  currentAnalysisResult:', currentAnalysisResult);
+
             if (!currentAnalysisResult) {
+                console.warn('❌ currentAnalysisResult manquant');
                 showFeedbackMessage('Veuillez d\'abord analyser un email', 'error');
+                return;
+            }
+
+            if (!currentEmailData) {
+                console.warn('❌ currentEmailData manquant');
+                showFeedbackMessage('Aucun email sélectionné', 'error');
+                return;
+            }
+
+            // Vérifier que fullText existe
+            if (!currentEmailData.fullText) {
+                console.warn('❌ fullText manquant dans currentEmailData');
+                showFeedbackMessage('Données de l\'email incomplètes', 'error');
                 return;
             }
 
@@ -598,7 +619,6 @@
                 });
             }
         }
-
         // Autres fonctions utilitaires
         function showAnalysisError(message) {
             document.getElementById('analysisResult').innerHTML = `<div class="error-message">${message}</div>`;
