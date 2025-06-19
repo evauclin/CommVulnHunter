@@ -554,50 +554,138 @@ class LSTMPhishingDetector:
         return predictions_decoded, probabilities.flatten()
 
     def retrain_from_feedback(self, feedback_df, main_dataset_path=None, sample_size=2000):
-        """Réentraîne le modèle avec des feedbacks négatifs"""
-        print(f"\n🔄 RÉENTRAÎNEMENT À PARTIR DES FEEDBACKS")
+        """
+        Réentraîne le modèle en utilisant les feedbacks négatifs + échantillon du dataset principal
+        Suit exactement la même méthode de traitement que l'entraînement initial
 
-        # 1. Combiner feedbacks + dataset principal
+        Args:
+            feedback_df: DataFrame avec colonnes ['text', 'label', 'language']
+            main_dataset_path: Chemin vers le dataset principal (optionnel)
+            sample_size: Taille de l'échantillon du dataset principal
+
+        Returns:
+            history: Historique d'entraînement
+            metrics: Métriques de performance
+            X_text_test, X_num_test, y_test: Données de test pour comparaison
+        """
+        print(f"\n🔄 RÉENTRAÎNEMENT À PARTIR DES FEEDBACKS")
+        print("=" * 60)
+
+        # 1. Préparer le dataset combiné
+        combined_df = None
+
         if main_dataset_path:
             try:
+                print(f"📂 Chargement du dataset principal depuis {main_dataset_path}...")
                 main_df = self.load_data(main_dataset_path, sample_size=sample_size)
+
                 if main_df is not None:
+                    # Combiner avec les feedbacks
                     combined_df = pd.concat([main_df, feedback_df], ignore_index=True)
+                    print(
+                        f"🔗 Dataset combiné: {len(main_df)} (principal) + {len(feedback_df)} (feedbacks) = {len(combined_df)}")
                 else:
                     combined_df = feedback_df
-            except:
+                    print("⚠️ Dataset principal non trouvé, utilisation uniquement des feedbacks")
+
+            except Exception as e:
+                print(f"⚠️ Erreur lors du chargement du dataset principal: {e}")
                 combined_df = feedback_df
+                print("📝 Utilisation uniquement des feedbacks pour le réentraînement")
         else:
             combined_df = feedback_df
+            print("📝 Réentraînement uniquement sur les feedbacks (aucun dataset principal spécifié)")
 
-        # 2. Division des données (COMME DANS VOTRE main() EXISTANTE)
+        if len(combined_df) == 0:
+            raise ValueError("Aucune donnée disponible pour le réentraînement")
+
+        # 2. Vérifier les colonnes requises
+        required_columns = ['text', 'label', 'language']
+        missing_columns = [col for col in required_columns if col not in combined_df.columns]
+        if missing_columns:
+            raise ValueError(f"Colonnes manquantes dans le dataset: {missing_columns}")
+
+        # 3. Afficher les statistiques du dataset combiné
+        print(f"\n📊 STATISTIQUES DU DATASET DE RÉENTRAÎNEMENT:")
+        print(f"  Nombre total d'échantillons: {len(combined_df)}")
+
+        # Distribution des labels
+        label_counts = combined_df['label'].value_counts()
+        print(f"\n📋 Distribution des labels:")
+        for label, count in label_counts.items():
+            print(f"  {label}: {count} ({count / len(combined_df) * 100:.1f}%)")
+
+        # Distribution des langues
+        if 'language' in combined_df.columns:
+            lang_counts = combined_df['language'].value_counts()
+            print(f"\n🌍 Distribution des langues:")
+            for lang, count in lang_counts.items():
+                print(f"  {lang}: {count} ({count / len(combined_df) * 100:.1f}%)")
+
+        # 4. Division des données (EXACTEMENT comme dans main())
+        print(f"\n📋 Division des données pour le réentraînement...")
+
+        # Créer la colonne de stratification (label + langue)
         combined_df['stratify_col'] = combined_df['label'].astype(str) + '_' + combined_df['language'].astype(str)
+
         X = combined_df[['text', 'language', 'stratify_col']]
         y = combined_df['label']
 
+        # Division train/temp avec stratification
         X_train, X_temp, y_train, y_temp = train_test_split(
             X, y, test_size=0.3, random_state=42, stratify=combined_df['stratify_col']
         )
+
+        # Division validation/test
         X_val, X_test, y_val, y_test = train_test_split(
             X_temp, y_temp, test_size=0.5, random_state=42, stratify=X_temp['stratify_col']
         )
 
-        # 3. Préparer les séquences (COMME DANS VOTRE main() EXISTANTE)
+        print(f"  Train: {len(X_train)} échantillons")
+        print(f"  Validation: {len(X_val)} échantillons")
+        print(f"  Test: {len(X_test)} échantillons")
+
+        # 5. Préparation des séquences (EXACTEMENT comme dans main())
+        print(f"\n🔧 Préparation des séquences...")
+
+        # IMPORTANT: is_training=True pour recalculer vocab et séquences
         X_text_train, X_num_train = self.prepare_sequences(X_train, is_training=True)
         X_text_val, X_num_val = self.prepare_sequences(X_val, is_training=False)
         X_text_test, X_num_test = self.prepare_sequences(X_test, is_training=False)
 
-        # 4. Entraîner (COMME DANS VOTRE train_model() EXISTANTE)
+        print(f"  Séquences texte - Train: {X_text_train.shape}, Val: {X_text_val.shape}, Test: {X_text_test.shape}")
+        print(f"  Features numériques - Train: {X_num_train.shape}, Val: {X_num_val.shape}, Test: {X_num_test.shape}")
+
+        # 6. Entraînement du modèle (EXACTEMENT comme dans train_model())
+        print(f"\n🚀 DÉBUT DU RÉENTRAÎNEMENT...")
+        print("=" * 50)
+
+        # Utiliser la méthode train_model existante
         history = self.train_model(
             X_text_train, X_num_train, y_train,
             X_text_val, X_num_val, y_val
         )
 
-        # 5. Évaluer
+        # 7. Évaluation du modèle réentraîné
+        print(f"\n📊 ÉVALUATION DU MODÈLE RÉENTRAÎNÉ")
+        print("=" * 50)
+
         metrics = self.evaluate_model(X_text_test, X_num_test, y_test)
 
-        return history, metrics, X_text_test, X_num_test, y_test
+        print(f"\n✅ RÉENTRAÎNEMENT TERMINÉ!")
+        print(f"📈 Performances du modèle réentraîné:")
+        print(f"  Accuracy:  {metrics['accuracy']:.4f}")
+        print(f"  Precision: {metrics['precision']:.4f}")
+        print(f"  Recall:    {metrics['recall']:.4f}")
+        print(f"  F1-Score:  {metrics['f1']:.4f}")
+        print(f"  AUC:       {metrics['auc']:.4f}")
 
+        # 8. Sauvegarder les nouveaux artefacts avec un nom spécifique
+        print(f"\n💾 Sauvegarde des artefacts du modèle réentraîné...")
+        artifacts = self.save_model_artifacts("./data/retrained_lstm_model")
+
+        # 9. Retourner les données nécessaires pour la comparaison
+        return history, metrics, X_text_test, X_num_test, y_test
 def main():
     config = {
         'embedding_dim': 128,

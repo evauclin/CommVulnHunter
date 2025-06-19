@@ -6,3 +6,10 @@ scikit-learn
 pandas
 nltk
 langdetect
+
+# Ajout pour la visualisation et le réentraînement
+matplotlib==3.8.2
+seaborn==0.12.2
+
+# Pour une installation plus légère (optionnel)
+# matplotlib==3.8.2 --no-deps
