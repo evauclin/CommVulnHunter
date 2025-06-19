@@ -15,4 +15,3 @@ __pycache__/
 .terraform.lock.hcl
 
 app/data/
-*.csv
