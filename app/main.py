@@ -20,6 +20,11 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from tensorflow.keras.models import load_model
 from tensorflow.keras.preprocessing.sequence import pad_sequences
+import threading
+from fastapi import BackgroundTasks
+from pathlib import Path
+import pandas as pd
+
 
 
 # --- Configuration et Initialisation ---
@@ -44,8 +49,11 @@ label_encoder = None
 MAX_SEQUENCE_LENGTH = 566
 SUSPICIOUS_WORDS_SET = set()
 STOP_WORDS = {}
-NEGATIVE_FEEDBACK_THRESHOLD = 10
-FEEDBACK_THRESHOLD = 10
+NEGATIVE_FEEDBACK_THRESHOLD = 5
+FEEDBACK_THRESHOLD = 5
+
+IS_RETRAINING = False
+RETRAIN_LOCK = threading.Lock()
 
 FEEDBACK_CSV_PATH = Path("./data/user_feedbacks.csv")
 
@@ -582,6 +590,33 @@ async def trigger_intelligent_retraining():
             IS_RETRAINING = False
 
 
+def save_feedback_to_csv(feedback_data):
+    """
+    Sauvegarde un feedback dans le fichier CSV
+    """
+    try:
+        # Créer le dossier data s'il n'existe pas
+        FEEDBACK_CSV_PATH.parent.mkdir(parents=True, exist_ok=True)
+
+        # Ajouter la colonne 'processed' si elle manque
+        feedback_data['processed'] = False
+
+        # Si le fichier n'existe pas, créer avec en-têtes
+        if not FEEDBACK_CSV_PATH.exists():
+            df = pd.DataFrame([feedback_data])
+            df.to_csv(FEEDBACK_CSV_PATH, index=False)
+            print(f"✅ Fichier feedback créé: {FEEDBACK_CSV_PATH}")
+        else:
+            # Ajouter au fichier existant
+            df = pd.DataFrame([feedback_data])
+            df.to_csv(FEEDBACK_CSV_PATH, mode='a', header=False, index=False)
+            print(f"✅ Feedback ajouté au fichier: {FEEDBACK_CSV_PATH}")
+
+        return True
+
+    except Exception as e:
+        print(f"❌ Erreur sauvegarde feedback: {e}")
+        return False
 
 
 
@@ -702,9 +737,11 @@ async def save_feedback(feedback: FeedbackInput, background_tasks: BackgroundTas
             "predicted_class": feedback.predicted_class,
             "predicted_probability": feedback.predicted_probability,
             "user_satisfaction": feedback.user_satisfaction,
-            "language_detected": feedback.language_detected
+            "language_detected": feedback.language_detected,
+            "processed": False  # Ajouter explicitement cette colonne
         }
 
+        # Sauvegarder le feedback
         if not save_feedback_to_csv(feedback_data):
             raise HTTPException(status_code=500, detail="Erreur sauvegarde feedback")
 
@@ -740,7 +777,6 @@ async def save_feedback(feedback: FeedbackInput, background_tasks: BackgroundTas
     except Exception as e:
         print(f"❌ Erreur feedback: {e}")
         raise HTTPException(status_code=500, detail=f"Erreur: {e}")
-
 
 # --- Endpoint de diagnostic ---
 @app.get("/debug/model-info", summary="Informations de diagnostic du modèle")
