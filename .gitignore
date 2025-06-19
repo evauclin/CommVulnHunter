@@ -14,4 +14,4 @@ __pycache__/
 *.tfstate.backup
 .terraform.lock.hcl
 
-app/data/
+app/data/dataset_fr_en.csv
