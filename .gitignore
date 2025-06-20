@@ -15,3 +15,15 @@ __pycache__/
 .terraform.lock.hcl
 
 app/data/dataset_fr_en.csv
+app/data/full_merged_dataset_fr_en_spam.csv
+app/data/*.csv
+model/*.keras
+model/*.pkl
+data/user_feedbacks.csv
+logs/
+*.log
+
+# Gardez seulement les fichiers essentiels
+!app/data/dataset_sample.csv
+!app/data/.gitkeep
+!model/.gitkeep
