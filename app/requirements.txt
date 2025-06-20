@@ -1,15 +1,12 @@
 fastapi==0.68.1
 uvicorn==0.15.0
-tensorflow==2.19.0
 python-multipart
+tensorflow==2.15.0
 scikit-learn
 pandas
+numpy
 nltk
 langdetect
-
-# Ajout pour la visualisation et le réentraînement
-matplotlib==3.8.2
+matplotlib==3.7.5
 seaborn==0.12.2
-
-# Pour une installation plus légère (optionnel)
-# matplotlib==3.8.2 --no-deps
+python-dateutil==2.8.2

@@ -1,15 +1,56 @@
-FROM python:3.9
+# ==============================================================================
+# DOCKERFILE OPTIMISÉ POUR VOTRE SYSTÈME
+# ==============================================================================
 
+FROM python:3.9-slim
+
+# Variables d'environnement
+ENV PYTHONUNBUFFERED=1
+ENV PYTHONDONTWRITEBYTECODE=1
+ENV PIP_NO_CACHE_DIR=1
+
+# Installer les dépendances système nécessaires
+RUN apt-get update && apt-get install -y \
+    build-essential \
+    curl \
+    && rm -rf /var/lib/apt/lists/*
+
+# Créer le dossier de travail
 WORKDIR /app
+
+# Copier et installer les requirements
 COPY ./app/requirements.txt /app/requirements.txt
 
-RUN pip install --no-cache-dir --upgrade -r /app/requirements.txt
+# Mettre à jour pip
+RUN pip install --upgrade pip
 
+# Installer les dépendances (exactement celles de votre requirements.txt)
+RUN pip install --no-cache-dir fastapi==0.68.1 uvicorn==0.15.0 python-multipart
+
+# Installer TensorFlow (version plus stable)
+RUN pip install --no-cache-dir tensorflow==2.15.0
+
+# Installer les autres dépendances
+RUN pip install --no-cache-dir \
+    scikit-learn \
+    pandas \
+    nltk \
+    langdetect \
+    matplotlib==3.7.5 \
+    seaborn==0.12.2 \
+    python-dateutil==2.8.2
+
+# Télécharger les données NLTK
+RUN python -c "import nltk; nltk.download('stopwords', quiet=True); nltk.download('punkt', quiet=True)"
+
+# Créer les dossiers nécessaires
+RUN mkdir -p /app/model /app/data
+
+# Copier le code de l'application
 COPY ./app /app
 
-# Créer le dossier data pour les feedbacks
-RUN mkdir -p /app/data
-
+# Exposer le port
 EXPOSE 80
 
+# Commande de démarrage
 CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "80"]
