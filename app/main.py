@@ -51,6 +51,8 @@ SUSPICIOUS_WORDS_SET = set()
 STOP_WORDS = {}
 NEGATIVE_FEEDBACK_THRESHOLD = 5
 FEEDBACK_THRESHOLD = 5
+FINETUNE_SAMPLE_SIZE = 200
+
 
 IS_RETRAINING = False
 RETRAIN_LOCK = threading.Lock()
@@ -590,34 +592,255 @@ async def trigger_intelligent_retraining():
             IS_RETRAINING = False
 
 
-def save_feedback_to_csv(feedback_data):
-    """
-    Sauvegarde un feedback dans le fichier CSV
-    """
-    try:
-        # Créer le dossier data s'il n'existe pas
-        FEEDBACK_CSV_PATH.parent.mkdir(parents=True, exist_ok=True)
+async def trigger_intelligent_finetuning():
+    """Fine-tuning intelligent du modèle existant"""
+    global IS_RETRAINING, model, tokenizer, scaler, label_encoder
 
-        # Ajouter la colonne 'processed' si elle manque
+    with RETRAIN_LOCK:
+        if IS_RETRAINING:
+            return {"status": "already_running"}
+        IS_RETRAINING = True
+
+    try:
+        print("🧠 FINE-TUNING INTELLIGENT DU MODÈLE EXISTANT")
+        print("=" * 50)
+
+        # 1. Vérifier les feedbacks négatifs
+        negative_count = count_negative_feedbacks()
+        if negative_count < NEGATIVE_FEEDBACK_THRESHOLD:
+            return {"status": "insufficient_negative_feedback", "count": negative_count}
+
+        # 2. Préparer les feedbacks négatifs
+        feedback_df = prepare_negative_feedback_dataset()
+        if feedback_df is None:
+            return {"status": "no_negative_data"}
+
+        # 3. Charger un échantillon du dataset principal (200 exemples)
+        dataset_path = 'app/data/full_merged_dataset_fr_en_spam.csv'
+
+        if not Path(dataset_path).exists():
+            print(f"⚠️ Dataset principal non trouvé: {dataset_path}")
+            alternative_paths = [
+                './data/full_merged_dataset_fr_en_spam.csv',
+                '../data/full_merged_dataset_fr_en_spam.csv',
+                'data/full_merged_dataset_fr_en_spam.csv'
+            ]
+
+            dataset_path = None
+            for alt_path in alternative_paths:
+                if Path(alt_path).exists():
+                    dataset_path = alt_path
+                    break
+
+            if not dataset_path:
+                print("❌ Dataset principal non trouvé, impossible de faire le fine-tuning")
+                return {"status": "no_main_dataset"}
+
+        # Charger 200 exemples du dataset principal
+        try:
+            main_df = pd.read_csv(dataset_path)
+
+            # Échantillonnage stratifié de 200 exemples
+            sample_df = main_df.groupby(['label', 'language']).apply(
+                lambda x: x.sample(min(len(x), FINETUNE_SAMPLE_SIZE // 4), random_state=42)
+            ).reset_index(drop=True)
+
+            if len(sample_df) < FINETUNE_SAMPLE_SIZE:
+                sample_df = main_df.sample(min(len(main_df), FINETUNE_SAMPLE_SIZE), random_state=42)
+
+            print(f"📊 Échantillon du dataset principal: {len(sample_df)} exemples")
+            print(f"📊 Feedbacks négatifs: {len(feedback_df)} exemples")
+
+        except Exception as e:
+            print(f"❌ Erreur lecture dataset: {e}")
+            return {"status": "dataset_error"}
+
+        # 4. Combiner sample + feedbacks pour le fine-tuning
+        finetune_df = pd.concat([sample_df, feedback_df], ignore_index=True)
+        print(f"📊 Dataset de fine-tuning: {len(finetune_df)} exemples")
+
+        # 5. Initialiser le fine-tuner avec le modèle existant
+        existing_artifacts = {
+            'model': './model/best_lstm_model.keras',
+            'tokenizer': './model/tokenizer.pkl',
+            'scaler': './model/scaler.pkl',
+            'label_encoder': './model/label_encoder.pkl',
+            'metadata': './model/model_metadata.json'
+        }
+
+        # Vérifier que tous les artefacts existent
+        missing_artifacts = []
+        for name, path in existing_artifacts.items():
+            if not Path(path).exists():
+                missing_artifacts.append(f"{name}: {path}")
+
+        if missing_artifacts:
+            print(f"❌ Artefacts manquants: {missing_artifacts}")
+            return {"status": "missing_artifacts", "missing": missing_artifacts}
+
+        # 6. Créer le fine-tuner
+        finetuner = ModelFineTuner(
+            existing_model_path=existing_artifacts['model'],
+            existing_artifacts=existing_artifacts
+        )
+
+        # 7. Diviser les données pour le fine-tuning et l'évaluation
+        from sklearn.model_selection import train_test_split
+
+        # 80% pour fine-tuning, 20% pour test
+        train_df, test_df = train_test_split(
+            finetune_df,
+            test_size=0.2,
+            random_state=42,
+            stratify=finetune_df['label']
+        )
+
+        print(f"📊 Division fine-tuning:")
+        print(f"  Train: {len(train_df)} exemples")
+        print(f"  Test: {len(test_df)} exemples")
+
+        # 8. Préparer les données
+        X_text_train, X_num_train, y_train = finetuner.prepare_finetune_data(train_df)
+        X_text_test, X_num_test, y_test = finetuner.prepare_finetune_data(test_df)
+
+        # 9. Évaluer le modèle AVANT fine-tuning
+        print("\n📏 ÉVALUATION AVANT FINE-TUNING")
+        print("=" * 30)
+        metrics_before = finetuner.evaluate_finetuned_model(X_text_test, X_num_test, y_test)
+
+        # 10. Fine-tuner le modèle
+        history = finetuner.finetune_model(X_text_train, X_num_train, y_train)
+
+        # 11. Évaluer le modèle APRÈS fine-tuning
+        print("\n📏 ÉVALUATION APRÈS FINE-TUNING")
+        print("=" * 30)
+        metrics_after = finetuner.evaluate_finetuned_model(X_text_test, X_num_test, y_test)
+
+        # 12. Comparer les performances
+        improvement = {}
+        print(f"\n📈 COMPARAISON DES PERFORMANCES:")
+        print("=" * 35)
+        for metric in ['accuracy', 'f1', 'precision', 'recall', 'auc']:
+            before = metrics_before[metric]
+            after = metrics_after[metric]
+            diff = after - before
+            improvement[metric] = diff
+
+            status = "📈" if diff > 0 else "📉" if diff < 0 else "➡️"
+            print(f"  {metric.capitalize()}: {before:.4f} → {after:.4f} ({diff:+.4f}) {status}")
+
+        # 13. Décider si on déploie le modèle
+        # Critères: amélioration de F1 OU accuracy d'au moins 0.01
+        should_deploy = (
+                improvement['f1'] >= 0.01 or
+                improvement['accuracy'] >= 0.01 or
+                (improvement['f1'] >= 0.005 and improvement['accuracy'] >= 0.005)
+        )
+
+        if should_deploy:
+            print("\n✅ MODÈLE AMÉLIORÉ - DÉPLOIEMENT EN COURS")
+            print("=" * 40)
+
+            # Sauvegarder le modèle fine-tuné
+            artifacts = finetuner.save_finetuned_model("deployed")
+
+            # Déplacer vers le dossier model/ (remplacer l'ancien)
+            model_dir = Path("./model")
+
+            # Backup de l'ancien modèle
+            backup_dir = model_dir / f"backup_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
+            backup_dir.mkdir(exist_ok=True)
+
+            # Sauvegarder l'ancien
+            for old_file in model_dir.glob("*.keras"):
+                if old_file.name.startswith("best_lstm_model"):
+                    shutil.copy2(old_file, backup_dir / old_file.name)
+            for old_file in model_dir.glob("*.pkl"):
+                shutil.copy2(old_file, backup_dir / old_file.name)
+            for old_file in model_dir.glob("model_metadata.json"):
+                shutil.copy2(old_file, backup_dir / old_file.name)
+
+            print(f"📁 Ancien modèle sauvegardé dans: {backup_dir}")
+
+            # Déplacer le nouveau modèle
+            shutil.move(artifacts['model_path'], model_dir / "best_lstm_model.keras")
+            shutil.move(artifacts['tokenizer_path'], model_dir / "tokenizer.pkl")
+            shutil.move(artifacts['scaler_path'], model_dir / "scaler.pkl")
+            shutil.move(artifacts['label_encoder_path'], model_dir / "label_encoder.pkl")
+            shutil.move(artifacts['metadata_path'], model_dir / "model_metadata.json")
+
+            print("✅ Nouveau modèle déployé")
+
+            # Recharger dans l'API
+            success = load_model_artifacts()
+            if not success:
+                print("❌ Erreur rechargement")
+                return {"status": "reload_failed"}
+
+            # Marquer les feedbacks comme traités
+            mark_negative_feedbacks_processed()
+
+            return {
+                "status": "deployed",
+                "metrics_before": metrics_before,
+                "metrics_after": metrics_after,
+                "improvement": improvement,
+                "backup_dir": str(backup_dir)
+            }
+
+        else:
+            print("\n❌ MODÈLE NON AMÉLIORÉ - PAS DE DÉPLOIEMENT")
+            print("=" * 45)
+            print("Le modèle fine-tuné n'améliore pas suffisamment les performances.")
+
+            return {
+                "status": "not_improved",
+                "metrics_before": metrics_before,
+                "metrics_after": metrics_after,
+                "improvement": improvement
+            }
+
+    except Exception as e:
+        print(f"❌ ERREUR FINE-TUNING: {e}")
+        import traceback
+        traceback.print_exc()
+        return {"status": "error", "message": str(e)}
+
+    finally:
+        with RETRAIN_LOCK:
+            IS_RETRAINING = False
+def save_feedback_to_csv(feedback_data):
+    """Sauvegarde le feedback dans un fichier CSV"""
+    try:
+        csv_headers = [
+            'timestamp', 'email_text', 'predicted_class',
+            'predicted_probability', 'user_satisfaction', 'processed'
+        ]
+
+        # Ajouter la colonne processed (pour marquer les feedbacks traités)
         feedback_data['processed'] = False
 
-        # Si le fichier n'existe pas, créer avec en-têtes
-        if not FEEDBACK_CSV_PATH.exists():
-            df = pd.DataFrame([feedback_data])
-            df.to_csv(FEEDBACK_CSV_PATH, index=False)
-            print(f"✅ Fichier feedback créé: {FEEDBACK_CSV_PATH}")
-        else:
-            # Ajouter au fichier existant
-            df = pd.DataFrame([feedback_data])
-            df.to_csv(FEEDBACK_CSV_PATH, mode='a', header=False, index=False)
-            print(f"✅ Feedback ajouté au fichier: {FEEDBACK_CSV_PATH}")
+        # Créer le dossier data s'il n'existe pas
+        FEEDBACK_CSV_PATH.parent.mkdir(exist_ok=True)
 
+        # Vérifier si le fichier existe
+        file_exists = FEEDBACK_CSV_PATH.exists()
+
+        with open(FEEDBACK_CSV_PATH, 'a', newline='', encoding='utf-8') as csvfile:
+            writer = csv.DictWriter(csvfile, fieldnames=csv_headers)
+
+            # Écrire les en-têtes si le fichier est nouveau
+            if not file_exists:
+                writer.writeheader()
+
+            writer.writerow(feedback_data)
+
+        print(f"✅ Feedback sauvegardé dans {FEEDBACK_CSV_PATH}")
         return True
 
     except Exception as e:
         print(f"❌ Erreur sauvegarde feedback: {e}")
         return False
-
 
 
 
@@ -637,7 +860,7 @@ def read_root():
     }
 
 
-@app.get("/health", summary="Vérification de l'état de l'API")
+@app.get("/health", summary="Vérification de l'état de l'API avec info fine-tuning")
 def health_check():
     if model is None:
         raise HTTPException(status_code=503, detail="Service Unavailable: Model not loaded")
@@ -651,10 +874,10 @@ def health_check():
         "vocab_size": len(tokenizer.word_index) if tokenizer else 0,
         "is_retraining": IS_RETRAINING,
         "negative_feedbacks": negative_feedbacks,
-        "negative_threshold": NEGATIVE_FEEDBACK_THRESHOLD
+        "negative_threshold": NEGATIVE_FEEDBACK_THRESHOLD,
+        "finetune_sample_size": FINETUNE_SAMPLE_SIZE,
+        "mode": "fine_tuning"  # Indique qu'on est en mode fine-tuning
     }
-
-
 @app.post("/predict", summary="Prédire sur un seul texte")
 def predict(item: TextInput):
     """
@@ -724,11 +947,10 @@ def get_feedbacks():
         print(f"❌ Erreur lecture feedbacks: {e}")
         raise HTTPException(status_code=500, detail=f"Erreur: {e}")
 
-@app.post("/feedback", summary="Enregistrer un feedback avec réentraînement intelligent")
+@app.post("/feedback", summary="Feedback avec fine-tuning après 5 feedbacks négatifs")
 async def save_feedback(feedback: FeedbackInput, background_tasks: BackgroundTasks):
     """
-    Enregistre le feedback et déclenche un réentraînement intelligent
-    après 10 feedbacks NÉGATIFS
+    Enregistre le feedback et déclenche un FINE-TUNING après 5 feedbacks NÉGATIFS
     """
     try:
         feedback_data = {
@@ -737,22 +959,19 @@ async def save_feedback(feedback: FeedbackInput, background_tasks: BackgroundTas
             "predicted_class": feedback.predicted_class,
             "predicted_probability": feedback.predicted_probability,
             "user_satisfaction": feedback.user_satisfaction,
-            "language_detected": feedback.language_detected,
-            "processed": False  # Ajouter explicitement cette colonne
+            "language_detected": feedback.language_detected
         }
 
-        # Sauvegarder le feedback
         if not save_feedback_to_csv(feedback_data):
             raise HTTPException(status_code=500, detail="Erreur sauvegarde feedback")
 
-        # Compter UNIQUEMENT les feedbacks négatifs
         negative_count = count_negative_feedbacks()
 
         print(f"📝 Feedback enregistré: {feedback.user_satisfaction}")
         print(f"📊 Feedbacks négatifs: {negative_count}/{NEGATIVE_FEEDBACK_THRESHOLD}")
 
-        # Déclencher le réentraînement SEULEMENT pour les feedbacks négatifs
-        should_retrain = (
+        # Déclencher le FINE-TUNING après 5 feedbacks négatifs
+        should_finetune = (
                 feedback.user_satisfaction == "no" and
                 negative_count >= NEGATIVE_FEEDBACK_THRESHOLD and
                 not IS_RETRAINING
@@ -764,20 +983,20 @@ async def save_feedback(feedback: FeedbackInput, background_tasks: BackgroundTas
             "feedback_type": feedback.user_satisfaction,
             "negative_feedbacks": negative_count,
             "negative_threshold": NEGATIVE_FEEDBACK_THRESHOLD,
-            "will_retrain": should_retrain
+            "will_finetune": should_finetune
         }
 
-        if should_retrain:
-            print(f"🚀 Seuil de {NEGATIVE_FEEDBACK_THRESHOLD} feedbacks NÉGATIFS atteint!")
-            background_tasks.add_task(trigger_intelligent_retraining)
-            response["message"] += " - Réentraînement intelligent déclenché!"
+        if should_finetune:
+            print(f"🎯 Seuil de {NEGATIVE_FEEDBACK_THRESHOLD} feedbacks NÉGATIFS atteint!")
+            print("🚀 Déclenchement du FINE-TUNING...")
+            background_tasks.add_task(trigger_intelligent_finetuning)
+            response["message"] += " - Fine-tuning intelligent déclenché!"
 
         return response
 
     except Exception as e:
         print(f"❌ Erreur feedback: {e}")
         raise HTTPException(status_code=500, detail=f"Erreur: {e}")
-
 # --- Endpoint de diagnostic ---
 @app.get("/debug/model-info", summary="Informations de diagnostic du modèle")
 def get_model_info():
