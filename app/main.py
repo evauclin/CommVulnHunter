@@ -62,59 +62,136 @@ FEEDBACK_CSV_PATH = Path("./data/user_feedbacks.csv")
 
 # --- Chargement des Artefacts du Modèle ---
 def load_model_artifacts():
-    """Charge tous les artefacts du modèle avec gestion d'erreurs"""
+    """Charge tous les artefacts du modèle avec gestion d'erreurs améliorée"""
     global model, tokenizer, scaler, label_encoder, MAX_SEQUENCE_LENGTH, SUSPICIOUS_WORDS_SET, STOP_WORDS
 
     try:
         print("🚀 Démarrage de l'API et chargement des artefacts...")
-        current_dir = Path(__file__).parent
-        model_dir = current_dir / "model"
 
-        # 1. CHARGER D'ABORD LES MÉTADONNÉES
+        # Définir les chemins possibles pour le modèle
+        possible_model_dirs = [
+            Path("./model"),
+            Path("../model"),
+            Path("/app/model"),
+            Path("./app/model"),
+            Path(".")
+        ]
+
+        model_dir = None
+        for possible_dir in possible_model_dirs:
+            if possible_dir.exists():
+                print(f"📁 Dossier trouvé: {possible_dir}")
+                # Vérifier si les fichiers essentiels existent
+                required_files = [
+                    "best_lstm_model.keras",
+                    "tokenizer.pkl",
+                    "scaler.pkl",
+                    "label_encoder.pkl"
+                ]
+
+                all_files_exist = all((possible_dir / file).exists() for file in required_files)
+                if all_files_exist:
+                    model_dir = possible_dir
+                    print(f"✅ Dossier model valide trouvé: {model_dir}")
+                    break
+                else:
+                    missing = [f for f in required_files if not (possible_dir / f).exists()]
+                    print(f"⚠️ Dossier {possible_dir} incomplet, fichiers manquants: {missing}")
+
+        if model_dir is None:
+            # Lister tous les fichiers dans le répertoire courant pour debug
+            current_files = list(Path(".").glob("*"))
+            print(f"📁 Fichiers dans le répertoire courant: {[f.name for f in current_files]}")
+
+            # Chercher récursivement les fichiers .keras
+            keras_files = list(Path(".").rglob("*.keras"))
+            if keras_files:
+                print(f"🔍 Fichiers .keras trouvés: {keras_files}")
+                model_dir = keras_files[0].parent
+            else:
+                raise FileNotFoundError("Aucun dossier model valide trouvé")
+
+        print(f"📂 Utilisation du dossier model: {model_dir}")
+
+        # 1. CHARGER LES MÉTADONNÉES (optionnel)
         metadata_file = model_dir / "model_metadata.json"
-        if not metadata_file.exists():
-            raise FileNotFoundError("Fichier model_metadata.json manquant")
+        metadata = {}
+        if metadata_file.exists():
+            try:
+                with open(metadata_file, "r") as f:
+                    metadata = json.load(f)
 
-        with open(metadata_file, "r") as f:
-            metadata = json.load(f)
+                config = metadata.get('config', {})
+                max_vocab_size = config.get('max_vocab_size')
 
-        # Extraire la configuration critique
-        config = metadata.get('config', {})
-       # MAX_SEQUENCE_LENGTH = config.get('max_sequence_length')
-        max_vocab_size = config.get('max_vocab_size')
-
-      #  if MAX_SEQUENCE_LENGTH is None:
-        #     raise ValueError("max_sequence_length non trouvé dans les métadonnées")
-
-        print(f"✅ Configuration chargée:")
-        print(f"  max_sequence_length: {MAX_SEQUENCE_LENGTH}")
-        print(f"  max_vocab_size: {max_vocab_size}")
+                print(f"✅ Configuration chargée:")
+                print(f"  max_sequence_length: {MAX_SEQUENCE_LENGTH}")
+                print(f"  max_vocab_size: {max_vocab_size}")
+            except Exception as e:
+                print(f"⚠️ Erreur chargement métadonnées: {e}")
 
         # 2. CHARGER LES ARTEFACTS DANS LE BON ORDRE
         print("📦 Chargement des artefacts...")
 
         # Tokenizer
-        with open(model_dir / "tokenizer.pkl", "rb") as f:
+        tokenizer_path = model_dir / "tokenizer.pkl"
+        if not tokenizer_path.exists():
+            raise FileNotFoundError(f"Tokenizer non trouvé: {tokenizer_path}")
+
+        with open(tokenizer_path, "rb") as f:
             tokenizer = pickle.load(f)
         print(f"✅ Tokenizer chargé (vocab: {len(tokenizer.word_index)} mots)")
 
         # Scaler
-        with open(model_dir / "scaler.pkl", "rb") as f:
+        scaler_path = model_dir / "scaler.pkl"
+        if not scaler_path.exists():
+            raise FileNotFoundError(f"Scaler non trouvé: {scaler_path}")
+
+        with open(scaler_path, "rb") as f:
             scaler = pickle.load(f)
         print("✅ Scaler chargé")
 
         # Label encoder
-        with open(model_dir / "label_encoder.pkl", "rb") as f:
+        label_encoder_path = model_dir / "label_encoder.pkl"
+        if not label_encoder_path.exists():
+            raise FileNotFoundError(f"Label encoder non trouvé: {label_encoder_path}")
+
+        with open(label_encoder_path, "rb") as f:
             label_encoder = pickle.load(f)
         print(f"✅ Label encoder chargé (classes: {label_encoder.classes_})")
 
         # Modèle (en dernier pour vérifier la compatibilité)
         model_file = model_dir / "best_lstm_model.keras"
         if not model_file.exists():
-            raise FileNotFoundError("Fichier best_lstm_model.keras manquant")
+            # Chercher d'autres noms possibles
+            keras_files = list(model_dir.glob("*.keras"))
+            if keras_files:
+                model_file = keras_files[0]
+                print(f"✅ Modèle trouvé: {model_file}")
+            else:
+                raise FileNotFoundError(f"Aucun fichier .keras trouvé dans {model_dir}")
 
-        model = load_model(model_file)
-        print("✅ Modèle LSTM chargé")
+        # Chargement avec gestion d'erreur TensorFlow
+        try:
+            model = load_model(str(model_file))
+            print("✅ Modèle LSTM chargé")
+        except Exception as e:
+            print(f"❌ Erreur chargement modèle TensorFlow: {e}")
+            # Essayer de charger avec compile=False
+            try:
+                model = load_model(str(model_file), compile=False)
+                print("✅ Modèle LSTM chargé (sans compilation)")
+
+                # Recompiler le modèle
+                from tensorflow.keras.optimizers import Adam
+                model.compile(
+                    optimizer=Adam(learning_rate=0.001),
+                    loss='binary_crossentropy',
+                    metrics=['accuracy']
+                )
+                print("✅ Modèle recompilé")
+            except Exception as e2:
+                raise Exception(f"Impossible de charger le modèle: {e2}")
 
         # Vérifier les dimensions du modèle
         print(f"🔍 Vérification des dimensions:")
@@ -125,25 +202,37 @@ def load_model_artifacts():
         # Mots suspects
         suspicious_words_file = model_dir / "suspicious_words.json"
         if suspicious_words_file.exists():
-            with open(suspicious_words_file, 'r') as f:
-                suspicious_words_data = json.load(f)
-            SUSPICIOUS_WORDS_SET = set(suspicious_words_data.get('en', []) + suspicious_words_data.get('fr', []))
-            print(f"✅ Mots suspects chargés ({len(SUSPICIOUS_WORDS_SET)} mots)")
+            try:
+                with open(suspicious_words_file, 'r') as f:
+                    suspicious_words_data = json.load(f)
+                SUSPICIOUS_WORDS_SET = set(suspicious_words_data.get('en', []) + suspicious_words_data.get('fr', []))
+                print(f"✅ Mots suspects chargés ({len(SUSPICIOUS_WORDS_SET)} mots)")
+            except Exception as e:
+                print(f"⚠️ Erreur chargement mots suspects: {e}")
         else:
             print("⚠️ Fichier suspicious_words.json manquant, utilisation d'une liste vide")
 
-        # Stopwords NLTK
+        # Stopwords NLTK avec gestion d'erreur
         try:
-            nltk.data.find('corpora/stopwords')
-        except LookupError:
-            print("📥 Téléchargement des données NLTK...")
-            nltk.download('stopwords', quiet=True)
+            try:
+                nltk.data.find('corpora/stopwords')
+            except LookupError:
+                print("📥 Téléchargement des données NLTK...")
+                nltk.download('stopwords', quiet=True)
 
-        STOP_WORDS = {
-            'en': set(nltk.corpus.stopwords.words('english')),
-            'fr': set(nltk.corpus.stopwords.words('french'))
-        }
-        print("✅ Stopwords chargés")
+            STOP_WORDS = {
+                'en': set(nltk.corpus.stopwords.words('english')),
+                'fr': set(nltk.corpus.stopwords.words('french'))
+            }
+            print("✅ Stopwords chargés")
+        except Exception as e:
+            print(f"⚠️ Erreur chargement stopwords: {e}")
+            # Fallback avec stopwords de base
+            STOP_WORDS = {
+                'en': {'the', 'a', 'an', 'and', 'or', 'but', 'in', 'on', 'at', 'to', 'for', 'of', 'with', 'by'},
+                'fr': {'le', 'la', 'les', 'un', 'une', 'des', 'et', 'ou', 'mais', 'dans', 'sur', 'avec', 'pour', 'de'}
+            }
+            print("✅ Stopwords de base chargés")
 
         print(f"\n🎉 API prête ! Longueur de séquence configurée: {MAX_SEQUENCE_LENGTH}")
         return True
@@ -152,17 +241,25 @@ def load_model_artifacts():
         print(f"❌ ERREUR CRITIQUE AU DÉMARRAGE: {e}")
         print(f"❌ Type d'erreur: {type(e).__name__}")
 
-        # Lister les fichiers présents pour debug
-        if 'model_dir' in locals():
-            print(f"📁 Fichiers dans {model_dir}:")
-            try:
-                for file in model_dir.iterdir():
-                    print(f"  - {file.name}")
-            except:
-                print("  Impossible de lister les fichiers")
+        # Diagnostic détaillé
+        print(f"\n🔍 DIAGNOSTIC:")
+        current_dir = Path(".")
+        print(f"📁 Répertoire courant: {current_dir.absolute()}")
+
+        # Lister tous les fichiers
+        all_files = []
+        for item in current_dir.rglob("*"):
+            if item.is_file():
+                all_files.append(str(item.relative_to(current_dir)))
+
+        print(f"📄 Tous les fichiers trouvés:")
+        for file in sorted(all_files)[:20]:  # Limiter à 20 fichiers
+            print(f"  - {file}")
+
+        if len(all_files) > 20:
+            print(f"  ... et {len(all_files) - 20} autres fichiers")
 
         return False
-
 
 # Charger les artefacts au démarrage
 model_loaded = load_model_artifacts()
