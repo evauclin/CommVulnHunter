@@ -29,7 +29,7 @@ tf.config.set_visible_devices([], 'GPU')
 app = FastAPI(
     title="API de Détection de Phishing Automatique (FR/EN)",
     description="Une API pour classifier des textes en détectant automatiquement la langue.",
-    version="3.0.0"
+    version="3.0.1"
 )
 
 app.add_middleware(
@@ -45,7 +45,7 @@ model = None
 tokenizer = None
 scaler = None
 label_encoder = None
-MAX_SEQUENCE_LENGTH = 566
+MAX_SEQUENCE_LENGTH = 566  # Valeur par défaut - sera remplacée par les métadonnées
 SUSPICIOUS_WORDS_SET = set()
 STOP_WORDS = {}
 NEGATIVE_FEEDBACK_THRESHOLD = 5
@@ -58,42 +58,15 @@ RETRAIN_LOCK = threading.Lock()
 FEEDBACK_CSV_PATH = Path("./data/user_feedbacks.csv")
 
 
-# --- Chargement des Artefacts du Modèle (MÉTHODE QUI MARCHE) ---
+# --- Chargement des Artefacts du Modèle (MÉTHODE CORRIGÉE) ---
 def load_model_artifacts():
-    """Charge tous les artefacts du modèle avec la méthode qui fonctionne"""
+    """Charge tous les artefacts du modèle avec la correction de la longueur de séquence"""
     global model, tokenizer, scaler, label_encoder, MAX_SEQUENCE_LENGTH, SUSPICIOUS_WORDS_SET, STOP_WORDS
 
     try:
         print("🚀 Démarrage de l'API et chargement des artefacts...")
 
-        # ✅ UTILISATION DE LA MÉTHODE QUI MARCHE
-        print("📦 Chargement des artefacts...")
-
-        # Chargement du modèle
-        model = load_model('model/best_lstm_model.keras')
-        print("✅ Modèle LSTM chargé")
-
-        # Chargement du tokenizer
-        with open('model/tokenizer.pkl', 'rb') as f:
-            tokenizer = pickle.load(f)
-        print(f"✅ Tokenizer chargé (vocab: {len(tokenizer.word_index)} mots)")
-
-        # Chargement du scaler
-        with open('model/scaler.pkl', 'rb') as f:
-            scaler = pickle.load(f)
-        print("✅ Scaler chargé")
-
-        # Chargement du label encoder
-        with open('model/label_encoder.pkl', 'rb') as f:
-            label_encoder = pickle.load(f)
-        print(f"✅ Label encoder chargé (classes: {label_encoder.classes_})")
-
-        # Vérifier les dimensions du modèle
-        print(f"🔍 Vérification des dimensions:")
-        for i, input_layer in enumerate(model.inputs):
-            print(f"  Input {i}: {input_layer.name} - Shape: {input_layer.shape}")
-
-        # Charger les métadonnées (optionnel)
+        # ✅ ÉTAPE 1: Charger les métadonnées en premier pour obtenir la bonne longueur
         metadata_file = Path("model/model_metadata.json")
         if metadata_file.exists():
             try:
@@ -102,11 +75,72 @@ def load_model_artifacts():
                 config = metadata.get('config', {})
                 MAX_SEQUENCE_LENGTH = config.get('max_sequence_length', 566)
                 print(f"✅ Métadonnées chargées: max_sequence_length = {MAX_SEQUENCE_LENGTH}")
+
+                # Afficher la configuration complète du modèle
+                print(f"📋 Configuration du modèle:")
+                print(f"  max_vocab_size: {config.get('max_vocab_size', 'Non défini')}")
+                print(f"  max_sequence_length: {MAX_SEQUENCE_LENGTH}")
+                print(f"  embedding_dim: {config.get('embedding_dim', 'Non défini')}")
+                print(f"  lstm_units: {config.get('lstm_units', 'Non défini')}")
+
             except Exception as e:
                 print(f"⚠️ Erreur chargement métadonnées: {e}")
-                MAX_SEQUENCE_LENGTH = 566
+                print(f"⚠️ Utilisation de la valeur par défaut: MAX_SEQUENCE_LENGTH = {MAX_SEQUENCE_LENGTH}")
+        else:
+            print(f"⚠️ Fichier model_metadata.json non trouvé")
+            print(f"⚠️ Utilisation de la valeur par défaut: MAX_SEQUENCE_LENGTH = {MAX_SEQUENCE_LENGTH}")
 
-        # Charger les mots suspects
+        # ✅ ÉTAPE 2: Chargement du modèle
+        model_path = Path("model/best_lstm_model.keras")
+        if not model_path.exists():
+            raise FileNotFoundError(f"Modèle non trouvé: {model_path}")
+
+        model = load_model(str(model_path))
+        print("✅ Modèle LSTM chargé")
+
+        # ✅ ÉTAPE 3: Vérifier les dimensions du modèle
+        print(f"🔍 Vérification des dimensions du modèle:")
+        for i, input_layer in enumerate(model.inputs):
+            print(f"  Input {i}: {input_layer.name} - Shape: {input_layer.shape}")
+
+            # Vérifier si la forme correspond à notre MAX_SEQUENCE_LENGTH
+            if i == 0 and len(input_layer.shape) >= 2:  # Premier input (texte)
+                expected_seq_length = input_layer.shape[1]
+                if expected_seq_length is not None and expected_seq_length != MAX_SEQUENCE_LENGTH:
+                    print(f"⚠️ ATTENTION: Incohérence détectée!")
+                    print(f"  Modèle attend: {expected_seq_length}")
+                    print(f"  Métadonnées indiquent: {MAX_SEQUENCE_LENGTH}")
+                    print(f"  🔧 Correction: utilisation de {expected_seq_length}")
+                    MAX_SEQUENCE_LENGTH = expected_seq_length
+
+        # ✅ ÉTAPE 4: Chargement du tokenizer
+        tokenizer_path = Path("model/tokenizer.pkl")
+        if not tokenizer_path.exists():
+            raise FileNotFoundError(f"Tokenizer non trouvé: {tokenizer_path}")
+
+        with open(tokenizer_path, 'rb') as f:
+            tokenizer = pickle.load(f)
+        print(f"✅ Tokenizer chargé (vocab: {len(tokenizer.word_index)} mots)")
+
+        # ✅ ÉTAPE 5: Chargement du scaler
+        scaler_path = Path("model/scaler.pkl")
+        if not scaler_path.exists():
+            raise FileNotFoundError(f"Scaler non trouvé: {scaler_path}")
+
+        with open(scaler_path, 'rb') as f:
+            scaler = pickle.load(f)
+        print("✅ Scaler chargé")
+
+        # ✅ ÉTAPE 6: Chargement du label encoder
+        label_encoder_path = Path("model/label_encoder.pkl")
+        if not label_encoder_path.exists():
+            raise FileNotFoundError(f"Label encoder non trouvé: {label_encoder_path}")
+
+        with open(label_encoder_path, 'rb') as f:
+            label_encoder = pickle.load(f)
+        print(f"✅ Label encoder chargé (classes: {label_encoder.classes_})")
+
+        # ✅ ÉTAPE 7: Charger les mots suspects
         suspicious_words_file = Path("model/suspicious_words.json")
         if suspicious_words_file.exists():
             try:
@@ -119,7 +153,7 @@ def load_model_artifacts():
         else:
             print("⚠️ Fichier suspicious_words.json manquant, utilisation d'une liste vide")
 
-        # Charger les stopwords NLTK avec gestion d'erreur
+        # ✅ ÉTAPE 8: Charger les stopwords NLTK
         try:
             try:
                 nltk.data.find('corpora/stopwords')
@@ -141,7 +175,28 @@ def load_model_artifacts():
             }
             print("✅ Stopwords de base chargés")
 
-        print(f"\n🎉 API prête ! Longueur de séquence configurée: {MAX_SEQUENCE_LENGTH}")
+        # ✅ ÉTAPE 9: Test de prédiction pour vérifier le fonctionnement
+        print(f"\n🧪 Test de validation du modèle...")
+        try:
+            test_text = "Test email content"
+            test_processed = preprocess_text(test_text, 'en')
+            test_sequence = tokenizer.texts_to_sequences([test_processed])
+            test_padded = pad_sequences(test_sequence, maxlen=MAX_SEQUENCE_LENGTH, padding='post', truncating='post')
+            test_features = extract_numerical_features(test_text)
+            test_scaled = scaler.transform([test_features])
+
+            # Test de prédiction
+            test_pred = model.predict([test_padded, test_scaled], verbose=0)
+            print(f"✅ Test de prédiction réussi: {test_pred[0][0]:.4f}")
+
+        except Exception as e:
+            print(f"❌ Échec du test de validation: {e}")
+            return False
+
+        print(f"\n🎉 API prête ! Configuration finale:")
+        print(f"  Longueur de séquence: {MAX_SEQUENCE_LENGTH}")
+        print(f"  Taille du vocabulaire: {len(tokenizer.word_index)}")
+        print(f"  Classes: {list(label_encoder.classes_)}")
         return True
 
     except Exception as e:
@@ -158,21 +213,11 @@ def load_model_artifacts():
         if model_dir.exists():
             print(f"📁 Contenu du dossier model:")
             for file in model_dir.iterdir():
-                print(f"  - {file.name}")
+                print(f"  - {file.name} ({file.stat().st_size} bytes)")
         else:
             print("❌ Dossier 'model' n'existe pas")
 
-        # Lister les fichiers dans le répertoire courant
-        print(f"📄 Fichiers dans le répertoire courant:")
-        for item in current_dir.iterdir():
-            if item.is_file():
-                print(f"  - {item.name}")
-
         return False
-
-
-# Charger les artefacts au démarrage
-model_loaded = load_model_artifacts()
 
 
 # --- Modèles de Données Pydantic ---
@@ -262,10 +307,10 @@ def extract_numerical_features(text: str):
     return features
 
 
-# --- Logique de prédiction principale ---
+# --- Logique de prédiction principale (CORRIGÉE) ---
 def perform_prediction(text: str):
-    """Fonction cœur qui détecte la langue et effectue une prédiction."""
-    if not model_loaded:
+    """Fonction cœur qui détecte la langue et effectue une prédiction avec la bonne longueur de séquence."""
+    if not model:
         raise HTTPException(status_code=503, detail="Modèle non chargé")
 
     try:
@@ -280,27 +325,29 @@ def perform_prediction(text: str):
 
         # Prétraitement du texte
         processed_text = preprocess_text(text, lang)
+
         print(f"📝 Texte prétraité: {processed_text[:100]}...")
 
         # Création des séquences
         sequence = tokenizer.texts_to_sequences([processed_text])
-
-        # Filtrer les indices qui dépassent la taille du vocabulaire du modèle
-        MAX_VOCAB_INDEX = 10000  # Limite du modèle (ajustez selon vos métadonnées)
+        # ✅ CORRECTION CRITIQUE: Filtrer les tokens qui dépassent la taille du vocabulaire du modèle
         if sequence[0]:  # Si la séquence n'est pas vide
-            # Remplacer les indices >= MAX_VOCAB_INDEX par 1 (token OOV)
-            sequence[0] = [idx if idx < MAX_VOCAB_INDEX else 1 for idx in sequence[0]]
+            # Détecter la taille max du vocabulaire du modèle (10001 d'après l'erreur)
+            max_vocab_id = 10000  # indices valides: 0 à 10000
+            sequence[0] = [token_id for token_id in sequence[0] if token_id <= max_vocab_id]
+            print(
+                f"🔧 Tokens filtrés: {len([t for t in tokenizer.texts_to_sequences([processed_text])[0] if t > max_vocab_id])} tokens supprimés")
+        print(f"🔢 Séquence créée: longueur = {len(sequence[0]) if sequence[0] else 0}")
 
-        print(f"🔢 Séquence filtrée: longueur = {len(sequence[0]) if sequence[0] else 0}")
-
-        # Padding de la séquence
+        # ✅ CORRECTION CRITIQUE: Utiliser la bonne longueur de séquence
         padded_sequence = pad_sequences(
             sequence,
-            maxlen=MAX_SEQUENCE_LENGTH,
+            maxlen=MAX_SEQUENCE_LENGTH,  # Maintenant cohérent avec le modèle
             padding='post',
             truncating='post'
         )
         print(f"📏 Séquence paddée: shape = {padded_sequence.shape}")
+        print(f"📏 Longueur attendue par le modèle: {MAX_SEQUENCE_LENGTH}")
 
         # Features numériques
         numerical_features = extract_numerical_features(text)
@@ -338,7 +385,14 @@ def perform_prediction(text: str):
             "prediction": predicted_class,
             "probability": float(prediction_proba),
             "confidence": confidence,
-            "language_detected": lang
+            "language_detected": lang,
+            "sequence_length_used": MAX_SEQUENCE_LENGTH,
+            "debug_info": {
+                "processed_text_length": len(processed_text),
+                "original_sequence_length": len(sequence[0]) if sequence[0] else 0,
+                "padded_sequence_shape": list(padded_sequence.shape),
+                "features_shape": list(scaled_features.shape)
+            }
         }
 
     except Exception as e:
@@ -415,7 +469,7 @@ def read_root():
         "version": app.version,
         "documentation": "/docs",
         "max_sequence_length": MAX_SEQUENCE_LENGTH,
-        "model_loaded": model_loaded
+        "model_loaded": model is not None
     }
 
 
@@ -434,7 +488,8 @@ def health_check():
         "is_retraining": IS_RETRAINING,
         "negative_feedbacks": negative_feedbacks,
         "negative_threshold": NEGATIVE_FEEDBACK_THRESHOLD,
-        "finetune_sample_size": FINETUNE_SAMPLE_SIZE
+        "finetune_sample_size": FINETUNE_SAMPLE_SIZE,
+        "model_classes": list(label_encoder.classes_) if label_encoder else []
     }
 
 
@@ -443,7 +498,7 @@ def predict(item: TextInput):
     """
     Analyse un texte, détecte sa langue (fr/en) et prédit s'il s'agit d'un phishing.
     """
-    if not model_loaded:
+    if not model:
         raise HTTPException(status_code=503, detail="Modèle non disponible")
 
     try:
@@ -548,18 +603,19 @@ def get_feedbacks():
 @app.get("/debug/model-info", summary="Informations de diagnostic du modèle")
 def get_model_info():
     """Endpoint pour diagnostiquer les problèmes de modèle"""
-    if not model_loaded:
+    if not model:
         return {"error": "Modèle non chargé", "model_loaded": False}
 
     try:
         info = {
-            "model_loaded": model_loaded,
+            "model_loaded": True,
             "max_sequence_length": MAX_SEQUENCE_LENGTH,
             "tokenizer_vocab_size": len(tokenizer.word_index) if tokenizer else 0,
             "model_inputs": [],
             "suspicious_words_count": len(SUSPICIOUS_WORDS_SET),
             "stopwords_languages": list(STOP_WORDS.keys()),
-            "label_classes": label_encoder.classes_.tolist() if label_encoder else []
+            "label_classes": label_encoder.classes_.tolist() if label_encoder else [],
+            "model_summary": None
         }
 
         if model:
@@ -567,13 +623,37 @@ def get_model_info():
                 info["model_inputs"].append({
                     "index": i,
                     "name": input_layer.name,
-                    "shape": input_layer.shape.as_list()
+                    "shape": input_layer.shape.as_list(),
+                    "dtype": str(input_layer.dtype)
                 })
+
+            # Ajouter un résumé du modèle
+            try:
+                import io
+                import sys
+                from contextlib import redirect_stdout
+
+                f = io.StringIO()
+                with redirect_stdout(f):
+                    model.summary()
+                info["model_summary"] = f.getvalue()
+            except Exception:
+                info["model_summary"] = "Impossible de générer le résumé du modèle"
 
         return info
     except Exception as e:
-        return {"error": str(e), "model_loaded": model_loaded}
+        return {"error": str(e), "model_loaded": model is not None}
 
+
+# --- Charger les artefacts au démarrage ---
+print("🚀 Initialisation de l'API de détection de phishing...")
+model_loaded = load_model_artifacts()
+
+if not model_loaded:
+    print("❌ ÉCHEC DU CHARGEMENT DES ARTEFACTS")
+    print("❌ L'API ne pourra pas traiter les prédictions")
+else:
+    print("✅ API prête à traiter les requêtes de prédiction")
 
 # --- Lancement de l'application ---
 if __name__ == "__main__":
