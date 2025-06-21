@@ -22,8 +22,10 @@ import threading
 from fastapi import BackgroundTasks
 from pathlib import Path
 import pandas as pd
+import subprocess
+import threading
 
-tf.config.set_visible_devices([], 'GPU')
+
 
 # --- Configuration et Initialisation ---
 app = FastAPI(
@@ -48,17 +50,17 @@ label_encoder = None
 MAX_SEQUENCE_LENGTH = 566  # Valeur par défaut - sera remplacée par les métadonnées
 SUSPICIOUS_WORDS_SET = set()
 STOP_WORDS = {}
+# Ajouter ces variables après les autres variables globales
+AUTO_FINETUNING_ENABLED = True
+IS_FINETUNING_RUNNING = False
+FINETUNING_LOCK = threading.Lock()
 NEGATIVE_FEEDBACK_THRESHOLD = 5
-FEEDBACK_THRESHOLD = 5
-FINETUNE_SAMPLE_SIZE = 200
-
-IS_RETRAINING = False
-RETRAIN_LOCK = threading.Lock()
+tf.config.set_visible_devices([], 'GPU')
 
 FEEDBACK_CSV_PATH = Path("./data/user_feedbacks.csv")
 
 
-# --- Chargement des Artefacts du Modèle (MÉTHODE CORRIGÉE) ---
+# --- Chargement des Artefacts du Modèle ---
 def load_model_artifacts():
     """Charge tous les artefacts du modèle avec la correction de la longueur de séquence"""
     global model, tokenizer, scaler, label_encoder, MAX_SEQUENCE_LENGTH, SUSPICIOUS_WORDS_SET, STOP_WORDS
@@ -66,7 +68,7 @@ def load_model_artifacts():
     try:
         print("🚀 Démarrage de l'API et chargement des artefacts...")
 
-        # ✅ ÉTAPE 1: Charger les métadonnées en premier pour obtenir la bonne longueur
+        # ÉTAPE 1: Charger les métadonnées en premier pour obtenir la bonne longueur
         metadata_file = Path("model/model_metadata.json")
         if metadata_file.exists():
             try:
@@ -90,7 +92,7 @@ def load_model_artifacts():
             print(f"⚠️ Fichier model_metadata.json non trouvé")
             print(f"⚠️ Utilisation de la valeur par défaut: MAX_SEQUENCE_LENGTH = {MAX_SEQUENCE_LENGTH}")
 
-        # ✅ ÉTAPE 2: Chargement du modèle
+        # ÉTAPE 2: Chargement du modèle
         model_path = Path("model/best_lstm_model.keras")
         if not model_path.exists():
             raise FileNotFoundError(f"Modèle non trouvé: {model_path}")
@@ -98,7 +100,7 @@ def load_model_artifacts():
         model = load_model(str(model_path))
         print("✅ Modèle LSTM chargé")
 
-        # ✅ ÉTAPE 3: Vérifier les dimensions du modèle
+        # ÉTAPE 3: Vérifier les dimensions du modèle
         print(f"🔍 Vérification des dimensions du modèle:")
         for i, input_layer in enumerate(model.inputs):
             print(f"  Input {i}: {input_layer.name} - Shape: {input_layer.shape}")
@@ -113,7 +115,7 @@ def load_model_artifacts():
                     print(f"  🔧 Correction: utilisation de {expected_seq_length}")
                     MAX_SEQUENCE_LENGTH = expected_seq_length
 
-        # ✅ ÉTAPE 4: Chargement du tokenizer
+        # ÉTAPE 4: Chargement du tokenizer
         tokenizer_path = Path("model/tokenizer.pkl")
         if not tokenizer_path.exists():
             raise FileNotFoundError(f"Tokenizer non trouvé: {tokenizer_path}")
@@ -122,7 +124,7 @@ def load_model_artifacts():
             tokenizer = pickle.load(f)
         print(f"✅ Tokenizer chargé (vocab: {len(tokenizer.word_index)} mots)")
 
-        # ✅ ÉTAPE 5: Chargement du scaler
+        # ÉTAPE 5: Chargement du scaler
         scaler_path = Path("model/scaler.pkl")
         if not scaler_path.exists():
             raise FileNotFoundError(f"Scaler non trouvé: {scaler_path}")
@@ -131,7 +133,7 @@ def load_model_artifacts():
             scaler = pickle.load(f)
         print("✅ Scaler chargé")
 
-        # ✅ ÉTAPE 6: Chargement du label encoder
+        # ÉTAPE 6: Chargement du label encoder
         label_encoder_path = Path("model/label_encoder.pkl")
         if not label_encoder_path.exists():
             raise FileNotFoundError(f"Label encoder non trouvé: {label_encoder_path}")
@@ -140,7 +142,7 @@ def load_model_artifacts():
             label_encoder = pickle.load(f)
         print(f"✅ Label encoder chargé (classes: {label_encoder.classes_})")
 
-        # ✅ ÉTAPE 7: Charger les mots suspects
+        # ÉTAPE 7: Charger les mots suspects
         suspicious_words_file = Path("model/suspicious_words.json")
         if suspicious_words_file.exists():
             try:
@@ -153,7 +155,7 @@ def load_model_artifacts():
         else:
             print("⚠️ Fichier suspicious_words.json manquant, utilisation d'une liste vide")
 
-        # ✅ ÉTAPE 8: Charger les stopwords NLTK
+        # ÉTAPE 8: Charger les stopwords NLTK
         try:
             try:
                 nltk.data.find('corpora/stopwords')
@@ -175,7 +177,7 @@ def load_model_artifacts():
             }
             print("✅ Stopwords de base chargés")
 
-        # ✅ ÉTAPE 9: Test de prédiction pour vérifier le fonctionnement
+        # ÉTAPE 9: Test de prédiction pour vérifier le fonctionnement
         print(f"\n🧪 Test de validation du modèle...")
         try:
             test_text = "Test email content"
@@ -307,7 +309,7 @@ def extract_numerical_features(text: str):
     return features
 
 
-# --- Logique de prédiction principale (CORRIGÉE) ---
+# --- Logique de prédiction principale ---
 def perform_prediction(text: str):
     """Fonction cœur qui détecte la langue et effectue une prédiction avec la bonne longueur de séquence."""
     if not model:
@@ -325,29 +327,26 @@ def perform_prediction(text: str):
 
         # Prétraitement du texte
         processed_text = preprocess_text(text, lang)
-
         print(f"📝 Texte prétraité: {processed_text[:100]}...")
 
         # Création des séquences
         sequence = tokenizer.texts_to_sequences([processed_text])
-        # ✅ CORRECTION CRITIQUE: Filtrer les tokens qui dépassent la taille du vocabulaire du modèle
+        # Filtrer les tokens qui dépassent la taille du vocabulaire du modèle
         if sequence[0]:  # Si la séquence n'est pas vide
-            # Détecter la taille max du vocabulaire du modèle (10001 d'après l'erreur)
             max_vocab_id = 10000  # indices valides: 0 à 10000
             sequence[0] = [token_id for token_id in sequence[0] if token_id <= max_vocab_id]
             print(
                 f"🔧 Tokens filtrés: {len([t for t in tokenizer.texts_to_sequences([processed_text])[0] if t > max_vocab_id])} tokens supprimés")
         print(f"🔢 Séquence créée: longueur = {len(sequence[0]) if sequence[0] else 0}")
 
-        # ✅ CORRECTION CRITIQUE: Utiliser la bonne longueur de séquence
+        # Utiliser la bonne longueur de séquence
         padded_sequence = pad_sequences(
             sequence,
-            maxlen=MAX_SEQUENCE_LENGTH,  # Maintenant cohérent avec le modèle
+            maxlen=MAX_SEQUENCE_LENGTH,
             padding='post',
             truncating='post'
         )
         print(f"📏 Séquence paddée: shape = {padded_sequence.shape}")
-        print(f"📏 Longueur attendue par le modèle: {MAX_SEQUENCE_LENGTH}")
 
         # Features numériques
         numerical_features = extract_numerical_features(text)
@@ -461,6 +460,140 @@ def save_feedback_to_csv(feedback_data):
         return False
 
 
+def check_finetuning_trigger():
+    """
+    Vérifie si les conditions pour déclencher le fine-tuning sont remplies
+    """
+    try:
+        negative_count = count_negative_feedbacks()
+
+        # Seuil pour déclencher le fine-tuning (5 feedbacks négatifs)
+        NEGATIVE_FEEDBACK_THRESHOLD = 5
+
+        if negative_count >= NEGATIVE_FEEDBACK_THRESHOLD:
+            print(f"🚨 Seuil de fine-tuning atteint: {negative_count}/{NEGATIVE_FEEDBACK_THRESHOLD} feedbacks négatifs")
+            print("💡 Vous pouvez maintenant exécuter le fine-tuning avec: python traitement.py")
+            return True
+        else:
+            print(f"📊 Feedbacks négatifs: {negative_count}/{NEGATIVE_FEEDBACK_THRESHOLD}")
+            return False
+
+    except Exception as e:
+        print(f"❌ Erreur vérification fine-tuning: {e}")
+        return False
+
+
+# --- FONCTIONS DE FINE-TUNING AUTOMATIQUE (À AJOUTER DANS VOTRE MAIN.PY) ---
+
+def run_finetuning_script():
+    """
+    Lance le script de fine-tuning en arrière-plan
+    """
+    global IS_FINETUNING_RUNNING
+
+    print("🚀 DÉMARRAGE DU FINE-TUNING AUTOMATIQUE")
+    print("=" * 50)
+
+    try:
+        # Marquer que le fine-tuning est en cours
+        IS_FINETUNING_RUNNING = True
+
+        # Vérifier que le script traitement.py existe
+        script_path = Path("traitement.py")
+        if not script_path.exists():
+            print(f"❌ Script de fine-tuning non trouvé: {script_path}")
+            return False
+
+        # Lancer le script de fine-tuning
+        print("🎯 Lancement du processus de fine-tuning...")
+        result = subprocess.run(
+            ["python", "traitement.py"],
+            capture_output=True,
+            text=True,
+            timeout=3600  # 1 heure maximum
+        )
+
+        if result.returncode == 0:
+            print("✅ FINE-TUNING TERMINÉ AVEC SUCCÈS!")
+            print("📋 Sortie du script:")
+            print(result.stdout)
+
+            # Optionnel: Redémarrer automatiquement l'API pour charger le nouveau modèle
+            print("💡 Pour utiliser le nouveau modèle, redémarrez l'API:")
+            print("   docker-compose restart fastapi")
+
+            return True
+        else:
+            print("❌ FINE-TUNING ÉCHOUÉ!")
+            print("📋 Erreur:")
+            print(result.stderr)
+            return False
+
+    except subprocess.TimeoutExpired:
+        print("⏰ TIMEOUT: Fine-tuning interrompu après 1 heure")
+        return False
+    except Exception as e:
+        print(f"❌ Erreur lors du fine-tuning: {e}")
+        return False
+    finally:
+        IS_FINETUNING_RUNNING = False
+
+
+def trigger_automatic_finetuning():
+    """
+    Déclenche le fine-tuning automatique en arrière-plan
+    """
+    global IS_FINETUNING_RUNNING
+
+    # Vérifier si le fine-tuning est déjà en cours
+    with FINETUNING_LOCK:
+        if IS_FINETUNING_RUNNING:
+            print("⚠️ Fine-tuning déjà en cours, ignorer le déclenchement")
+            return False
+
+        if not AUTO_FINETUNING_ENABLED:
+            print("⚠️ Fine-tuning automatique désactivé")
+            return False
+
+        # Lancer le fine-tuning dans un thread séparé
+        finetuning_thread = threading.Thread(
+            target=run_finetuning_script,
+            name="AutoFineTuning"
+        )
+        finetuning_thread.daemon = True
+        finetuning_thread.start()
+
+        print("🚀 Fine-tuning automatique lancé en arrière-plan")
+        return True
+
+
+def check_and_trigger_finetuning():
+    """
+    Vérifie si les conditions pour déclencher le fine-tuning sont remplies et lance si nécessaire
+    """
+    try:
+        negative_count = count_negative_feedbacks()
+
+        if negative_count >= NEGATIVE_FEEDBACK_THRESHOLD:
+            print(f"🚨 Seuil de fine-tuning atteint: {negative_count}/{NEGATIVE_FEEDBACK_THRESHOLD} feedbacks négatifs")
+
+            if AUTO_FINETUNING_ENABLED and not IS_FINETUNING_RUNNING:
+                print("🚀 Déclenchement automatique du fine-tuning...")
+                return trigger_automatic_finetuning()
+            elif IS_FINETUNING_RUNNING:
+                print("⚠️ Fine-tuning déjà en cours")
+                return False
+            else:
+                print("💡 Fine-tuning automatique désactivé, déclenchement manuel requis")
+                return False
+        else:
+            print(f"📊 Feedbacks négatifs: {negative_count}/{NEGATIVE_FEEDBACK_THRESHOLD}")
+            return False
+
+    except Exception as e:
+        print(f"❌ Erreur vérification fine-tuning: {e}")
+        return False
+
 # --- Endpoints de l'API ---
 @app.get("/", summary="Message de bienvenue")
 def read_root():
@@ -479,16 +612,15 @@ def health_check():
         raise HTTPException(status_code=503, detail="Service Unavailable: Model not loaded")
 
     negative_feedbacks = count_negative_feedbacks()
+    finetuning_ready = check_finetuning_trigger()
 
     return {
         "status": "healthy",
         "model_loaded": True,
         "max_sequence_length": MAX_SEQUENCE_LENGTH,
         "vocab_size": len(tokenizer.word_index) if tokenizer else 0,
-        "is_retraining": IS_RETRAINING,
         "negative_feedbacks": negative_feedbacks,
-        "negative_threshold": NEGATIVE_FEEDBACK_THRESHOLD,
-        "finetune_sample_size": FINETUNE_SAMPLE_SIZE,
+        "finetuning_ready": finetuning_ready,
         "model_classes": list(label_encoder.classes_) if label_encoder else []
     }
 
@@ -531,10 +663,12 @@ def predict_batch(batch: BatchInput):
     return {"results": results}
 
 
+# --- REMPLACEZ VOTRE FONCTION save_feedback PAR CELLE-CI ---
+
 @app.post("/feedback", summary="Enregistrer un feedback utilisateur")
 async def save_feedback(feedback: FeedbackInput, background_tasks: BackgroundTasks):
     """
-    Enregistre le feedback utilisateur
+    Enregistre le feedback utilisateur et déclenche automatiquement le fine-tuning si nécessaire
     """
     try:
         feedback_data = {
@@ -549,25 +683,40 @@ async def save_feedback(feedback: FeedbackInput, background_tasks: BackgroundTas
         if not save_feedback_to_csv(feedback_data):
             raise HTTPException(status_code=500, detail="Erreur sauvegarde feedback")
 
-        negative_count = count_negative_feedbacks()
-
         print(f"📝 Feedback enregistré: {feedback.user_satisfaction}")
-        print(f"📊 Feedbacks négatifs: {negative_count}/{NEGATIVE_FEEDBACK_THRESHOLD}")
+
+        # ✨ NOUVEAU: Vérifier et déclencher automatiquement le fine-tuning
+        auto_triggered = False
+        if feedback.user_satisfaction == "no":  # Seulement pour les feedbacks négatifs
+            auto_triggered = check_and_trigger_finetuning()
+
+        negative_count = count_negative_feedbacks()
+        finetuning_ready = negative_count >= NEGATIVE_FEEDBACK_THRESHOLD
+
+        print(f"📊 Feedbacks négatifs: {negative_count}")
 
         response = {
             "status": "success",
             "message": "Feedback enregistré avec succès",
             "feedback_type": feedback.user_satisfaction,
             "negative_feedbacks": negative_count,
-            "negative_threshold": NEGATIVE_FEEDBACK_THRESHOLD
+            "finetuning_ready": finetuning_ready,
+            "auto_finetuning_triggered": auto_triggered,  # ✨ NOUVEAU
+            "is_finetuning_running": IS_FINETUNING_RUNNING  # ✨ NOUVEAU
         }
+
+        if auto_triggered:
+            response["finetuning_message"] = "🚀 Fine-tuning automatique lancé en arrière-plan!"
+        elif finetuning_ready and not IS_FINETUNING_RUNNING:
+            response["finetuning_message"] = "Seuil atteint! Fine-tuning prêt à être lancé"
+        elif IS_FINETUNING_RUNNING:
+            response["finetuning_message"] = "Fine-tuning en cours d'exécution..."
 
         return response
 
     except Exception as e:
         print(f"❌ Erreur feedback: {e}")
         raise HTTPException(status_code=500, detail=f"Erreur: {e}")
-
 
 @app.get("/feedbacks", summary="Voir les feedbacks utilisateur")
 def get_feedbacks():
@@ -597,6 +746,47 @@ def get_feedbacks():
 
     except Exception as e:
         print(f"❌ Erreur lecture feedbacks: {e}")
+        raise HTTPException(status_code=500, detail=f"Erreur: {e}")
+
+
+@app.get("/feedbacks/stats", summary="Statistiques des feedbacks")
+def get_feedback_stats():
+    """
+    Récupère les statistiques des feedbacks pour le monitoring
+    """
+    try:
+        if not FEEDBACK_CSV_PATH.exists():
+            return {
+                "total_feedbacks": 0,
+                "positive_feedbacks": 0,
+                "negative_feedbacks": 0,
+                "negative_unprocessed": 0,
+                "finetuning_ready": False
+            }
+
+        df = pd.read_csv(FEEDBACK_CSV_PATH)
+
+        total = len(df)
+        positive = len(df[df['user_satisfaction'] == 'yes'])
+        negative = len(df[df['user_satisfaction'] == 'no'])
+        negative_unprocessed = len(df[
+                                       (df['user_satisfaction'] == 'no') &
+                                       (df['processed'] == False)
+                                       ])
+
+        finetuning_ready = negative_unprocessed >= 5
+
+        return {
+            "total_feedbacks": total,
+            "positive_feedbacks": positive,
+            "negative_feedbacks": negative,
+            "negative_unprocessed": negative_unprocessed,
+            "finetuning_ready": finetuning_ready,
+            "success_rate": round((positive / total * 100), 2) if total > 0 else 0
+        }
+
+    except Exception as e:
+        print(f"❌ Erreur stats feedbacks: {e}")
         raise HTTPException(status_code=500, detail=f"Erreur: {e}")
 
 
@@ -643,6 +833,36 @@ def get_model_info():
         return info
     except Exception as e:
         return {"error": str(e), "model_loaded": model is not None}
+
+
+# --- Nouveau endpoint pour déclencher le fine-tuning ---
+@app.post("/trigger-finetuning", summary="Déclenche le fine-tuning (développement uniquement)")
+def trigger_finetuning():
+    """
+    Endpoint pour vérifier si le fine-tuning peut être déclenché
+    Note: Le fine-tuning réel doit être exécuté via 'python traitement.py'
+    """
+    try:
+        negative_count = count_negative_feedbacks()
+
+        if negative_count >= 5:
+            return {
+                "status": "ready",
+                "message": "Fine-tuning peut être déclenché",
+                "negative_feedbacks": negative_count,
+                "command": "python traitement.py",
+                "note": "Exécutez cette commande dans le terminal pour démarrer le fine-tuning"
+            }
+        else:
+            return {
+                "status": "not_ready",
+                "message": f"Pas assez de feedbacks négatifs ({negative_count}/5)",
+                "negative_feedbacks": negative_count,
+                "needed": 5 - negative_count
+            }
+
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Erreur: {e}")
 
 
 # --- Charger les artefacts au démarrage ---
