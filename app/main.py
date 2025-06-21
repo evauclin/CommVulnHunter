@@ -487,65 +487,75 @@ def check_finetuning_trigger():
 
 def run_finetuning_script():
     """
-    Lance le script de fine-tuning en arrière-plan
+    Lance le script de fine-tuning en arrière-plan et AFFICHE LES LOGS EN TEMPS RÉEL.
     """
     global IS_FINETUNING_RUNNING
 
-    print("🚀 DÉMARRAGE DU FINE-TUNING AUTOMATIQUE")
-    print("=" * 50)
+    print("🚀 DÉMARRAGE DU FINE-TUNING AUTOMATIQUE (avec logs en temps réel)")
+    print("=" * 60)
 
     try:
         # Marquer que le fine-tuning est en cours
         IS_FINETUNING_RUNNING = True
 
-        # Vérifier que le script traitement.py existe
         script_path = Path("traitement.py")
         if not script_path.exists():
             print(f"❌ Script de fine-tuning non trouvé: {script_path}")
+            IS_FINETUNING_RUNNING = False
             return False
 
-        # Lancer le script de fine-tuning
-        print("🎯 Lancement du processus de fine-tuning...")
-        result = subprocess.run(
-            ["python", "traitement.py"],
-            capture_output=True,
+        # Lancer le processus avec Popen pour capturer la sortie en temps réel
+        process = subprocess.Popen(
+            ["python", "-u", "traitement.py"],  # Le flag -u est CRUCIAL pour désactiver le buffering
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT, # Redirige stderr vers stdout pour tout voir
             text=True,
-            timeout=3600  # 1 heure maximum
+            encoding='utf-8',
+            errors='replace' # Gère les erreurs de décodage
         )
 
-        if result.returncode == 0:
+        print("🎯 Processus de fine-tuning lancé. Affichage des logs...")
+        print("-" * 60)
+
+        # Lire la sortie ligne par ligne et l'afficher
+        while True:
+            output_line = process.stdout.readline()
+            if output_line == '' and process.poll() is not None:
+                break
+            if output_line:
+                # Affiche la ligne dans la console de l'API
+                print(f"FT-LOG | {output_line.strip()}", flush=True)
+
+        # Attendre la fin du processus et récupérer le code de retour
+        return_code = process.poll()
+        print("-" * 60)
+
+        if return_code == 0:
             print("✅ FINE-TUNING TERMINÉ AVEC SUCCÈS!")
-            print("📋 Sortie du script:")
-            print(result.stdout)
-
-            # Optionnel: Redémarrer automatiquement l'API pour charger le nouveau modèle
-            print("💡 Pour utiliser le nouveau modèle, redémarrez l'API:")
+            print("💡 Pour utiliser le nouveau modèle, redémarrez l'API si le déploiement a eu lieu:")
             print("   docker-compose restart fastapi")
-
             return True
         else:
-            print("❌ FINE-TUNING ÉCHOUÉ!")
-            print("📋 Erreur:")
-            print(result.stderr)
+            print(f"❌ FINE-TUNING ÉCHOUÉ! (Code de retour: {return_code})")
             return False
 
-    except subprocess.TimeoutExpired:
-        print("⏰ TIMEOUT: Fine-tuning interrompu après 1 heure")
-        return False
     except Exception as e:
-        print(f"❌ Erreur lors du fine-tuning: {e}")
+        print(f"❌ Erreur critique lors du lancement du fine-tuning: {e}")
         return False
     finally:
+        # S'assurer que le statut est bien réinitialisé
         IS_FINETUNING_RUNNING = False
+        print("=" * 60)
+        print("🚀 Processus de fine-tuning terminé.")
 
-
+# Dans main.py, modifiez cette fonction
 def trigger_automatic_finetuning():
     """
     Déclenche le fine-tuning automatique en arrière-plan
     """
     global IS_FINETUNING_RUNNING
 
-    # Vérifier si le fine-tuning est déjà en cours
+    # Utiliser un verrou pour éviter les conditions de course
     with FINETUNING_LOCK:
         if IS_FINETUNING_RUNNING:
             print("⚠️ Fine-tuning déjà en cours, ignorer le déclenchement")
@@ -563,9 +573,11 @@ def trigger_automatic_finetuning():
         finetuning_thread.daemon = True
         finetuning_thread.start()
 
-        print("🚀 Fine-tuning automatique lancé en arrière-plan")
+        # ---- LA MODIFICATION EST ICI ----
+        # Ajout d'un \n pour éviter le collage des logs
+        print("\n🚀 Fine-tuning automatique lancé en arrière-plan.")
+        # -------------------------------
         return True
-
 
 def check_and_trigger_finetuning():
     """
