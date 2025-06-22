@@ -23,8 +23,8 @@ def fetch_emails_from_gmail():
     """Récupère les emails depuis Gmail et les formate en CSV"""
 
     # Configuration Gmail
-    username = os.getenv("EMAIL_USERNAME", "farinesfari@gmail.com")
-    password = os.getenv("EMAIL_PASSWORD", "aelk usor ixat xoyd")
+    username = os.getenv("EMAIL_USERNAME", "")
+    password = os.getenv("EMAIL_PASSWORD", "")
 
     try:
         # Connexion à Gmail
