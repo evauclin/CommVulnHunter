@@ -1,8 +1,11 @@
+tensorflow==2.19.0
+scikit-learn==1.3.2
+pandas==2.0.3
 fastapi==0.68.1
 uvicorn==0.15.0
-tensorflow==2.19.0
 python-multipart
-scikit-learn
-pandas
-nltk
-langdetect
+nltk==3.8.1
+langdetect==1.0.9
+matplotlib==3.7.5
+seaborn==0.12.2
+python-dateutil==2.8.2

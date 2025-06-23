@@ -6,7 +6,7 @@ services:
       context: .
       dockerfile: Dockerfile_ml
     ports:
-      - "80:80"
+      - "8000:80"  # Changé de 80:80 à 8000:80
     environment:
       - PYTHONUNBUFFERED=1
     restart: unless-stopped
@@ -16,7 +16,7 @@ services:
       context: .
       dockerfile: Dockerfile_web
     ports:
-      - "8080:80"
+      - "8080:80"  # Port 8080 reste le même
     depends_on:
       - fastapi
     restart: unless-stopped

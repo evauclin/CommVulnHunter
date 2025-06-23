@@ -1,5 +1,5 @@
 """
-email_fetcher_csv.py
+email_fetcher_csv.py - Version corrigée
 Script pour récupérer les emails depuis Gmail et les sauvegarder au format CSV
 """
 
@@ -10,6 +10,7 @@ from email.utils import parsedate_to_datetime
 import os
 import csv
 import json
+import random
 from datetime import datetime
 from dotenv import load_dotenv
 import re
@@ -22,12 +23,12 @@ def fetch_emails_from_gmail():
     """Récupère les emails depuis Gmail et les formate en CSV"""
 
     # Configuration Gmail
-    username = os.getenv("EMAIL_USERNAME", "farinesfari@gmail.com")
-    password = os.getenv("EMAIL_PASSWORD", "aelk usor ixat xoyd")
+    username = os.getenv("EMAIL_USERNAME", "")
+    password = os.getenv("EMAIL_PASSWORD", "")
 
     try:
         # Connexion à Gmail
-        print(" Connexion à Gmail...")
+        print("🔌 Connexion à Gmail...")
         mail = imaplib.IMAP4_SSL("imap.gmail.com")
         mail.login(username, password)
         print(" Connexion réussie")
@@ -55,7 +56,7 @@ def fetch_emails_from_gmail():
                 if email_data:
                     emails_data.append(email_data)
         except:
-            print("⚠ Impossible d'accéder aux spams")
+            print("⚠️ Impossible d'accéder aux spams")
 
         mail.logout()
 
@@ -224,15 +225,17 @@ def extract_text_from_html(html_content):
 
 
 def generate_csv_files(emails_data):
-    """Génère les fichiers CSV et JSON"""
+    """Génère les fichiers CSV et JSON - VERSION CORRIGÉE"""
 
-    # Créer le dossier de sortie
     output_dir = "src/pages"
     os.makedirs(output_dir, exist_ok=True)
 
-    # Chemins des fichiers
     csv_file_path = os.path.join(output_dir, "emails_live.csv")
     json_file_path = os.path.join(output_dir, "emails_live.json")
+
+    print(f" Génération des fichiers dans: {output_dir}")
+    print(f" CSV: {csv_file_path}")
+    print(f" JSON: {json_file_path}")
 
     # 1. Fichier CSV principal
     fieldnames = [
@@ -247,31 +250,37 @@ def generate_csv_files(emails_data):
         "processed_at",
     ]
 
-    with open(csv_file_path, "w", newline="", encoding="utf-8") as csvfile:
-        writer = csv.DictWriter(csvfile, fieldnames=fieldnames, quoting=csv.QUOTE_ALL)
-        writer.writeheader()
+    try:
+        with open(csv_file_path, "w", newline="", encoding="utf-8") as csvfile:
+            writer = csv.DictWriter(
+                csvfile, fieldnames=fieldnames, quoting=csv.QUOTE_ALL
+            )
+            writer.writeheader()
 
-        for email_data in emails_data:
-            writer.writerow(email_data)
+            for email_data in emails_data:
+                writer.writerow(email_data)
 
-    print(f" Fichier CSV généré: {csv_file_path}")
+        print(f" Fichier CSV généré: {csv_file_path}")
 
-    # 2. Fichier JSON (pour compatibilité et backup)
-    json_data = {
-        "generated_at": datetime.now().isoformat(),
-        "total_emails": len(emails_data),
-        "source": "gmail_imap",
-        "format_version": "2.0",
-        "emails": emails_data,
-    }
+        # 2. Fichier JSON (pour compatibilité et backup)
+        json_data = {
+            "generated_at": datetime.now().isoformat(),
+            "total_emails": len(emails_data),
+            "source": "gmail_imap",
+            "format_version": "2.0",
+            "emails": emails_data,
+        }
 
-    with open(json_file_path, "w", encoding="utf-8") as f:
-        json.dump(json_data, f, ensure_ascii=False, indent=2)
+        with open(json_file_path, "w", encoding="utf-8") as f:
+            json.dump(json_data, f, ensure_ascii=False, indent=2)
 
-    print(f" Fichier JSON généré: {json_file_path}")
+        print(f" Fichier JSON généré: {json_file_path}")
 
-    # 3. Génération des statistiques
-    generate_statistics(emails_data, output_dir)
+        # 3. Génération des statistiques
+        generate_statistics(emails_data, output_dir)
+
+    except Exception as e:
+        print(f"Erreur génération fichiers: {e}")
 
 
 def generate_statistics(emails_data, output_dir):
@@ -310,11 +319,11 @@ def generate_statistics(emails_data, output_dir):
     print(f" Statistiques générées: {stats_file}")
 
     # Afficher un résumé
-    print("\n Résumé:")
-    print(f"    Total: {stats['total_emails']}")
-    print(f"    Importants: {stats['important_emails']}")
-    print(f"    Spam: {stats['spam_emails']}")
-    print(f"    Taux de réussite: {stats['success_rate']}%")
+    print("\n📊 Résumé:")
+    print(f"   Total: {stats['total_emails']}")
+    print(f"   Importants: {stats['important_emails']}")
+    print(f"   Spam: {stats['spam_emails']}")
+    print(f"   Taux de réussite: {stats['success_rate']}%")
 
 
 if __name__ == "__main__":
@@ -322,11 +331,11 @@ if __name__ == "__main__":
 
     # Vérification de la configuration
     if not os.getenv("EMAIL_PASSWORD"):
-        print(" Configuration manquante!")
+        print("Configuration manquante!")
         print("Créez un fichier .env avec:")
         print("EMAIL_USERNAME=votre@gmail.com")
         print("EMAIL_PASSWORD=votre_mot_de_passe_application")
         exit(1)
 
     emails = fetch_emails_from_gmail()
-    print(" Terminé!")
+    print("Terminé!")

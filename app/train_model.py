@@ -553,6 +553,439 @@ class LSTMPhishingDetector:
 
         return predictions_decoded, probabilities.flatten()
 
+    def retrain_from_feedback(self, feedback_df, main_dataset_path=None, sample_size=2000):
+        """
+        Réentraîne le modèle en utilisant les feedbacks négatifs + échantillon du dataset principal
+        Suit exactement la même méthode de traitement que l'entraînement initial
+
+        Args:
+            feedback_df: DataFrame avec colonnes ['text', 'label', 'language']
+            main_dataset_path: Chemin vers le dataset principal (optionnel)
+            sample_size: Taille de l'échantillon du dataset principal
+
+        Returns:
+            history: Historique d'entraînement
+            metrics: Métriques de performance
+            X_text_test, X_num_test, y_test: Données de test pour comparaison
+        """
+        print(f"\n🔄 RÉENTRAÎNEMENT À PARTIR DES FEEDBACKS")
+        print("=" * 60)
+
+        # 1. Préparer le dataset combiné
+        combined_df = None
+
+        if main_dataset_path:
+            try:
+                print(f"📂 Chargement du dataset principal depuis {main_dataset_path}...")
+                main_df = self.load_data(main_dataset_path, sample_size=sample_size)
+
+                if main_df is not None:
+                    # Combiner avec les feedbacks
+                    combined_df = pd.concat([main_df, feedback_df], ignore_index=True)
+                    print(
+                        f"🔗 Dataset combiné: {len(main_df)} (principal) + {len(feedback_df)} (feedbacks) = {len(combined_df)}")
+                else:
+                    combined_df = feedback_df
+                    print("⚠️ Dataset principal non trouvé, utilisation uniquement des feedbacks")
+
+            except Exception as e:
+                print(f"⚠️ Erreur lors du chargement du dataset principal: {e}")
+                combined_df = feedback_df
+                print("📝 Utilisation uniquement des feedbacks pour le réentraînement")
+        else:
+            combined_df = feedback_df
+            print("📝 Réentraînement uniquement sur les feedbacks (aucun dataset principal spécifié)")
+
+        if len(combined_df) == 0:
+            raise ValueError("Aucune donnée disponible pour le réentraînement")
+
+        # 2. Vérifier les colonnes requises
+        required_columns = ['text', 'label', 'language']
+        missing_columns = [col for col in required_columns if col not in combined_df.columns]
+        if missing_columns:
+            raise ValueError(f"Colonnes manquantes dans le dataset: {missing_columns}")
+
+        # 3. Afficher les statistiques du dataset combiné
+        print(f"\n📊 STATISTIQUES DU DATASET DE RÉENTRAÎNEMENT:")
+        print(f"  Nombre total d'échantillons: {len(combined_df)}")
+
+        # Distribution des labels
+        label_counts = combined_df['label'].value_counts()
+        print(f"\n📋 Distribution des labels:")
+        for label, count in label_counts.items():
+            print(f"  {label}: {count} ({count / len(combined_df) * 100:.1f}%)")
+
+        # Distribution des langues
+        if 'language' in combined_df.columns:
+            lang_counts = combined_df['language'].value_counts()
+            print(f"\n🌍 Distribution des langues:")
+            for lang, count in lang_counts.items():
+                print(f"  {lang}: {count} ({count / len(combined_df) * 100:.1f}%)")
+
+        # 4. Division des données (EXACTEMENT comme dans main())
+        print(f"\n📋 Division des données pour le réentraînement...")
+
+        # Créer la colonne de stratification (label + langue)
+        combined_df['stratify_col'] = combined_df['label'].astype(str) + '_' + combined_df['language'].astype(str)
+
+        X = combined_df[['text', 'language', 'stratify_col']]
+        y = combined_df['label']
+
+        # Division train/temp avec stratification
+        X_train, X_temp, y_train, y_temp = train_test_split(
+            X, y, test_size=0.3, random_state=42, stratify=combined_df['stratify_col']
+        )
+
+        # Division validation/test
+        X_val, X_test, y_val, y_test = train_test_split(
+            X_temp, y_temp, test_size=0.5, random_state=42, stratify=X_temp['stratify_col']
+        )
+
+        print(f"  Train: {len(X_train)} échantillons")
+        print(f"  Validation: {len(X_val)} échantillons")
+        print(f"  Test: {len(X_test)} échantillons")
+
+        # 5. Préparation des séquences (EXACTEMENT comme dans main())
+        print(f"\n🔧 Préparation des séquences...")
+
+        # IMPORTANT: is_training=True pour recalculer vocab et séquences
+        X_text_train, X_num_train = self.prepare_sequences(X_train, is_training=True)
+        X_text_val, X_num_val = self.prepare_sequences(X_val, is_training=False)
+        X_text_test, X_num_test = self.prepare_sequences(X_test, is_training=False)
+
+        print(f"  Séquences texte - Train: {X_text_train.shape}, Val: {X_text_val.shape}, Test: {X_text_test.shape}")
+        print(f"  Features numériques - Train: {X_num_train.shape}, Val: {X_num_val.shape}, Test: {X_num_test.shape}")
+
+        # 6. Entraînement du modèle (EXACTEMENT comme dans train_model())
+        print(f"\n🚀 DÉBUT DU RÉENTRAÎNEMENT...")
+        print("=" * 50)
+
+        # Utiliser la méthode train_model existante
+        history = self.train_model(
+            X_text_train, X_num_train, y_train,
+            X_text_val, X_num_val, y_val
+        )
+
+        # 7. Évaluation du modèle réentraîné
+        print(f"\n📊 ÉVALUATION DU MODÈLE RÉENTRAÎNÉ")
+        print("=" * 50)
+
+        metrics = self.evaluate_model(X_text_test, X_num_test, y_test)
+
+        print(f"\n✅ RÉENTRAÎNEMENT TERMINÉ!")
+        print(f"📈 Performances du modèle réentraîné:")
+        print(f"  Accuracy:  {metrics['accuracy']:.4f}")
+        print(f"  Precision: {metrics['precision']:.4f}")
+        print(f"  Recall:    {metrics['recall']:.4f}")
+        print(f"  F1-Score:  {metrics['f1']:.4f}")
+        print(f"  AUC:       {metrics['auc']:.4f}")
+
+        # 8. Sauvegarder les nouveaux artefacts avec un nom spécifique
+        print(f"\n💾 Sauvegarde des artefacts du modèle réentraîné...")
+        artifacts = self.save_model_artifacts("./data/retrained_lstm_model")
+
+        # 9. Retourner les données nécessaires pour la comparaison
+        return history, metrics, X_text_test, X_num_test, y_test
+
+
+class ModelFineTuner:
+    def __init__(self, existing_model_path, existing_artifacts):
+        """
+        Initialise le fine-tuner avec le modèle existant
+
+        Args:
+            existing_model_path: Chemin vers le modèle .keras existant
+            existing_artifacts: Dict avec les chemins des artefacts existants
+        """
+        self.existing_model_path = existing_model_path
+        self.existing_artifacts = existing_artifacts
+
+        # Charger les artefacts existants
+        self.load_existing_artifacts()
+
+        # Configuration pour fine-tuning (plus conservatrice)
+        self.finetune_config = {
+            'epochs': 10,  # Moins d'époques pour éviter l'overfitting
+            'learning_rate': 0.00005,  # Learning rate très faible
+            'batch_size': 32,  # Batch size plus petit
+            'patience': 3,  # Patience réduite
+            'validation_split': 0.2
+        }
+
+        print("🔧 Configuration fine-tuning:")
+        for key, value in self.finetune_config.items():
+            print(f"  {key}: {value}")
+
+    def load_existing_artifacts(self):
+        """Charge tous les artefacts du modèle existant"""
+        try:
+            print("\n📦 CHARGEMENT DU MODÈLE EXISTANT")
+            print("=" * 40)
+
+            # Charger le modèle
+            from tensorflow.keras.models import load_model
+            self.model = load_model(self.existing_model_path)
+            print(f"✅ Modèle chargé: {self.existing_model_path}")
+
+            # Charger le tokenizer
+            with open(self.existing_artifacts['tokenizer'], 'rb') as f:
+                self.tokenizer = pickle.load(f)
+            print(f"✅ Tokenizer chargé: vocab_size = {len(self.tokenizer.word_index)}")
+
+            # Charger le scaler
+            with open(self.existing_artifacts['scaler'], 'rb') as f:
+                self.scaler = pickle.load(f)
+            print("✅ Scaler chargé")
+
+            # Charger le label encoder
+            with open(self.existing_artifacts['label_encoder'], 'rb') as f:
+                self.label_encoder = pickle.load(f)
+            print(f"✅ Label encoder chargé: {self.label_encoder.classes_}")
+
+            # Charger les métadonnées
+            with open(self.existing_artifacts['metadata'], 'r') as f:
+                self.metadata = json.load(f)
+
+            self.max_sequence_length = self.metadata['config']['max_sequence_length']
+            self.max_vocab_size = self.metadata['config']['max_vocab_size']
+
+            print(f"✅ Métadonnées chargées:")
+            print(f"  max_sequence_length: {self.max_sequence_length}")
+            print(f"  max_vocab_size: {self.max_vocab_size}")
+
+        except Exception as e:
+            print(f"❌ Erreur chargement artefacts: {e}")
+            raise e
+
+    def preprocess_text(self, text, language='en'):
+        """Utilise le même prétraitement que le modèle original"""
+        if pd.isna(text):
+            return ""
+
+        text = str(text).lower()
+
+        # Même prétraitement que dans le modèle original
+        text = re.sub(r'http[s]?://(?:[a-zA-Z]|[0-9]|[$-_@.&+]|[!*\\(\\),]|(?:%[0-9a-fA-F][0-9a-fA-F]))+',
+                      ' URL_TOKEN ', text)
+        text = re.sub(r'\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}\b', ' EMAIL_TOKEN ', text)
+        text = re.sub(r'\b\d+\b', ' NUM_TOKEN ', text)
+        text = re.sub(r'[^\w\s]', ' ', text)
+        text = re.sub(r'\s+', ' ', text).strip()
+
+        tokens = text.split()
+        # Utiliser les stopwords si disponibles
+        if hasattr(self, 'stop_words') and language in self.stop_words:
+            stop_words_lang = self.stop_words[language]
+            filtered_tokens = [token for token in tokens if len(token) > 2 and token not in stop_words_lang]
+        else:
+            filtered_tokens = [token for token in tokens if len(token) > 2]
+
+        return ' '.join(filtered_tokens)
+
+    def extract_numerical_features(self, texts):
+        """Extrait les mêmes features numériques que le modèle original"""
+        features = []
+
+        # Charger les mots suspects (comme dans le modèle original)
+        try:
+            suspicious_words_file = Path("./model/suspicious_words.json")
+            if suspicious_words_file.exists():
+                with open(suspicious_words_file, 'r') as f:
+                    suspicious_words_data = json.load(f)
+                suspicious_words_set = set(suspicious_words_data.get('en', []) + suspicious_words_data.get('fr', []))
+            else:
+                suspicious_words_set = set()
+        except:
+            suspicious_words_set = set()
+
+        for text in texts:
+            if pd.isna(text):
+                text = ""
+            text_str = str(text)
+
+            char_count = len(text_str)
+            word_count = len(text_str.split())
+            exclamation_count = text_str.count('!')
+            question_count = text_str.count('?')
+            upper_count = sum(1 for c in text_str if c.isupper())
+            upper_ratio = upper_count / max(char_count, 1)
+            url_count = len(re.findall(r'http[s]?://', text_str))
+            email_count = len(re.findall(r'\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}\b', text_str))
+            suspicious_count = sum(1 for word in suspicious_words_set if word in text_str.lower())
+            digit_ratio = sum(1 for c in text_str if c.isdigit()) / max(char_count, 1)
+            special_char_ratio = sum(1 for c in text_str if c in '!@#$%^&*()') / max(char_count, 1)
+
+            features.append([
+                char_count, word_count, exclamation_count, question_count,
+                upper_ratio, url_count, email_count, suspicious_count,
+                digit_ratio, special_char_ratio
+            ])
+
+        return np.array(features)
+
+    def prepare_finetune_data(self, finetune_df):
+        """Prépare les données pour le fine-tuning"""
+        print("\n📝 PRÉPARATION DES DONNÉES DE FINE-TUNING")
+        print("=" * 45)
+
+        # Prétraitement
+        processed_texts = []
+        for _, row in finetune_df.iterrows():
+            processed_text = self.preprocess_text(row['text'], row.get('language', 'en'))
+            processed_texts.append(processed_text)
+
+        # Créer les séquences avec le tokenizer existant (PAS de refit)
+        sequences = self.tokenizer.texts_to_sequences(processed_texts)
+        X_text = pad_sequences(
+            sequences,
+            maxlen=self.max_sequence_length,
+            padding='post',
+            truncating='post'
+        )
+
+        # Features numériques avec le scaler existant
+        X_num = self.extract_numerical_features(finetune_df['text'])
+        X_num = self.scaler.transform(X_num)  # Utiliser transform, PAS fit_transform
+
+        # Labels avec le label encoder existant
+        y = self.label_encoder.transform(finetune_df['label'])
+
+        print(f"✅ Données préparées:")
+        print(f"  Séquences: {X_text.shape}")
+        print(f"  Features numériques: {X_num.shape}")
+        print(f"  Labels: {y.shape}")
+        print(f"  Distribution des labels: {np.bincount(y)}")
+
+        return X_text, X_num, y
+
+    def finetune_model(self, X_text, X_num, y):
+        """Fine-tune le modèle existant"""
+        print("\n🎯 FINE-TUNING DU MODÈLE")
+        print("=" * 30)
+
+        # Modifier le learning rate de l'optimiseur existant
+        from tensorflow.keras.optimizers import Adam
+        new_optimizer = Adam(learning_rate=self.finetune_config['learning_rate'])
+        self.model.compile(
+            optimizer=new_optimizer,
+            loss='binary_crossentropy',
+            metrics=['accuracy', tf.keras.metrics.Precision(name='precision'),
+                     tf.keras.metrics.Recall(name='recall')]
+        )
+
+        # Callbacks pour le fine-tuning
+        callbacks = [
+            EarlyStopping(
+                patience=self.finetune_config['patience'],
+                restore_best_weights=True,
+                monitor='val_loss'
+            ),
+            ReduceLROnPlateau(
+                factor=0.5,
+                patience=2,
+                min_lr=1e-8,
+                monitor='val_loss'
+            )
+        ]
+
+        # Fine-tuning
+        print(f"🚀 Début du fine-tuning avec {len(y)} échantillons...")
+        history = self.model.fit(
+            [X_text, X_num], y,
+            batch_size=self.finetune_config['batch_size'],
+            epochs=self.finetune_config['epochs'],
+            validation_split=self.finetune_config['validation_split'],
+            callbacks=callbacks,
+            verbose=1
+        )
+
+        print("✅ Fine-tuning terminé!")
+        return history
+
+    def evaluate_finetuned_model(self, X_text_test, X_num_test, y_test):
+        """Évalue le modèle fine-tuné"""
+        print("\n📊 ÉVALUATION DU MODÈLE FINE-TUNÉ")
+        print("=" * 35)
+
+        # Prédictions
+        y_pred_proba = self.model.predict([X_text_test, X_num_test])
+        y_pred = (y_pred_proba > 0.5).astype(int)
+
+        # Métriques
+        from sklearn.metrics import accuracy_score, precision_score, recall_score, f1_score, roc_auc_score
+
+        accuracy = accuracy_score(y_test, y_pred)
+        precision = precision_score(y_test, y_pred)
+        recall = recall_score(y_test, y_pred)
+        f1 = f1_score(y_test, y_pred)
+        auc = roc_auc_score(y_test, y_pred_proba)
+
+        metrics = {
+            'accuracy': accuracy,
+            'precision': precision,
+            'recall': recall,
+            'f1': f1,
+            'auc': auc
+        }
+
+        print(f"🎯 Métriques du modèle fine-tuné:")
+        for metric, value in metrics.items():
+            print(f"  {metric.capitalize()}: {value:.4f}")
+
+        return metrics
+
+    def save_finetuned_model(self, suffix="finetuned"):
+        """Sauvegarde le modèle fine-tuné"""
+        print(f"\n💾 SAUVEGARDE DU MODÈLE FINE-TUNÉ")
+        print("=" * 35)
+
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+
+        # Chemins de sauvegarde
+        model_path = f"best_lstm_model_{suffix}_{timestamp}.keras"
+        tokenizer_path = f"tokenizer_{suffix}_{timestamp}.pkl"
+        scaler_path = f"scaler_{suffix}_{timestamp}.pkl"
+        label_encoder_path = f"label_encoder_{suffix}_{timestamp}.pkl"
+        metadata_path = f"model_metadata_{suffix}_{timestamp}.json"
+
+        # Sauvegarder le modèle
+        self.model.save(model_path)
+        print(f"✅ Modèle sauvegardé: {model_path}")
+
+        # Sauvegarder les artefacts (inchangés)
+        with open(tokenizer_path, 'wb') as f:
+            pickle.dump(self.tokenizer, f)
+
+        with open(scaler_path, 'wb') as f:
+            pickle.dump(self.scaler, f)
+
+        with open(label_encoder_path, 'wb') as f:
+            pickle.dump(self.label_encoder, f)
+
+        # Mettre à jour les métadonnées
+        updated_metadata = self.metadata.copy()
+        updated_metadata.update({
+            'finetune_timestamp': timestamp,
+            'finetune_config': self.finetune_config,
+            'model_file': model_path,
+            'tokenizer_file': tokenizer_path,
+            'scaler_file': scaler_path,
+            'label_encoder_file': label_encoder_path
+        })
+
+        with open(metadata_path, 'w') as f:
+            json.dump(updated_metadata, f, indent=2)
+
+        print(f"✅ Artefacts sauvegardés avec timestamp: {timestamp}")
+
+        return {
+            'model_path': model_path,
+            'tokenizer_path': tokenizer_path,
+            'scaler_path': scaler_path,
+            'label_encoder_path': label_encoder_path,
+            'metadata_path': metadata_path,
+            'timestamp': timestamp
+        }
 def main():
     config = {
         'embedding_dim': 128,
