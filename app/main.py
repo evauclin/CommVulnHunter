@@ -69,7 +69,7 @@ def load_model_artifacts():
         print("🚀 Démarrage de l'API et chargement des artefacts...")
 
         # ÉTAPE 1: Charger les métadonnées en premier pour obtenir la bonne longueur
-        metadata_file = Path("model/model_metadata.json")
+        metadata_file = Path("model/model_prod/model_metadata.json")
         if metadata_file.exists():
             try:
                 with open(metadata_file, "r") as f:
@@ -93,7 +93,7 @@ def load_model_artifacts():
             print(f"⚠️ Utilisation de la valeur par défaut: MAX_SEQUENCE_LENGTH = {MAX_SEQUENCE_LENGTH}")
 
         # ÉTAPE 2: Chargement du modèle
-        model_path = Path("model/best_lstm_model.keras")
+        model_path = Path("model/model_prod/best_lstm_model.keras")
         if not model_path.exists():
             raise FileNotFoundError(f"Modèle non trouvé: {model_path}")
 
@@ -116,7 +116,7 @@ def load_model_artifacts():
                     MAX_SEQUENCE_LENGTH = expected_seq_length
 
         # ÉTAPE 4: Chargement du tokenizer
-        tokenizer_path = Path("model/tokenizer.pkl")
+        tokenizer_path = Path("model/model_prod/tokenizer.pkl")
         if not tokenizer_path.exists():
             raise FileNotFoundError(f"Tokenizer non trouvé: {tokenizer_path}")
 
@@ -125,7 +125,7 @@ def load_model_artifacts():
         print(f"✅ Tokenizer chargé (vocab: {len(tokenizer.word_index)} mots)")
 
         # ÉTAPE 5: Chargement du scaler
-        scaler_path = Path("model/scaler.pkl")
+        scaler_path = Path("model/model_prod/scaler.pkl")
         if not scaler_path.exists():
             raise FileNotFoundError(f"Scaler non trouvé: {scaler_path}")
 
@@ -134,7 +134,7 @@ def load_model_artifacts():
         print("✅ Scaler chargé")
 
         # ÉTAPE 6: Chargement du label encoder
-        label_encoder_path = Path("model/label_encoder.pkl")
+        label_encoder_path = Path("model/model_prod/label_encoder.pkl")
         if not label_encoder_path.exists():
             raise FileNotFoundError(f"Label encoder non trouvé: {label_encoder_path}")
 
@@ -143,7 +143,7 @@ def load_model_artifacts():
         print(f"✅ Label encoder chargé (classes: {label_encoder.classes_})")
 
         # ÉTAPE 7: Charger les mots suspects
-        suspicious_words_file = Path("model/suspicious_words.json")
+        suspicious_words_file = Path("model/model_prod/suspicious_words.json")
         if suspicious_words_file.exists():
             try:
                 with open(suspicious_words_file, 'r') as f:
