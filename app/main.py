@@ -54,7 +54,7 @@ STOP_WORDS = {}
 AUTO_FINETUNING_ENABLED = True
 IS_FINETUNING_RUNNING = False
 FINETUNING_LOCK = threading.Lock()
-NEGATIVE_FEEDBACK_THRESHOLD = 5
+NEGATIVE_FEEDBACK_THRESHOLD = 1
 tf.config.set_visible_devices([], 'GPU')
 
 FEEDBACK_CSV_PATH = Path("./data/user_feedbacks.csv")
@@ -468,7 +468,7 @@ def check_finetuning_trigger():
         negative_count = count_negative_feedbacks()
 
         # Seuil pour déclencher le fine-tuning (5 feedbacks négatifs)
-        NEGATIVE_FEEDBACK_THRESHOLD = 5
+        NEGATIVE_FEEDBACK_THRESHOLD = 1
 
         if negative_count >= NEGATIVE_FEEDBACK_THRESHOLD:
             print(f"🚨 Seuil de fine-tuning atteint: {negative_count}/{NEGATIVE_FEEDBACK_THRESHOLD} feedbacks négatifs")
@@ -786,7 +786,7 @@ def get_feedback_stats():
                                        (df['processed'] == False)
                                        ])
 
-        finetuning_ready = negative_unprocessed >= 5
+        finetuning_ready = negative_unprocessed >= 1
 
         return {
             "total_feedbacks": total,
@@ -857,7 +857,7 @@ def trigger_finetuning():
     try:
         negative_count = count_negative_feedbacks()
 
-        if negative_count >= 5:
+        if negative_count >= 1:
             return {
                 "status": "ready",
                 "message": "Fine-tuning peut être déclenché",
@@ -870,7 +870,7 @@ def trigger_finetuning():
                 "status": "not_ready",
                 "message": f"Pas assez de feedbacks négatifs ({negative_count}/5)",
                 "negative_feedbacks": negative_count,
-                "needed": 5 - negative_count
+                "needed": 1 - negative_count
             }
 
     except Exception as e:
