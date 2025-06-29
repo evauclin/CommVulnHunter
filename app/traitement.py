@@ -24,6 +24,26 @@ tf.random.set_seed(42)
 np.random.seed(42)
 
 
+def convert_numpy_types(obj):
+    """Convertit récursivement les types NumPy en types Python natifs pour la sérialisation JSON"""
+    import numpy as np
+
+    if isinstance(obj, dict):
+        return {key: convert_numpy_types(value) for key, value in obj.items()}
+    elif isinstance(obj, list):
+        return [convert_numpy_types(item) for item in obj]
+    elif isinstance(obj, np.bool_):
+        return bool(obj)
+    elif isinstance(obj, np.integer):
+        return int(obj)
+    elif isinstance(obj, np.floating):
+        return float(obj)
+    elif isinstance(obj, np.ndarray):
+        return obj.tolist()
+    else:
+        return obj
+
+
 class IndividualFeedbackRetrainingManager:
     """
     Gestionnaire qui RE-ENTRAÎNE le modèle pour CHAQUE feedback négatif individuel
@@ -65,13 +85,19 @@ class IndividualFeedbackRetrainingManager:
 
         # Configuration re-entraînement pour feedback individuel
         self.retrain_config = {
-            'learning_rate': 0.0001,  # Très faible pour stabilité
-            'epochs': 5,  # Peu d'époques pour éviter overfitting
-            'batch_size': 1,  # Un seul feedback
+            'learning_rate': 0.001,  # Très faible pour stabilité
+            'epochs': 10,  # Peu d'époques pour éviter overfitting
+            'batch_size': 10,  # Un seul feedback
             'patience': 3,  # Patience réduite
             'base_sample_size': 50,  # Échantillon de support
             'validation_split': 0.3,  # Plus de validation
-            'safety_backup': True
+            # Pondération intelligente
+            'feedback_weight': 6.0,  # Prioritaire mais pas excessif
+            'support_weight': 1.0,  # Poids normal
+
+            'safety_backup': True,
+            'min_confidence_threshold': 0.7,  # Seuil de confiance minimum
+            'max_gradient_norm': 1.0  # Gradient clipping
         }
 
         # Critères de déploiement pour feedback individuel
@@ -190,7 +216,7 @@ class IndividualFeedbackRetrainingManager:
             unprocessed_negative = df[
                 (df['user_satisfaction'] == 'no') &
                 (df['processed'] == False)
-                ].copy()
+            ].copy()
 
             if len(unprocessed_negative) == 0:
                 print("ℹ️ Aucun feedback négatif à traiter")
@@ -243,17 +269,17 @@ class IndividualFeedbackRetrainingManager:
                 'label': feedback_data['label'],
                 'language': feedback_data['language'],
                 'source': 'feedback',
-                'weight': 10.0  # Poids très élevé pour le feedback spécifique
+                'weight': self.retrain_config['feedback_weight']  # Utiliser la config
             }])
 
-            print(f"📝 Feedback individuel ajouté (poids: 10.0)")
+            print(f"📝 Feedback individuel ajouté (poids: {self.retrain_config['feedback_weight']})")
 
             # Ajouter un échantillon de support pour stabilité
             base_sample_df = pd.DataFrame()
             if Path(dataset_path).exists():
                 df = pd.read_csv(dataset_path)
 
-                # Petit échantillon équilibré pour stabilité
+                # Échantillon équilibré pour stabilité
                 sample_size = self.retrain_config['base_sample_size']
                 if len(df) > sample_size:
                     # Échantillonnage stratifié équilibré
@@ -275,7 +301,7 @@ class IndividualFeedbackRetrainingManager:
 
                 base_sample_df = base_sample_df[['text', 'label', 'language']].copy()
                 base_sample_df['source'] = 'dataset'
-                base_sample_df['weight'] = 1.0
+                base_sample_df['weight'] = self.retrain_config['support_weight']
 
                 print(f"📊 Échantillon de support: {len(base_sample_df)} échantillons")
 
@@ -287,7 +313,7 @@ class IndividualFeedbackRetrainingManager:
 
             print(f"🔗 Dataset final: {len(combined_df)} échantillons")
             print(f"   Distribution: {combined_df['label'].value_counts().to_dict()}")
-            print(f"   ⚠️ FOCUS: Re-entraînement centré sur 1 feedback spécifique")
+            print(f"   📊 Ratio feedback/support: 1/{len(base_sample_df)}")
 
             return combined_df
 
@@ -474,13 +500,13 @@ class IndividualFeedbackRetrainingManager:
             model_retrained = tf.keras.models.clone_model(self.model)
             model_retrained.set_weights(self.model.get_weights())
 
-            # Configuration ultra-ciblée
+            # Configuration optimisée
             print(f"🔧 Configuration re-entraînement:")
             for key, value in self.retrain_config.items():
                 if key not in ['base_sample_size', 'safety_backup']:
                     print(f"   {key}: {value}")
 
-            # Optimiseur très conservateur
+            # Optimiseur conservateur
             optimizer = Adam(learning_rate=self.retrain_config['learning_rate'])
             model_retrained.compile(
                 optimizer=optimizer,
@@ -628,10 +654,63 @@ class IndividualFeedbackRetrainingManager:
                 'error': str(e)
             }
 
+    def trigger_api_reload(self):
+        """Déclenche le rechargement du modèle dans l'API via un appel HTTP"""
+        try:
+            print(f"\n🔄 DÉCLENCHEMENT DU RECHARGEMENT AUTOMATIQUE...")
+
+            api_urls = [
+                "http://localhost:8000",
+                "http://127.0.0.1:8000",
+                "http://fastapi:8000"
+            ]
+
+            for api_url in api_urls:
+                try:
+                    print(f"   Tentative: {api_url}/reload-model")
+
+                    import subprocess
+                    import json
+
+                    curl_command = [
+                        'curl', '-s', '-X', 'POST',
+                        f'{api_url}/reload-model',
+                        '-H', 'Content-Type: application/json',
+                        '--max-time', '10'
+                    ]
+
+                    result = subprocess.run(curl_command, capture_output=True, text=True, timeout=15)
+
+                    if result.returncode == 0:
+                        try:
+                            response_data = json.loads(result.stdout)
+                            if response_data.get('status') == 'success':
+                                print(f"✅ RECHARGEMENT RÉUSSI via {api_url}!")
+                                print(f"   Message: {response_data.get('message', 'OK')}")
+                                print(f"   Version: {response_data.get('model_version', 'unknown')}")
+                                return True
+                        except json.JSONDecodeError:
+                            print(f"   ⚠️ Réponse non-JSON: {result.stdout[:100]}")
+                    else:
+                        print(f"   ❌ Erreur curl (code {result.returncode}): {result.stderr}")
+
+                except subprocess.TimeoutExpired:
+                    print(f"   ❌ Timeout sur {api_url}")
+                    continue
+                except Exception as e:
+                    print(f"   ❌ Erreur: {e}")
+                    continue
+
+            print(f"⚠️ Rechargement automatique échoué sur toutes les URLs")
+            print(f"💡 Le modèle a été déployé mais nécessite un rechargement manuel")
+            return False
+
+        except Exception as e:
+            print(f"❌ Erreur rechargement automatique: {e}")
+            return False
+
     def deploy_retrained_model(self, retrained_model, feedback_data, backup_dir, validation_result):
-        """
-        Déploie immédiatement le modèle re-entraîné
-        """
+        """Déploie immédiatement le modèle re-entraîné ET déclenche le rechargement de l'API"""
         print(f"\n🚀 DÉPLOIEMENT IMMÉDIAT DU MODÈLE RE-ENTRAÎNÉ")
         print("=" * 50)
 
@@ -646,18 +725,26 @@ class IndividualFeedbackRetrainingManager:
             production_model_path = self.model_dir / "best_lstm_model.keras"
             shutil.copy2(temp_model_path, production_model_path)
 
-            # Mettre à jour les métadonnées
+            # Mettre à jour les métadonnées avec version incrémentée
             updated_metadata = self.metadata.copy()
+            new_version = updated_metadata.get('model_version', 1) + 1
+
+            # Convertir les types NumPy avant sérialisation
+            clean_validation_result = convert_numpy_types(validation_result)
+            clean_retraining_config = convert_numpy_types(self.retrain_config)
+
             updated_metadata.update({
                 'last_individual_retraining': timestamp,
-                'last_feedback_processed': feedback_data['id'],
-                'retraining_config': self.retrain_config,
-                'model_version': updated_metadata.get('model_version', 1) + 1,
+                'last_feedback_processed': int(feedback_data['id']),
+                'retraining_config': clean_retraining_config,
+                'model_version': new_version,
                 'backup_location': str(backup_dir),
                 'deployment_method': 'individual_feedback_retraining',
                 'total_individual_retrainings': self.total_retrainings + 1,
                 'successful_deployments': self.successful_deployments + 1,
-                'validation_result': validation_result
+                'validation_result': clean_validation_result,
+                'deployment_timestamp': timestamp,
+                'auto_reload_trigger': True
             })
 
             # Sauvegarder les métadonnées
@@ -675,65 +762,45 @@ class IndividualFeedbackRetrainingManager:
             self.model = load_model(str(production_model_path))
 
             print(f"✅ DÉPLOIEMENT RÉUSSI!")
-            print(f"   Version du modèle: {updated_metadata['model_version']}")
+            print(f"   Version du modèle: {new_version}")
             print(f"   Feedback traité: #{feedback_data['id']}")
             print(f"   Re-entraînements totaux: {self.total_retrainings}")
             print(f"   Déploiements réussis: {self.successful_deployments}")
             print(f"   Sauvegarde: {backup_dir}")
 
+            # Déclencher le rechargement automatique de l'API
+            self.trigger_api_reload()
+
             return True
 
         except Exception as e:
             print(f"❌ Erreur déploiement: {e}")
-            return False
-
-    def mark_feedback_as_processed(self, feedback_id, deployed=True, validation_result=None):
-        """Marque LE feedback comme traité"""
-        print(f"\n📝 MARQUAGE DU FEEDBACK #{feedback_id} COMME TRAITÉ")
-        print("=" * 50)
-
-        try:
-            df = pd.read_csv(self.feedback_csv_path)
-
-            # Marquer le feedback spécifique
-            df.loc[feedback_id, 'processed'] = True
-            df.loc[feedback_id, 'processed_at'] = datetime.now().isoformat()
-            df.loc[feedback_id, 'deployed'] = deployed
-            df.loc[feedback_id, 'retraining_method'] = 'individual_feedback'
-
-            if validation_result:
-                df.loc[feedback_id, 'correction_validated'] = validation_result['validation_passed']
-                df.loc[feedback_id, 'new_prediction'] = validation_result.get('new_prediction', '')
-                df.loc[feedback_id, 'confidence_score'] = validation_result.get('confidence_score', 0.0)
-
-            # Sauvegarder
-            df.to_csv(self.feedback_csv_path, index=False)
-
-            status = "et déployé" if deployed else "mais non déployé"
-            print(f"✅ Feedback #{feedback_id} marqué comme traité {status}")
-            return True
-
-        except Exception as e:
-            print(f"❌ Erreur marquage feedback: {e}")
+            import traceback
+            traceback.print_exc()
             return False
 
     def log_retraining_attempt(self, feedback_data, validation_result, deployed, backup_dir):
         """Enregistre la tentative de re-entraînement"""
         try:
+            # Nettoyer tous les types NumPy
+            clean_feedback_data = convert_numpy_types({
+                'text': feedback_data['text'][:200],
+                'original_prediction': feedback_data['original_prediction'],
+                'expected_correction': feedback_data['label'],
+                'original_confidence': float(feedback_data['confidence'])
+            })
+
+            clean_validation_result = convert_numpy_types(validation_result)
+
             log_entry = {
                 'timestamp': datetime.now().isoformat(),
-                'feedback_id': feedback_data['id'],
-                'feedback_details': {
-                    'text': feedback_data['text'][:200],  # Limiter la taille
-                    'original_prediction': feedback_data['original_prediction'],
-                    'expected_correction': feedback_data['label'],
-                    'original_confidence': feedback_data['confidence']
-                },
-                'validation_result': validation_result,
-                'deployed': deployed,
+                'feedback_id': int(feedback_data['id']),
+                'feedback_details': clean_feedback_data,
+                'validation_result': clean_validation_result,
+                'deployed': bool(deployed),
                 'backup_location': str(backup_dir),
-                'total_retrainings': self.total_retrainings,
-                'consecutive_failures': self.consecutive_failures
+                'total_retrainings': int(self.total_retrainings),
+                'consecutive_failures': int(self.consecutive_failures)
             }
 
             # Charger le log existant
@@ -761,11 +828,44 @@ class IndividualFeedbackRetrainingManager:
 
         except Exception as e:
             print(f"⚠️ Erreur enregistrement log: {e}")
+            import traceback
+            traceback.print_exc()
 
-    def process_single_feedback(self, dataset_path="./data/test_dataset.csv"):
-        """
-        FONCTION PRINCIPALE: Traite UN SEUL feedback avec re-entraînement immédiat
-        """
+    def mark_feedback_as_processed(self, feedback_id, deployed=True, validation_result=None):
+        """Marque LE feedback comme traité"""
+        print(f"\n📝 MARQUAGE DU FEEDBACK #{feedback_id} COMME TRAITÉ")
+        print("=" * 50)
+
+        try:
+            df = pd.read_csv(self.feedback_csv_path)
+
+            # Marquer le feedback spécifique
+            df.loc[feedback_id, 'processed'] = True
+            df.loc[feedback_id, 'processed_at'] = datetime.now().isoformat()
+            df.loc[feedback_id, 'deployed'] = bool(deployed)
+            df.loc[feedback_id, 'retraining_method'] = 'individual_feedback'
+
+            if validation_result:
+                # Convertir les types NumPy
+                df.loc[feedback_id, 'correction_validated'] = bool(validation_result.get('validation_passed', False))
+                df.loc[feedback_id, 'new_prediction'] = str(validation_result.get('new_prediction', ''))
+                df.loc[feedback_id, 'confidence_score'] = float(validation_result.get('confidence_score', 0.0))
+
+            # Sauvegarder
+            df.to_csv(self.feedback_csv_path, index=False)
+
+            status = "et déployé" if deployed else "mais non déployé"
+            print(f"✅ Feedback #{feedback_id} marqué comme traité {status}")
+            return True
+
+        except Exception as e:
+            print(f"❌ Erreur marquage feedback: {e}")
+            import traceback
+            traceback.print_exc()
+            return False
+
+    def process_single_feedback(self, dataset_path="./data/full_merged_dataset_fr_en_spam.csv"):
+        """FONCTION PRINCIPALE: Traite UN SEUL feedback avec re-entraînement immédiat"""
         print("\n" + "🎯" * 50)
         print("TRAITEMENT D'UN FEEDBACK INDIVIDUEL")
         print("RE-ENTRAÎNEMENT + VALIDATION + DÉPLOIEMENT IMMÉDIAT")
@@ -860,8 +960,7 @@ class IndividualFeedbackRetrainingManager:
             print(f"   Le feedback a été corrigé avec succès")
             print(f"   Version du modèle: {self.total_retrainings + 1}")
             print(f"💾 Sauvegarde: {backup_dir}")
-            print(f"🔄 Redémarrez l'API pour utiliser le nouveau modèle:")
-            print(f"   docker-compose restart fastapi")
+            print(f"🔄 L'API devrait maintenant utiliser le nouveau modèle automatiquement")
         else:
             print(f"\n🛑 RÉSULTAT: Modèle original conservé")
             print(f"💡 Le re-entraînement n'a pas réussi à corriger le feedback")
@@ -870,9 +969,7 @@ class IndividualFeedbackRetrainingManager:
         return deployment_success
 
     def run_continuous_individual_processing(self, dataset_path="./data/test_dataset.csv", max_iterations=None):
-        """
-        Traite en continu CHAQUE feedback individuellement
-        """
+        """Traite en continu CHAQUE feedback individuellement"""
         print("\n" + "🔄" * 50)
         print("TRAITEMENT CONTINU PAR FEEDBACK INDIVIDUEL")
         print("CHAQUE FEEDBACK = UN RE-ENTRAÎNEMENT + UN DÉPLOIEMENT POTENTIEL")
@@ -928,9 +1025,7 @@ class IndividualFeedbackRetrainingManager:
 
 
 def main():
-    """
-    Fonction principale pour le re-entraînement par feedback individuel
-    """
+    """Fonction principale pour le re-entraînement par feedback individuel"""
     print("🚀 RE-ENTRAÎNEMENT PAR FEEDBACK INDIVIDUEL")
     print("=" * 60)
     print("🎯 PHILOSOPHIE: Chaque feedback négatif = Un re-entraînement")
@@ -965,55 +1060,14 @@ def main():
 
     print("✅ Tous les prérequis sont satisfaits")
 
-    # Menu des options
-    print(f"\n📋 OPTIONS DISPONIBLES:")
-    print(f"1. Traiter un feedback individuel")
-    print(f"2. Traiter tous les feedbacks individuellement")
-    print(f"3. Mode automatique continu")
-
-    try:
-        choice = input("\nChoisissez une option (1-3): ").strip()
-    except KeyboardInterrupt:
-        print("\n👋 Arrêt demandé par l'utilisateur")
-        return False
-
-    if choice == "1":
-        # Traitement d'un seul feedback
-        success = manager.process_single_feedback()
-        return success
-
-    elif choice == "2":
-        # Traitement de tous les feedbacks un par un
-        max_iter = input("Nombre maximum d'itérations (vide = illimité): ").strip()
-        max_iterations = int(max_iter) if max_iter.isdigit() else None
-
-        processed, deployed = manager.run_continuous_individual_processing(
-            max_iterations=max_iterations
-        )
-        return deployed > 0
-
-    elif choice == "3":
-        # Mode automatique continu
-        print("🔄 Mode automatique continu activé")
-        print("   Le système traitera chaque feedback dès qu'il arrive")
-        print("   Appuyez sur Ctrl+C pour arrêter")
-
-        try:
-            processed, deployed = manager.run_continuous_individual_processing()
-            return deployed > 0
-        except KeyboardInterrupt:
-            print("\n👋 Mode automatique arrêté par l'utilisateur")
-            return True
-
-    else:
-        print("❌ Option invalide")
-        return False
+    # Mode automatique : traite automatiquement UN feedback
+    print("\n🎯 MODE AUTOMATIQUE : Traitement d'un feedback individuel")
+    success = manager.process_single_feedback()
+    return success
 
 
 class FeedbackRetrainingMonitor:
-    """
-    Moniteur pour le re-entraînement par feedback individuel
-    """
+    """Moniteur pour le re-entraînement par feedback individuel"""
 
     def __init__(self, retraining_log_path):
         self.retraining_log_path = Path(retraining_log_path)
@@ -1090,9 +1144,7 @@ class FeedbackRetrainingMonitor:
 
 
 def restore_from_backup(backup_dir, model_dir="./model/model_prod"):
-    """
-    Fonction utilitaire pour restaurer un modèle depuis une sauvegarde
-    """
+    """Fonction utilitaire pour restaurer un modèle depuis une sauvegarde"""
     backup_path = Path(backup_dir)
     model_path = Path(model_dir)
 
@@ -1164,7 +1216,7 @@ if __name__ == "__main__":
         elif command == "help":
             print("📋 UTILISATION DU RE-ENTRAÎNEMENT INDIVIDUEL:")
             print("=" * 60)
-            print("python traitement.py                    # Menu interactif")
+            print("python traitement.py                    # Mode automatique (traite 1 feedback)")
             print("python traitement.py auto               # Traiter un feedback")
             print("python traitement.py continuous         # Traiter tous individuellement")
             print("python traitement.py monitor            # Monitoring des performances")
@@ -1175,17 +1227,18 @@ if __name__ == "__main__":
             print("   • Re-entraîne le modèle spécifiquement pour ce feedback")
             print("   • Valide que la correction fonctionne")
             print("   • Déploie immédiatement si la validation réussit")
-            print("   • Passe au feedback suivant")
+            print("   • Déclenche automatiquement le rechargement de l'API")
             print("\n⚖️ Avantages:")
             print("   • Correction immédiate des erreurs")
             print("   • Apprentissage ciblé sur chaque problème")
             print("   • Déploiement rapide des améliorations")
             print("   • Adaptation continue du modèle")
+            print("   • Rechargement automatique sans redémarrage")
             print("\n🎯 PHILOSOPHIE:")
             print("   Chaque feedback négatif = Une opportunité d'amélioration immédiate")
 
         else:
             print("❌ Commande non reconnue. Utilisez 'help' pour voir les options")
     else:
-        # Mode interactif
+        # Mode automatique par défaut
         main()

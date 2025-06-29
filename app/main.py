@@ -24,6 +24,10 @@ from pathlib import Path
 import pandas as pd
 import subprocess
 import threading
+# Ajouter ces lignes après vos imports existants
+from fastapi import Request
+from fastapi.responses import JSONResponse
+import time
 
 
 
@@ -33,6 +37,104 @@ app = FastAPI(
     description="Une API pour classifier des textes en détectant automatiquement la langue.",
     version="3.0.1"
 )
+
+
+# REMPLACER LE MIDDLEWARE DANS main.py
+
+@app.middleware("http")
+async def auto_reload_middleware(request: Request, call_next):
+    """
+    Middleware qui vérifie et recharge le modèle automatiquement
+    """
+    # Vérifier les mises à jour pour TOUS les endpoints (pas seulement predict)
+    if request.url.path in ["/predict", "/predict/batch", "/health", "/model-status"]:
+        # Vérification avec limitation de fréquence (max 1 fois par 30 secondes)
+        current_time = time.time()
+        if not hasattr(auto_reload_middleware, '_last_check'):
+            auto_reload_middleware._last_check = 0
+
+        if current_time - auto_reload_middleware._last_check > 30:  # 30 secondes au lieu de 60
+            try:
+                # 🆕 NOUVELLE: Vérifier aussi le fichier signal
+                signal_file = Path("./data/reload_signal.txt")
+                if signal_file.exists():
+                    print("🔔 Signal de rechargement détecté!")
+                    try:
+                        with open(signal_file, 'r') as f:
+                            signal_data = json.load(f)
+                        print(f"   Timestamp signal: {signal_data.get('timestamp', 'unknown')}")
+                        print(f"   Trigger: {signal_data.get('trigger', 'unknown')}")
+
+                        # Supprimer le fichier signal
+                        signal_file.unlink()
+                        print("   Fichier signal supprimé")
+
+                        # Forcer le rechargement
+                        if reload_model_artifacts():
+                            print("✅ Rechargement via signal réussi!")
+
+                    except Exception as e:
+                        print(f"⚠️ Erreur traitement signal: {e}")
+                        # Supprimer le fichier même en cas d'erreur
+                        try:
+                            signal_file.unlink()
+                        except:
+                            pass
+
+                # Vérification normale par version
+                auto_reload_if_updated()
+
+            except Exception as e:
+                print(f"⚠️ Erreur auto-reload: {e}")
+            auto_reload_middleware._last_check = current_time
+
+    response = await call_next(request)
+    return response
+
+
+# 🆕 NOUVELLE FONCTION: Vérification détaillée des mises à jour
+def check_for_model_updates():
+    """
+    Vérifie si le modèle a été mis à jour sur le disque (version améliorée)
+    """
+    try:
+        metadata_file = Path("model/model_prod/model_metadata.json")
+        if not metadata_file.exists():
+            return False
+
+        # Lire les métadonnées actuelles
+        with open(metadata_file, "r") as f:
+            current_metadata = json.load(f)
+
+        # Comparer avec les métadonnées en mémoire
+        if not hasattr(check_for_model_updates, '_last_version'):
+            check_for_model_updates._last_version = current_metadata.get('model_version', 1)
+            check_for_model_updates._last_timestamp = current_metadata.get('deployment_timestamp', '')
+            return False
+
+        current_version = current_metadata.get('model_version', 1)
+        current_timestamp = current_metadata.get('deployment_timestamp', '')
+
+        # Vérifier par version ET par timestamp
+        version_changed = current_version > check_for_model_updates._last_version
+        timestamp_changed = current_timestamp != check_for_model_updates._last_timestamp
+
+        if version_changed or timestamp_changed:
+            print(f"🔍 NOUVEAU MODÈLE DÉTECTÉ!")
+            print(f"   Version: {check_for_model_updates._last_version} → {current_version}")
+            if timestamp_changed:
+                print(f"   Timestamp: {check_for_model_updates._last_timestamp} → {current_timestamp}")
+            print(f"   Méthode de déploiement: {current_metadata.get('deployment_method', 'unknown')}")
+
+            check_for_model_updates._last_version = current_version
+            check_for_model_updates._last_timestamp = current_timestamp
+            return True
+
+        return False
+
+    except Exception as e:
+        print(f"⚠️ Erreur vérification mise à jour: {e}")
+        return False
 
 app.add_middleware(
     CORSMiddleware,
@@ -606,6 +708,96 @@ def check_and_trigger_finetuning():
         print(f"❌ Erreur vérification fine-tuning: {e}")
         return False
 
+
+def reload_model_artifacts():
+    """
+    Recharge le modèle et tous les artefacts depuis le disque
+    """
+    global model, tokenizer, scaler, label_encoder, MAX_SEQUENCE_LENGTH, SUSPICIOUS_WORDS_SET, STOP_WORDS
+
+    print("🔄 RECHARGEMENT DU MODÈLE EN COURS...")
+    print("=" * 50)
+
+    try:
+        # Sauvegarder l'ancien modèle au cas où
+        old_model = model
+
+        # Recharger tous les artefacts
+        success = load_model_artifacts()
+
+        if success:
+            print("✅ MODÈLE RECHARGÉ AVEC SUCCÈS!")
+            print(f"   Nouvelle longueur de séquence: {MAX_SEQUENCE_LENGTH}")
+            print(f"   Vocabulaire: {len(tokenizer.word_index)} mots")
+
+            # Test rapide du nouveau modèle
+            try:
+                test_text = "Test de validation du nouveau modèle"
+                test_result = perform_prediction(test_text)
+                print(f"   Test de validation réussi: {test_result['prediction']}")
+
+                return True
+            except Exception as e:
+                print(f"❌ Test de validation échoué: {e}")
+                # Restaurer l'ancien modèle si possible
+                if old_model is not None:
+                    model = old_model
+                    print("🔄 Ancien modèle restauré")
+                return False
+        else:
+            print("❌ Échec du rechargement")
+            return False
+
+    except Exception as e:
+        print(f"❌ Erreur critique lors du rechargement: {e}")
+        return False
+
+
+def check_for_model_updates():
+    """
+    Vérifie si le modèle a été mis à jour sur le disque
+    """
+    try:
+        metadata_file = Path("model/model_prod/model_metadata.json")
+        if not metadata_file.exists():
+            return False
+
+        # Lire les métadonnées actuelles
+        with open(metadata_file, "r") as f:
+            current_metadata = json.load(f)
+
+        # Comparer avec les métadonnées en mémoire
+        if not hasattr(check_for_model_updates, '_last_version'):
+            check_for_model_updates._last_version = current_metadata.get('model_version', 1)
+            return False
+
+        current_version = current_metadata.get('model_version', 1)
+
+        if current_version > check_for_model_updates._last_version:
+            print(f"🔍 NOUVEAU MODÈLE DÉTECTÉ!")
+            print(f"   Version précédente: {check_for_model_updates._last_version}")
+            print(f"   Nouvelle version: {current_version}")
+
+            check_for_model_updates._last_version = current_version
+            return True
+
+        return False
+
+    except Exception as e:
+        print(f"⚠️ Erreur vérification mise à jour: {e}")
+        return False
+
+
+# Fonction pour déclencher le rechargement automatique
+def auto_reload_if_updated():
+    """
+    Vérifie et recharge automatiquement le modèle s'il a été mis à jour
+    """
+    if check_for_model_updates():
+        print("🚀 RECHARGEMENT AUTOMATIQUE DU MODÈLE...")
+        return reload_model_artifacts()
+    return False
+
 # --- Endpoints de l'API ---
 @app.get("/", summary="Message de bienvenue")
 def read_root():
@@ -876,6 +1068,91 @@ def trigger_finetuning():
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Erreur: {e}")
 
+
+@app.post("/reload-model", summary="Recharger le modèle depuis le disque")
+async def reload_model_endpoint():
+    """
+    Force le rechargement du modèle depuis le disque
+    """
+    try:
+        print("🔄 RECHARGEMENT MANUEL DU MODÈLE DEMANDÉ...")
+
+        success = reload_model_artifacts()
+
+        if success:
+            # CORRECTION: Récupérer les métadonnées correctement
+            try:
+                metadata_file = Path("model/model_prod/model_metadata.json")
+                if metadata_file.exists():
+                    with open(metadata_file, "r") as f:
+                        current_metadata = json.load(f)
+                else:
+                    current_metadata = {}
+            except:
+                current_metadata = {}
+
+            return {
+                "status": "success",
+                "message": "Modèle rechargé avec succès",
+                "model_version": current_metadata.get('model_version', 'unknown'),
+                "max_sequence_length": MAX_SEQUENCE_LENGTH,
+                "vocab_size": len(tokenizer.word_index) if tokenizer else 0,
+                "timestamp": datetime.now().isoformat()
+            }
+        else:
+            raise HTTPException(
+                status_code=500,
+                detail="Échec du rechargement du modèle"
+            )
+
+    except Exception as e:
+        print(f"❌ Erreur rechargement manuel: {e}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Erreur rechargement: {str(e)}"
+        )
+
+
+# CORRECTION 2: Améliorer l'endpoint /model-status
+
+@app.get("/model-status", summary="Statut détaillé du modèle")
+def get_model_status():
+    """
+    Retourne des informations détaillées sur le modèle actuel
+    """
+    try:
+        metadata_file = Path("model/model_prod/model_metadata.json")
+        current_metadata = {}
+
+        if metadata_file.exists():
+            with open(metadata_file, "r") as f:
+                current_metadata = json.load(f)
+
+        model_file_path = Path("model/model_prod/best_lstm_model.keras")
+
+        return {
+            "model_loaded": model is not None,
+            "model_version": current_metadata.get('model_version', 'unknown'),
+            "last_retraining": current_metadata.get('last_individual_retraining', 'never'),
+            "last_feedback_processed": current_metadata.get('last_feedback_processed', 'none'),
+            "total_retrainings": current_metadata.get('total_individual_retrainings', 0),
+            "max_sequence_length": MAX_SEQUENCE_LENGTH,
+            "vocab_size": len(tokenizer.word_index) if tokenizer else 0,
+            "suspicious_words_count": len(SUSPICIOUS_WORDS_SET),
+            "deployment_method": current_metadata.get('deployment_method', 'initial_load'),
+            "model_file_exists": model_file_path.exists(),
+            "model_file_modified": datetime.fromtimestamp(
+                model_file_path.stat().st_mtime
+            ).isoformat() if model_file_path.exists() else None,
+            "check_timestamp": datetime.now().isoformat()
+        }
+
+    except Exception as e:
+        return {
+            "error": str(e),
+            "model_loaded": model is not None,
+            "check_timestamp": datetime.now().isoformat()
+        }
 
 # --- Charger les artefacts au démarrage ---
 print("🚀 Initialisation de l'API de détection de phishing...")
