@@ -1,4 +1,3 @@
-{
   "model_type": "LSTM_Hybrid_FR_EN",
   "model_file": "best_lstm_model.keras",
   "tokenizer_file": "tokenizer.pkl",

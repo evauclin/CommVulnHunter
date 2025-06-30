@@ -164,35 +164,49 @@ FEEDBACK_CSV_PATH = Path("./data/user_feedbacks.csv")
 
 # --- Chargement des Artefacts du Modèle ---
 def load_model_artifacts():
-    """Charge tous les artefacts du modèle avec la correction de la longueur de séquence"""
     global model, tokenizer, scaler, label_encoder, MAX_SEQUENCE_LENGTH, SUSPICIOUS_WORDS_SET, STOP_WORDS
 
     try:
         print("🚀 Démarrage de l'API et chargement des artefacts...")
 
-        # ÉTAPE 1: Charger les métadonnées en premier pour obtenir la bonne longueur
+        # ÉTAPE 1: Charger le modèle EN PREMIER
+        model_path = Path("model/model_prod/best_lstm_model.keras")
+        if not model_path.exists():
+            raise FileNotFoundError(f"Modèle non trouvé: {model_path}")
+
+        model = load_model(str(model_path))
+        print("✅ Modèle LSTM chargé")
+
+        # ÉTAPE 2: CORRIGER MAX_SEQUENCE_LENGTH avec la vraie valeur du modèle
+        model_input_shape = model.inputs[0].shape
+        actual_sequence_length = model_input_shape[1]
+
+        if actual_sequence_length is not None:
+            # 🎯 MISE À JOUR CRITIQUE de la variable globale
+            MAX_SEQUENCE_LENGTH = actual_sequence_length
+            print(f"🔧 MAX_SEQUENCE_LENGTH corrigé: {MAX_SEQUENCE_LENGTH}")
+        else:
+            print(f"⚠️ Modèle à longueur variable, conservation de MAX_SEQUENCE_LENGTH = {MAX_SEQUENCE_LENGTH}")
+
+        # ÉTAPE 3: Vérifier/corriger les métadonnées
         metadata_file = Path("model/model_prod/model_metadata.json")
         if metadata_file.exists():
             try:
                 with open(metadata_file, "r") as f:
                     metadata = json.load(f)
                 config = metadata.get('config', {})
-                MAX_SEQUENCE_LENGTH = config.get('max_sequence_length', 566)
-                print(f"✅ Métadonnées chargées: max_sequence_length = {MAX_SEQUENCE_LENGTH}")
+                metadata_length = config.get('max_sequence_length', MAX_SEQUENCE_LENGTH)
 
-                # Afficher la configuration complète du modèle
-                print(f"📋 Configuration du modèle:")
-                print(f"  max_vocab_size: {config.get('max_vocab_size', 'Non défini')}")
-                print(f"  max_sequence_length: {MAX_SEQUENCE_LENGTH}")
-                print(f"  embedding_dim: {config.get('embedding_dim', 'Non défini')}")
-                print(f"  lstm_units: {config.get('lstm_units', 'Non défini')}")
+                if metadata_length != MAX_SEQUENCE_LENGTH:
+                    print(f"⚠️ Correction métadonnées: {metadata_length} → {MAX_SEQUENCE_LENGTH}")
+                    config['max_sequence_length'] = MAX_SEQUENCE_LENGTH
+                    metadata['config'] = config
+                    with open(metadata_file, "w") as f:
+                        json.dump(metadata, f, indent=2)
 
+                print(f"✅ Métadonnées alignées: max_sequence_length = {MAX_SEQUENCE_LENGTH}")
             except Exception as e:
-                print(f"⚠️ Erreur chargement métadonnées: {e}")
-                print(f"⚠️ Utilisation de la valeur par défaut: MAX_SEQUENCE_LENGTH = {MAX_SEQUENCE_LENGTH}")
-        else:
-            print(f"⚠️ Fichier model_metadata.json non trouvé")
-            print(f"⚠️ Utilisation de la valeur par défaut: MAX_SEQUENCE_LENGTH = {MAX_SEQUENCE_LENGTH}")
+                print(f"⚠️ Erreur métadonnées: {e}")
 
         # ÉTAPE 2: Chargement du modèle
         model_path = Path("model/model_prod/best_lstm_model.keras")
@@ -413,65 +427,63 @@ def extract_numerical_features(text: str):
 
 # --- Logique de prédiction principale ---
 def perform_prediction(text: str):
-    """Fonction cœur qui détecte la langue et effectue une prédiction avec la bonne longueur de séquence."""
+    """Fonction corrigée qui utilise la VRAIE longueur du modèle"""
     if not model:
         raise HTTPException(status_code=503, detail="Modèle non chargé")
 
     try:
-        # Détection automatique de la langue
+        # 🔧 DÉTECTION DYNAMIQUE de la longueur du modèle
+        model_input_shape = model.inputs[0].shape
+        actual_max_length = model_input_shape[1]
+
+        # Si le modèle a une longueur variable (None), utiliser la valeur par défaut
+        if actual_max_length is None:
+            actual_max_length = MAX_SEQUENCE_LENGTH
+
+        print(
+            f"📏 Longueur utilisée: {actual_max_length} (modèle: {model_input_shape[1]}, config: {MAX_SEQUENCE_LENGTH})")
+
+        # Détection de langue
         try:
             detected_lang = detect(text[:1000])
             lang = detected_lang if detected_lang in ['fr', 'en'] else 'en'
         except Exception:
-            lang = 'en'  # Fallback sur l'anglais
+            lang = 'en'
 
-        print(f"🌍 Langue détectée: {lang}")
-
-        # Prétraitement du texte
+        # Prétraitement
         processed_text = preprocess_text(text, lang)
-        print(f"📝 Texte prétraité: {processed_text[:100]}...")
-
-        # Création des séquences
         sequence = tokenizer.texts_to_sequences([processed_text])
-        # Filtrer les tokens qui dépassent la taille du vocabulaire du modèle
-        if sequence[0]:  # Si la séquence n'est pas vide
-            max_vocab_id = 10000  # indices valides: 0 à 10000
-            sequence[0] = [token_id for token_id in sequence[0] if token_id <= max_vocab_id]
-            print(
-                f"🔧 Tokens filtrés: {len([t for t in tokenizer.texts_to_sequences([processed_text])[0] if t > max_vocab_id])} tokens supprimés")
-        print(f"🔢 Séquence créée: longueur = {len(sequence[0]) if sequence[0] else 0}")
 
-        # Utiliser la bonne longueur de séquence
+        # Filtrage des tokens
+        if sequence[0]:
+            max_vocab_id = 10000
+            sequence[0] = [token_id for token_id in sequence[0] if token_id <= max_vocab_id]
+
+        # 🎯 UTILISER LA LONGUEUR DÉTECTÉE DYNAMIQUEMENT
         padded_sequence = pad_sequences(
             sequence,
-            maxlen=MAX_SEQUENCE_LENGTH,
+            maxlen=actual_max_length,  # ✅ CORRECTION ICI
             padding='post',
             truncating='post'
         )
-        print(f"📏 Séquence paddée: shape = {padded_sequence.shape}")
+
+        print(f"📊 Séquence créée: {padded_sequence.shape}")
 
         # Features numériques
         numerical_features = extract_numerical_features(text)
         scaled_features = scaler.transform([numerical_features])
-        print(f"🔢 Features numériques: shape = {scaled_features.shape}")
 
         # Vérification finale des dimensions
-        expected_text_shape = (1, MAX_SEQUENCE_LENGTH)
-        expected_num_shape = (1, 10)  # Nombre de features numériques
-
+        expected_text_shape = (1, actual_max_length)
         if padded_sequence.shape != expected_text_shape:
             raise ValueError(f"Dimension texte incorrecte: {padded_sequence.shape} != {expected_text_shape}")
-        if scaled_features.shape != expected_num_shape:
-            raise ValueError(f"Dimension features incorrecte: {scaled_features.shape} != {expected_num_shape}")
 
-        print(f"✅ Dimensions validées, prédiction en cours...")
-
-        # Prédiction du modèle
+        # Prédiction
         prediction_proba = model.predict([padded_sequence, scaled_features], verbose=0)[0][0]
         prediction_int = int(prediction_proba > 0.5)
         predicted_class = label_encoder.inverse_transform([prediction_int])[0]
 
-        # Calcul de la confiance
+        # Calcul de confiance
         confidence_score = abs(prediction_proba - 0.5) * 2
         if confidence_score > 0.8:
             confidence = "HIGH"
@@ -480,30 +492,24 @@ def perform_prediction(text: str):
         else:
             confidence = "LOW"
 
-        print(f"✅ Prédiction réussie: {predicted_class} (prob: {prediction_proba:.4f}, conf: {confidence})")
-
         return {
             "prediction": predicted_class,
             "probability": float(prediction_proba),
             "confidence": confidence,
             "language_detected": lang,
-            "sequence_length_used": MAX_SEQUENCE_LENGTH,
+            "sequence_length_used": actual_max_length,  # ✅ Retourner la vraie longueur
             "debug_info": {
                 "processed_text_length": len(processed_text),
                 "original_sequence_length": len(sequence[0]) if sequence[0] else 0,
-                "padded_sequence_shape": list(padded_sequence.shape),
-                "features_shape": list(scaled_features.shape)
+                "model_expected_length": model_input_shape[1],
+                "config_max_length": MAX_SEQUENCE_LENGTH,
+                "actual_used_length": actual_max_length
             }
         }
 
     except Exception as e:
         print(f"❌ Erreur dans perform_prediction: {e}")
-        print(f"❌ Type d'erreur: {type(e).__name__}")
-        import traceback
-        print(f"❌ Traceback complet:")
-        traceback.print_exc()
         raise HTTPException(status_code=500, detail=f"Erreur de prédiction: {str(e)}")
-
 
 # --- Fonctions de Gestion des Feedbacks ---
 def count_negative_feedbacks() -> int:
@@ -526,7 +532,6 @@ def count_negative_feedbacks() -> int:
     except Exception as e:
         print(f"❌ Erreur lors du comptage des feedbacks négatifs: {e}")
         return 0
-
 
 def save_feedback_to_csv(feedback_data):
     """Sauvegarde le feedback dans un fichier CSV"""
