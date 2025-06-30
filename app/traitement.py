@@ -24,25 +24,53 @@ tf.random.set_seed(42)
 np.random.seed(42)
 
 
+# Ligne ~27, remplacez la fonction convert_numpy_types par :
 def convert_numpy_types(obj):
-    """Convertit récursivement les types NumPy en types Python natifs pour la sérialisation JSON"""
+    """Convertit récursivement les types NumPy/Pandas en types Python natifs SANS tout convertir en string"""
     import numpy as np
+    import pandas as pd
 
-    if isinstance(obj, dict):
-        return {key: convert_numpy_types(value) for key, value in obj.items()}
-    elif isinstance(obj, list):
+    if obj is None:
+        return None
+    elif isinstance(obj, dict):
+        return {str(key): convert_numpy_types(value) for key, value in obj.items()}
+    elif isinstance(obj, (list, tuple)):
         return [convert_numpy_types(item) for item in obj]
-    elif isinstance(obj, np.bool_):
+    elif isinstance(obj, (np.bool_, bool)):
         return bool(obj)
-    elif isinstance(obj, np.integer):
-        return int(obj)
-    elif isinstance(obj, np.floating):
-        return float(obj)
+    elif isinstance(obj, (np.integer, np.int8, np.int16, np.int32, np.int64)):
+        return int(obj)  # GARDER comme int Python
+    elif isinstance(obj, (np.floating, np.float16, np.float32, np.float64)):
+        return float(obj)  # GARDER comme float Python
     elif isinstance(obj, np.ndarray):
         return obj.tolist()
+    elif isinstance(obj, pd.Series):
+        return obj.tolist()
+    elif isinstance(obj, pd.DataFrame):
+        return obj.to_dict('records')
+    elif isinstance(obj, pd.Timestamp):
+        return obj.isoformat()
+    elif hasattr(obj, 'item'):  # Scalaires NumPy
+        try:
+            # 🔧 CORRECTION CRITIQUE: Préserver le type
+            value = obj.item()
+            if isinstance(value, (int, float, bool)):
+                return value  # Garder le type original
+            else:
+                return str(value)
+        except:
+            return str(obj)
+    elif hasattr(obj, 'tolist'):  # Arrays NumPy
+        try:
+            return obj.tolist()
+        except:
+            return str(obj)
     else:
-        return obj
-
+        # 🔧 CRITIQUE: Ne convertir en string QUE si nécessaire
+        if isinstance(obj, (int, float, bool, str)):
+            return obj  # Types Python natifs : ne pas toucher !
+        else:
+            return str(obj)  # Conversion en string seulement pour les types non supportés
 
 class IndividualFeedbackRetrainingManager:
     """
@@ -443,13 +471,18 @@ class IndividualFeedbackRetrainingManager:
             print(f"❌ Erreur préparation données: {e}")
             return None
 
+    # 1. CORRECTION DE create_backup_for_feedback
     def create_backup_for_feedback(self, feedback_id):
-        """Crée une sauvegarde avant re-entraînement"""
+        """Crée une sauvegarde avant re-entraînement avec conversion de types NumPy"""
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        backup_dir = self.data_dir / f"backup_feedback_{feedback_id}_{timestamp}"
+
+        # Conversion explicite du feedback_id en int Python
+        clean_feedback_id = int(feedback_id)
+
+        backup_dir = self.data_dir / f"backup_feedback_{clean_feedback_id}_{timestamp}"
 
         print(f"\n💾 SAUVEGARDE AVANT RE-ENTRAÎNEMENT")
-        print(f"   Feedback ID: {feedback_id}")
+        print(f"   Feedback ID: {clean_feedback_id}")
         print(f"   Destination: {backup_dir}")
 
         try:
@@ -470,23 +503,36 @@ class IndividualFeedbackRetrainingManager:
                 if source.exists():
                     shutil.copy2(source, dest)
 
+            # Métadonnées avec conversion de types
             backup_metadata = {
                 'backup_timestamp': timestamp,
-                'feedback_id': feedback_id,
-                'backup_reason': f'before_individual_retraining_{feedback_id}',
-                'original_model_metadata': self.metadata
+                'feedback_id': clean_feedback_id,
+                'backup_reason': f'before_individual_retraining_{clean_feedback_id}'
             }
 
+            # 🔧 CORRECTION CRITIQUE: Nettoyer self.metadata avant sérialisation
+            if self.metadata:
+                try:
+                    backup_metadata['original_model_metadata'] = convert_numpy_types(self.metadata)
+                except Exception as e:
+                    print(f"⚠️ Erreur conversion métadonnées: {e}")
+                    backup_metadata['original_model_metadata'] = {}
+
+            # Sauvegarder avec conversion par défaut en string pour les types non supportés
             with open(backup_dir / 'backup_metadata.json', 'w') as f:
-                json.dump(backup_metadata, f, indent=2)
+                json.dump(backup_metadata, f, indent=2, default=str)
 
             print(f"✅ Sauvegarde créée: {backup_dir}")
             return backup_dir
 
         except Exception as e:
             print(f"❌ Erreur sauvegarde: {e}")
-            return None
-
+            # Créer au moins le dossier pour continuer
+            try:
+                backup_dir.mkdir(parents=True, exist_ok=True)
+                return backup_dir
+            except:
+                return None
     def perform_individual_retraining(self, training_data, feedback_data):
         """
         RE-ENTRAÎNE le modèle pour corriger LE feedback spécifique
@@ -725,31 +771,47 @@ class IndividualFeedbackRetrainingManager:
             production_model_path = self.model_dir / "best_lstm_model.keras"
             shutil.copy2(temp_model_path, production_model_path)
 
-            # Mettre à jour les métadonnées avec version incrémentée
-            updated_metadata = self.metadata.copy()
-            new_version = updated_metadata.get('model_version', 1) + 1
+            # 🔧 CORRECTION CRITIQUE: Gestion sûre des métadonnées
+            if self.metadata:
+                updated_metadata = convert_numpy_types(self.metadata.copy())
+            else:
+                updated_metadata = {}
 
-            # Convertir les types NumPy avant sérialisation
+            # 🔧 CORRECTION: Conversion sûre de model_version
+            current_version = updated_metadata.get('model_version', 1)
+            if isinstance(current_version, str):
+                try:
+                    current_version = int(current_version)
+                except (ValueError, TypeError):
+                    current_version = 1
+
+            new_version = current_version + 1
+
+            # Nettoyer TOUS les types avant mise à jour
             clean_validation_result = convert_numpy_types(validation_result)
             clean_retraining_config = convert_numpy_types(self.retrain_config)
 
+            # Mettre à jour avec des types Python natifs
             updated_metadata.update({
                 'last_individual_retraining': timestamp,
                 'last_feedback_processed': int(feedback_data['id']),
                 'retraining_config': clean_retraining_config,
-                'model_version': new_version,
+                'model_version': new_version,  # Déjà un int Python
                 'backup_location': str(backup_dir),
                 'deployment_method': 'individual_feedback_retraining',
-                'total_individual_retrainings': self.total_retrainings + 1,
-                'successful_deployments': self.successful_deployments + 1,
+                'total_individual_retrainings': int(self.total_retrainings + 1),
+                'successful_deployments': int(self.successful_deployments + 1),
                 'validation_result': clean_validation_result,
                 'deployment_timestamp': timestamp,
                 'auto_reload_trigger': True
             })
 
-            # Sauvegarder les métadonnées
+            # Nettoyer encore une fois les métadonnées finales
+            final_clean_metadata = convert_numpy_types(updated_metadata)
+
+            # Sauvegarder les métadonnées nettoyées
             with open(self.model_dir / "model_metadata.json", 'w') as f:
-                json.dump(updated_metadata, f, indent=2)
+                json.dump(final_clean_metadata, f, indent=2, default=str)
 
             # Nettoyer le fichier temporaire
             temp_model_path.unlink()
@@ -757,6 +819,9 @@ class IndividualFeedbackRetrainingManager:
             # Mettre à jour les compteurs
             self.total_retrainings += 1
             self.successful_deployments += 1
+
+            # Mettre à jour self.metadata avec la version nettoyée
+            self.metadata = final_clean_metadata
 
             # Recharger le modèle en mémoire
             self.model = load_model(str(production_model_path))
@@ -778,7 +843,6 @@ class IndividualFeedbackRetrainingManager:
             import traceback
             traceback.print_exc()
             return False
-
     def log_retraining_attempt(self, feedback_data, validation_result, deployed, backup_dir):
         """Enregistre la tentative de re-entraînement"""
         try:

@@ -14,13 +14,28 @@
     "epochs": 30,
     "patience": 2,
     "suspicious_words_path": "suspicious_words.json",
-    "max_vocab_size": 465661,
-    "max_sequence_length": 256
+    "vocab_coverage": 0.95,
+    "sequence_percentile": 95,
+    "min_word_frequency": 2,
+    "smart_percentile_enabled": true,
+    "min_sequence_length": 30,
+    "max_absolute_length": 800,
+    "enable_variable_length": true,
+    "max_vocab_size": 44308,
+    "max_sequence_length": 346
   },
-  "vocabulary_size": 465660,
+  "vocabulary_size": 469792,
+  "actual_vocab_size": 44308,
   "classes": [
     "benign",
     "phishing"
   ],
-  "creation_date": "2025-06-10T06:39:08.680881"
+  "creation_date": "2025-06-24T23:07:47.520911",
+  "smart_percentile_enabled": true,
+  "variable_length_enabled": true,
+  "sequence_analysis": {
+    "min_length": 30,
+    "max_length": 800,
+    "calculated_length": 346
+  }
 }

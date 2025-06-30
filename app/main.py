@@ -1069,7 +1069,7 @@ def trigger_finetuning():
         raise HTTPException(status_code=500, detail=f"Erreur: {e}")
 
 
-@app.post("/reload-model", summary="Recharger le modèle depuis le disque")
+@app.api_route("/reload-model", methods=["GET", "POST"], summary="Recharger le modèle depuis le disque")
 async def reload_model_endpoint():
     """
     Force le rechargement du modèle depuis le disque
