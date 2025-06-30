@@ -171,59 +171,95 @@ class IndividualFeedbackRetrainingManager:
             }
 
     def load_model_artifacts(self):
-        """Charge tous les artefacts du modèle existant"""
+        """
+        ÉTAPE 1: Charge tous les artefacts du modèle existant
+        """
         print("\n" + "=" * 60)
-        print("CHARGEMENT DES ARTEFACTS DU MODÈLE DE PRODUCTION")
+        print("ÉTAPE 1: CHARGEMENT DES ARTEFACTS DU MODÈLE")
         print("=" * 60)
 
         try:
+            # Charger le modèle EN PREMIER
             if not self.model_path.exists():
                 raise FileNotFoundError(f"Modèle non trouvé: {self.model_path}")
 
             self.model = load_model(str(self.model_path))
-            print(f"✅ Modèle de production chargé")
+            print(f"✅ Modèle chargé: {self.model_path}")
 
             # Détecter la longueur de séquence
             model_input_shape = self.model.inputs[0].shape
             actual_sequence_length = model_input_shape[1]
-            print(f"🔍 Longueur de séquence: {actual_sequence_length}")
+            print(f"🔍 Longueur de séquence détectée: {actual_sequence_length}")
 
-            # Charger les autres artefacts
+            # Charger le tokenizer
             with open(self.tokenizer_path, 'rb') as f:
                 self.tokenizer = pickle.load(f)
             print(f"✅ Tokenizer chargé (vocab: {len(self.tokenizer.word_index)})")
 
+            # Charger le scaler
             with open(self.scaler_path, 'rb') as f:
                 self.scaler = pickle.load(f)
             print("✅ Scaler chargé")
 
+            # Charger le label encoder
             with open(self.label_encoder_path, 'rb') as f:
                 self.label_encoder = pickle.load(f)
             print(f"✅ Label encoder chargé: {self.label_encoder.classes_}")
 
-            # Charger les métadonnées
-            with open(self.metadata_path, 'r') as f:
-                self.metadata = json.load(f)
+            # 🔧 CORRECTION: Chargement sécurisé des métadonnées
+            try:
+                if self.metadata_path.exists():
+                    with open(self.metadata_path, 'r', encoding='utf-8') as f:
+                        content = f.read().strip()
+                        if content:
+                            self.metadata = json.loads(content)
+                            print("✅ Métadonnées chargées depuis le fichier")
+                        else:
+                            print("⚠️ Fichier métadonnées vide")
+                            self.metadata = {}
+                else:
+                    print("⚠️ Fichier métadonnées non trouvé")
+                    self.metadata = {}
+            except (json.JSONDecodeError, UnicodeDecodeError) as e:
+                print(f"⚠️ Erreur lecture métadonnées: {e}")
+                print("🔧 Création de nouvelles métadonnées")
+                self.metadata = {}
 
+            # Créer/corriger la configuration
             if 'config' not in self.metadata:
                 self.metadata['config'] = {}
+
+            # Utiliser la longueur détectée du modèle
             self.metadata['config']['max_sequence_length'] = actual_sequence_length
+            print(f"🔧 Longueur de séquence configurée: {actual_sequence_length}")
 
             # Charger les mots suspects
             if self.suspicious_words_path.exists():
-                with open(self.suspicious_words_path, 'r') as f:
-                    suspicious_data = json.load(f)
-                self.suspicious_words_set = set(
-                    suspicious_data.get('en', []) + suspicious_data.get('fr', [])
-                )
-                print(f"✅ Mots suspects chargés: {len(self.suspicious_words_set)}")
+                try:
+                    with open(self.suspicious_words_path, 'r') as f:
+                        suspicious_data = json.load(f)
+                    self.suspicious_words_set = set(
+                        suspicious_data.get('en', []) + suspicious_data.get('fr', [])
+                    )
+                    print(f"✅ Mots suspects chargés: {len(self.suspicious_words_set)}")
+                except Exception as e:
+                    print(f"⚠️ Erreur mots suspects: {e}")
+                    self.suspicious_words_set = set()
+            else:
+                print("⚠️ Fichier mots suspects non trouvé")
+                self.suspicious_words_set = set()
+
+            print(f"\n📋 Configuration finale:")
+            print(f"   max_sequence_length: {self.metadata['config']['max_sequence_length']}")
+            print(f"   Classes: {list(self.label_encoder.classes_)}")
 
             return True
 
         except Exception as e:
             print(f"❌ Erreur chargement artefacts: {e}")
+            import traceback
+            traceback.print_exc()
             return False
-
     def get_next_unprocessed_feedback(self):
         """
         Récupère le PROCHAIN feedback négatif non traité (un seul à la fois)
