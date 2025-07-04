@@ -1,0 +1,43 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Connect Email</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-gray-100 flex items-center justify-center h-screen">
+<div class="bg-white p-8 rounded-2xl shadow-xl w-[420px] text-center">
+  <h2 class="text-2xl font-bold mb-4">Connect Your Email</h2>
+  <p class="mb-6 text-gray-600">
+    To load your inbox and messages, please connect your email account.
+  </p>
+
+  <div class="space-y-4">
+    <a href="/connect/gmail" class="flex items-center justify-center gap-3 bg-red-500 text-white py-2 rounded-lg hover:bg-red-600 transition">
+      <img src="https://www.svgrepo.com/show/475656/gmail-color.svg" alt="Gmail" class="w-5 h-5" />
+      Connect Gmail
+    </a>
+
+    <a href="/connect/outlook" class="flex items-center justify-center gap-3 bg-blue-600 text-white py-2 rounded-lg hover:bg-blue-700 transition">
+      <img src="https://www.svgrepo.com/show/373620/outlook.svg" alt="Outlook" class="w-5 h-5" />
+      Connect Outlook
+    </a>
+
+    <a href="/connect/yahoo" class="flex items-center justify-center gap-3 bg-purple-700 text-white py-2 rounded-lg hover:bg-purple-800 transition">
+      <img src="https://www.svgrepo.com/show/452195/yahoo.svg" alt="Yahoo" class="w-5 h-5" />
+      Connect Yahoo
+    </a>
+
+    <a href="/connect/custom" class="flex items-center justify-center gap-3 border border-gray-300 text-gray-800 py-2 rounded-lg hover:bg-gray-50 transition">
+      <img src="https://www.svgrepo.com/show/452213/mail.svg" alt="Custom Email" class="w-5 h-5" />
+      Use Custom Email (IMAP/SMTP)
+    </a>
+  </div>
+
+  <p class="mt-6 text-sm text-gray-500">
+    We’ll never store your credentials. Email access is only used to fetch your inbox securely.
+  </p>
+</div>
+</body>
+</html>
