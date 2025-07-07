@@ -20,7 +20,7 @@ load_dotenv()
 
 
 def fetch_emails_from_gmail():
-    """Récupère les emails depuis Gmail et les formate en CSV"""
+    """Fetch emails from Gmail and format them as CSV"""
 
     # Configuration Gmail
     username = os.getenv("EMAIL_USERNAME", "")
@@ -72,7 +72,7 @@ def fetch_emails_from_gmail():
 
 
 def process_email(mail, email_id, email_type):
-    """Traite un email individuel"""
+    """Process an individual email"""
     try:
         res, msg_data = mail.fetch(email_id, "(RFC822)")
         for response_part in msg_data:
@@ -104,7 +104,7 @@ def process_email(mail, email_id, email_type):
 
 
 def generate_email_id(from_addr, subject, date_str):
-    """Génère un ID unique pour l'email"""
+    """Generate a unique ID for the email"""
     import hashlib
 
     content = f"{from_addr}-{subject}-{date_str}"
@@ -112,7 +112,7 @@ def generate_email_id(from_addr, subject, date_str):
 
 
 def decode_header_text(header_value):
-    """Décode un en-tête d'email"""
+    """Decode an email header"""
     if not header_value:
         return ""
 
@@ -133,7 +133,7 @@ def decode_header_text(header_value):
 
 
 def clean_text_for_csv(text):
-    """Nettoie le texte pour le format CSV"""
+    """Clean text for CSV format"""
     if not text:
         return ""
 
@@ -150,7 +150,7 @@ def clean_text_for_csv(text):
 
 
 def format_date(date_str):
-    """Formate la date pour CSV"""
+    """Format date for CSV"""
     try:
         if date_str:
             date_obj = parsedate_to_datetime(date_str)
@@ -162,7 +162,7 @@ def format_date(date_str):
 
 
 def extract_body(msg):
-    """Extrait le corps de l'email"""
+    """Extract email body"""
     body = ""
     try:
         if msg.is_multipart():
@@ -200,7 +200,7 @@ def extract_body(msg):
 
 
 def extract_text_from_html(html_content):
-    """Extrait le texte du contenu HTML"""
+    """Extract text from HTML content"""
     import re
 
     # Supprimer les scripts et styles
@@ -225,7 +225,7 @@ def extract_text_from_html(html_content):
 
 
 def generate_csv_files(emails_data):
-    """Génère les fichiers CSV et JSON - VERSION CORRIGÉE"""
+    """Generate CSV and JSON files - CORRECTED VERSION"""
 
     output_dir = "src/pages"
     os.makedirs(output_dir, exist_ok=True)
@@ -284,7 +284,7 @@ def generate_csv_files(emails_data):
 
 
 def generate_statistics(emails_data, output_dir):
-    """Génère un fichier de statistiques"""
+    """Generate statistics file"""
 
     stats = {
         "total_emails": len(emails_data),

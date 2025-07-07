@@ -624,14 +624,6 @@ function selectEmail(index) {
         }
     }
 }
-function refreshEmails() {
-    console.log('🔄 Actualisation des emails...');
-    if (emailLoader.currentSource === 'csv_live') {
-        loadLiveEmails();
-    } else {
-        loadDemoEmails();
-    }www
-}
 
 // Export pour utilisation dans d'autres scripts
 if (typeof module !== 'undefined' && module.exports) {
