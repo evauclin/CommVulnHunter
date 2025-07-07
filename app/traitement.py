@@ -84,7 +84,7 @@ class IndividualFeedbackRetrainingManager:
         Initialise le gestionnaire de re-entraînement par feedback individuel
 
         Args:
-            model_dir: Répertoire contenant les artefacts du modèle de production
+            model_dir: Répertoire contenant les artefacts du modèle
             data_dir: Répertoire contenant les données et feedbacks
         """
         self.model_dir = Path(model_dir)

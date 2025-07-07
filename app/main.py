@@ -29,6 +29,7 @@ from collections import deque
 from fastapi import FastAPI, HTTPException, File, UploadFile
 from fastapi.responses import StreamingResponse
 import io
+import html
 
 # Ajouter ces lignes après vos imports existants
 from fastapi import Request
@@ -80,6 +81,88 @@ tf.config.set_visible_devices([], 'GPU')
 
 FEEDBACK_CSV_PATH = Path("./data/user_feedbacks.csv")
 
+
+def clean_input_field(text: str) -> str:
+    """Nettoie un champ texte comme dans le frontend JS (HTML stripping, normalisation, entités, caractères spéciaux)"""
+    if not text:
+        return ""
+
+    cleaned = text
+
+    # 1. Supprimer les balises HTML
+    cleaned = re.sub(r"<[^>]+>", " ", cleaned)
+
+    # 2. Décoder les entités HTML (&nbsp;, &amp;, etc.)
+    cleaned = html.unescape(cleaned)
+
+    # 3. Supprimer les caractères de contrôle ASCII (non imprimables)
+    cleaned = re.sub(r"[\x00-\x08\x0b\x0c\x0e-\x1f\x7f-\x9f]", "", cleaned)
+
+    # 4. Supprimer les caractères non souhaités (emojis cassés, symboles, etc.)
+    cleaned = re.sub(r"[^\w\s\-.,!?@()[\]{}:;'\"€/àâçéèêëîïôöùûü%&*=+\\/|~`<>]", "", cleaned)
+
+    # 5. Normaliser les espaces multiples
+    cleaned = re.sub(r"\s+", " ", cleaned)
+
+    return cleaned.strip()
+
+
+def get_raw_email_from_csv(email_id: str) -> dict:
+    """Récupère les données brutes d'un email depuis le fichier CSV"""
+    print(f"🔍 Recherche du fichier CSV pour email ID: {email_id}")
+
+    # Essayer plusieurs emplacements possibles (volume partagé en priorité)
+    possible_paths = [
+        Path("/shared/data/emails_live.csv"),  # Volume partagé Docker
+        Path("./emails_live.csv"),             # Répertoire courant
+        Path("./src/pages/emails_live.csv"),   # Dossier src/pages
+        Path("/app/emails_live.csv"),          # Dans le container
+    ]
+
+    csv_path = None
+    for path in possible_paths:
+        print(f"🔍 Vérification: {path} - Existe: {path.exists()}")
+        if path.exists():
+            csv_path = path
+            print(f"✅ Fichier trouvé: {csv_path}")
+            break
+
+    if csv_path is None:
+        print(f"❌ Aucun fichier CSV trouvé")
+        # Lister le contenu des dossiers pour debug
+        for check_dir in ["/shared", "/shared/data", ".", "./src", "./src/pages"]:
+            try:
+                check_path = Path(check_dir)
+                if check_path.exists():
+                    files = list(check_path.iterdir())
+                    print(f"📁 Contenu de {check_dir}: {[f.name for f in files]}")
+            except:
+                print(f"📁 Impossible de lire {check_dir}")
+
+        raise HTTPException(status_code=404, detail=f"Fichier emails_live.csv non trouvé dans: {[str(p) for p in possible_paths]}")
+
+    try:
+        df = pd.read_csv(csv_path)
+
+        # Chercher l'email par ID
+        email_row = df[df['id'] == email_id]
+
+        if email_row.empty:
+            raise HTTPException(status_code=404, detail=f"Email avec ID {email_id} non trouvé")
+
+        row = email_row.iloc[0]
+
+        # Retourner les données brutes SANS nettoyage
+        return {
+            'id': row['id'],
+            'from': str(row['from']) if not pd.isna(row['from']) else "",
+            'subject': str(row['subject']) if not pd.isna(row['subject']) else "",
+            'body': str(row['body']) if not pd.isna(row['body']) else "",
+            'type': row['type'] if 'type' in row else 'unknown'
+        }
+
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Erreur lecture CSV: {str(e)}")
 
 
 def analyze_input_lengths(texts):
@@ -237,7 +320,6 @@ def load_model_artifacts():
         tokenizer_path = Path("model/model_prod/tokenizer.pkl")
         if not tokenizer_path.exists():
             raise FileNotFoundError(f"Tokenizer non trouvé: {tokenizer_path}")
-
         with open(tokenizer_path, 'rb') as f:
             tokenizer = pickle.load(f)
         print(f"✅ Tokenizer chargé (vocab: {len(tokenizer.word_index)} mots)")
@@ -246,7 +328,6 @@ def load_model_artifacts():
         scaler_path = Path("model/model_prod/scaler.pkl")
         if not scaler_path.exists():
             raise FileNotFoundError(f"Scaler non trouvé: {scaler_path}")
-
         with open(scaler_path, 'rb') as f:
             scaler = pickle.load(f)
         print("✅ Scaler chargé")
@@ -255,7 +336,6 @@ def load_model_artifacts():
         label_encoder_path = Path("model/model_prod/label_encoder.pkl")
         if not label_encoder_path.exists():
             raise FileNotFoundError(f"Label encoder non trouvé: {label_encoder_path}")
-
         with open(label_encoder_path, 'rb') as f:
             label_encoder = pickle.load(f)
         print(f"✅ Label encoder chargé (classes: {label_encoder.classes_})")
@@ -270,17 +350,13 @@ def load_model_artifacts():
                 print(f"✅ Mots suspects chargés ({len(SUSPICIOUS_WORDS_SET)} mots)")
             except Exception as e:
                 print(f"⚠️ Erreur chargement mots suspects: {e}")
-        else:
-            print("⚠️ Fichier suspicious_words.json manquant, utilisation d'une liste vide")
 
-        # ÉTAPE 8: Charger les stopwords NLTK
         try:
             try:
                 nltk.data.find('corpora/stopwords')
             except LookupError:
                 print("📥 Téléchargement des données NLTK...")
                 nltk.download('stopwords', quiet=True)
-
             STOP_WORDS = {
                 'en': set(nltk.corpus.stopwords.words('english')),
                 'fr': set(nltk.corpus.stopwords.words('french'))
@@ -288,12 +364,10 @@ def load_model_artifacts():
             print("✅ Stopwords chargés")
         except Exception as e:
             print(f"⚠️ Erreur chargement stopwords: {e}")
-            # Fallback avec stopwords de base
             STOP_WORDS = {
                 'en': {'the', 'a', 'an', 'and', 'or', 'but', 'in', 'on', 'at', 'to', 'for', 'of', 'with', 'by'},
                 'fr': {'le', 'la', 'les', 'un', 'une', 'des', 'et', 'ou', 'mais', 'dans', 'sur', 'avec', 'pour', 'de'}
             }
-            print("✅ Stopwords de base chargés")
 
         # ÉTAPE 9: Test de prédiction pour vérifier le fonctionnement
         print(f"\n🧪 Test de validation du modèle...")
@@ -304,11 +378,8 @@ def load_model_artifacts():
             test_padded = pad_sequences(test_sequence, maxlen=MAX_SEQUENCE_LENGTH, padding='post', truncating='post')
             test_features = extract_numerical_features(test_text)
             test_scaled = scaler.transform([test_features])
-
-            # Test de prédiction
             test_pred = model.predict([test_padded, test_scaled], verbose=0)
             print(f"✅ Test de prédiction réussi: {test_pred[0][0]:.4f}")
-
         except Exception as e:
             print(f"❌ Échec du test de validation: {e}")
             return False
@@ -331,6 +402,9 @@ def load_model_artifacts():
 # --- Modèles de Données Pydantic (NOUVEAUX) ---
 class TextInput(BaseModel):
     text: str
+
+class EmailIDInput(BaseModel):
+    email_id: str
 
 
 class TextInputAdaptive(BaseModel):
@@ -548,21 +622,12 @@ def perform_prediction(text: str):
         except Exception:
             lang = 'en'
 
-        print(f"🌍 Langue détectée: {lang}")
-
-        # Prétraitement du texte
         processed_text = preprocess_text(text, lang)
-        print(f"📝 Texte prétraité: {processed_text[:100]}...")
-
-        # Création des séquences
         sequence = tokenizer.texts_to_sequences([processed_text])
 
         if sequence[0]:
             max_vocab_id = 10000
             sequence[0] = [token_id for token_id in sequence[0] if token_id <= max_vocab_id]
-            print(
-                f"🔧 Tokens filtrés: {len([t for t in tokenizer.texts_to_sequences([processed_text])[0] if t > max_vocab_id])} tokens supprimés")
-        print(f"🔢 Séquence créée: longueur = {len(sequence[0]) if sequence[0] else 0}")
 
         padded_sequence = pad_sequences(
             sequence,
@@ -570,7 +635,6 @@ def perform_prediction(text: str):
             padding='post',
             truncating='post'
         )
-        print(f"📏 Séquence paddée: shape = {padded_sequence.shape}")
 
         numerical_features = extract_numerical_features(text)
         scaled_features = scaler.transform([numerical_features])
@@ -619,8 +683,6 @@ def count_negative_feedbacks() -> int:
                                        (df['user_satisfaction'] == 'no') &
                                        (df['processed'] == False)
                                        ])
-
-        print(f"📊 Feedbacks négatifs non traités: {negative_unprocessed}")
         return negative_unprocessed
     except Exception as e:
         print(f"❌ Erreur lors du comptage des feedbacks négatifs: {e}")
@@ -652,7 +714,7 @@ def save_feedback_to_csv(feedback_data):
 
 # --- NOUVEAUX ENDPOINTS SMART_PERCENTILE ---
 
-@app.get("/", summary="Message de bienvenue avec capacités")
+@app.get("/", summary="Welcome message with capabilities")
 def read_root():
     return {
         "message": "Bienvenue sur l'API de détection de phishing (LSTM Hybride FR/EN)",
@@ -666,7 +728,7 @@ def read_root():
     }
 
 
-@app.get("/health", summary="Vérification de l'état avec infos d'adaptation")
+@app.get("/health", summary="Health check with adaptation info")
 def health_check():
     if model is None:
         raise HTTPException(status_code=503, detail="Service Unavailable: Model not loaded")
@@ -694,7 +756,7 @@ def health_check():
     }
 
 
-@app.post("/predict", summary="Prédire sur un seul texte (mode standard)")
+@app.post("/predict", summary="Predict on single text (standard mode)")
 def predict(item: TextInput):
     """Analyze text with standard method (compatibility mode)"""
     if not model:
@@ -703,6 +765,40 @@ def predict(item: TextInput):
     try:
         result = perform_prediction(item.text)
         return result
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Erreur interne: {e}")
+
+
+@app.post("/predict/email-id", summary="Predict using raw data from CSV by email ID")
+def predict_by_email_id(item: EmailIDInput):
+    """Analyze email using raw data directly from CSV file"""
+    print(f"🎯 ENDPOINT /predict/email-id APPELÉ avec ID: {item.email_id}")
+
+    if not model:
+        raise HTTPException(status_code=503, detail="Modèle non disponible")
+
+    try:
+        # Récupérer les données brutes depuis le CSV
+        email_data = get_raw_email_from_csv(item.email_id)
+
+        # Créer le texte combiné avec les données BRUTES
+        raw_text = f"From: {email_data['from']}\nSubject: {email_data['subject']}\nBody: {email_data['body']}"
+
+        print(f"🔍 RAW EMAIL ID {item.email_id} - INPUT (1000 chars):")
+        print(f"'{raw_text[:1000]}'")
+        print(f"Total length: {len(raw_text)}")
+
+        # Prédiction avec les données brutes
+        result = perform_prediction(raw_text)
+
+        # Ajouter l'ID de l'email dans la réponse
+        result['email_id'] = item.email_id
+        result['data_source'] = 'raw_csv'
+
+        return result
+
     except HTTPException:
         raise
     except Exception as e:
@@ -834,6 +930,7 @@ def reset_adaptation_history():
 @app.post("/feedback", summary="Save user feedback")
 async def save_feedback(feedback: FeedbackInput, background_tasks: BackgroundTasks):
     """Save user feedback and automatically trigger fine-tuning if necessary"""
+    # [Garder votre code existant identique]
     try:
         feedback_data = {
             "timestamp": datetime.now().isoformat(),
@@ -1142,8 +1239,8 @@ async def process_csv_file(file: UploadFile = File(...)):
         print(f"📊 Colonnes détectées: {list(df.columns)}")
         print(f"📊 Nombre de lignes: {len(df)}")
 
-        # Vérifier les colonnes requises
-        required_columns = ['body', 'type']
+        # Vérifier les colonnes requises - From, Subject, Body comme sur l'interface web
+        required_columns = ['from', 'subject', 'body', 'type']
         missing_columns = [col for col in required_columns if col not in df.columns]
         if missing_columns:
             print(f"❌ Colonnes manquantes: {missing_columns}")
@@ -1167,21 +1264,28 @@ async def process_csv_file(file: UploadFile = File(...)):
 
         for i in range(0, len(df), batch_size):
             batch_df = df.iloc[i:i + batch_size]
-            batch_texts = batch_df['body'].tolist()
             batch_results = []
             batch_num = i // batch_size + 1
 
             print(f"🚀 === BATCH {batch_num}/{total_batches} ===")
-            print(f"   📊 Emails dans ce batch: {len(batch_texts)}")
+            print(f"   📊 Emails dans ce batch: {len(batch_df)}")
 
             # Traiter chaque email du batch
-            for j, text in enumerate(batch_texts):
-                email_index = i + j + 1
+            for j, row in batch_df.iterrows():
+                email_index = i + (j - batch_df.index[0]) + 1
                 try:
-                    if pd.isna(text) or not str(text).strip():
+                    # Utiliser les données BRUTES comme predict_by_email_id
+                    from_field = str(row['from']) if not pd.isna(row['from']) else ""
+                    subject_field = str(row['subject']) if not pd.isna(row['subject']) else ""
+                    body_field = str(row['body']) if not pd.isna(row['body']) else ""
+
+                    # Créer le texte combiné pour l'analyse (même format que l'interface web)
+                    combined_text = f"From: {from_field}\nSubject: {subject_field}\nBody: {body_field}".strip()
+
+                    if not combined_text or combined_text == "From: \nSubject: \nBody: ":
                         print(f"   ⚪ Email {email_index}: Vide - type conservé")
                         # Email vide - garder le type original
-                        original_type = batch_df.iloc[j]['type']
+                        original_type = row['type']
                         batch_results.append({
                             'new_type': original_type,
                             'prediction': 'unknown',
@@ -1190,13 +1294,13 @@ async def process_csv_file(file: UploadFile = File(...)):
                         })
                         continue
 
-                    # Prédiction avec le modèle
+                    # Prédiction avec le modèle en utilisant le texte combiné
                     print(f"   🧠 Email {email_index}: Analyse ML en cours...")
-                    result = perform_prediction(str(text))
+                    result = perform_prediction(combined_text)
 
                     # Mapper la prédiction vers IMPORTANT/SPAM
                     new_type = 'SPAM' if result['prediction'] == 'phishing' else 'IMPORTANT'
-                    old_type = batch_df.iloc[j]['type']
+                    old_type = row['type']
 
                     if new_type != old_type:
                         print(f"   🔄 Email {email_index}: {old_type} → {new_type} (conf: {result['confidence']})")
@@ -1213,7 +1317,7 @@ async def process_csv_file(file: UploadFile = File(...)):
                 except Exception as e:
                     print(f"   ❌ Email {email_index}: ERREUR - {str(e)}")
                     # En cas d'erreur, garder le type original
-                    original_type = batch_df.iloc[j]['type']
+                    original_type = row['type']
                     batch_results.append({
                         'new_type': original_type,
                         'prediction': 'error',

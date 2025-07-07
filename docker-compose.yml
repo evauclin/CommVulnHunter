@@ -10,6 +10,8 @@ services:
     environment:
       - PYTHONUNBUFFERED=1
     restart: unless-stopped
+    volumes:
+      - ./src/pages:/shared/data
 
   web:
     build:
@@ -20,3 +22,5 @@ services:
     depends_on:
       - fastapi
     restart: unless-stopped
+    volumes:
+      - ./src/pages:/shared/data

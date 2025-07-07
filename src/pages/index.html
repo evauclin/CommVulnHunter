@@ -495,9 +495,6 @@
             }
         }
 
-        function cleanText(text) {
-            return text ? text.replace(/"/g, "'").replace(/\n/g, ' ').replace(/\s+/g, ' ').trim() : '';
-        }
 
         async function analyzeEmail() {
             if (!mlStatusOnline) {
@@ -507,26 +504,25 @@
 
             const resultDiv = document.getElementById('analysisResult');
             const analyzeBtn = document.getElementById('analyzeBtn');
-            const emailFrom = document.getElementById('emailFrom').textContent;
-            const emailSubject = document.getElementById('emailSubject').textContent;
-            const emailBody = document.getElementById('emailBody').textContent;
-
-            if (emailFrom === 'Sélectionnez un email') {
+            
+            // Vérifier qu'un email est sélectionné
+            if (!currentEmailData || !currentEmailData.id) {
                 showAnalysisError('Veuillez sélectionner un email complet.');
                 return;
             }
 
-            const rawEmailText = `From: ${emailFrom} Subject: ${emailSubject} Body: ${emailBody}`;
+            const emailId = currentEmailData.id;
+            console.log('🔍 Analyzing email with RAW CSV data, ID:', emailId);
 
             analyzeBtn.disabled = true;
-            resultDiv.innerHTML = `<div class="text-info"><div class="spinner-border spinner-border-sm me-2"></div><strong>Analyse IA en cours...</strong></div>`;
+            resultDiv.innerHTML = `<div class="text-info"><div class="spinner-border spinner-border-sm me-2"></div><strong>Analyse IA avec données brutes CSV...</strong></div>`;
 
             try {
-                const response = await fetch(`${mlApiUrl}/predict`, {
+                const response = await fetch(`${mlApiUrl}/predict/email-id`, {
                     method: 'POST',
                     mode: 'cors',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ text: cleanText(rawEmailText) }),
+                    body: JSON.stringify({ email_id: emailId }),
                     signal: AbortSignal.timeout(30000)
                 });
 
