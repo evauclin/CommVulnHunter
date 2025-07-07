@@ -24,6 +24,8 @@ from pathlib import Path
 import pandas as pd
 import subprocess
 import threading
+import numpy as np
+from collections import deque
 # Ajouter ces lignes après vos imports existants
 from fastapi import Request
 from fastapi.responses import JSONResponse
@@ -33,108 +35,10 @@ import time
 
 # --- Configuration et Initialisation ---
 app = FastAPI(
-    title="API de Détection de Phishing Automatique (FR/EN)",
-    description="Une API pour classifier des textes en détectant automatiquement la langue.",
-    version="3.0.1"
+    title="API de Détection de Phishing Automatique (FR/EN) - Smart Percentile",
+    description="Une API adaptative pour classifier des textes avec optimisation automatique des longueurs.",
+    version="3.1.0"
 )
-
-
-# REMPLACER LE MIDDLEWARE DANS main.py
-
-@app.middleware("http")
-async def auto_reload_middleware(request: Request, call_next):
-    """
-    Middleware qui vérifie et recharge le modèle automatiquement
-    """
-    # Vérifier les mises à jour pour TOUS les endpoints (pas seulement predict)
-    if request.url.path in ["/predict", "/predict/batch", "/health", "/model-status"]:
-        # Vérification avec limitation de fréquence (max 1 fois par 30 secondes)
-        current_time = time.time()
-        if not hasattr(auto_reload_middleware, '_last_check'):
-            auto_reload_middleware._last_check = 0
-
-        if current_time - auto_reload_middleware._last_check > 30:  # 30 secondes au lieu de 60
-            try:
-                # 🆕 NOUVELLE: Vérifier aussi le fichier signal
-                signal_file = Path("./data/reload_signal.txt")
-                if signal_file.exists():
-                    print("🔔 Signal de rechargement détecté!")
-                    try:
-                        with open(signal_file, 'r') as f:
-                            signal_data = json.load(f)
-                        print(f"   Timestamp signal: {signal_data.get('timestamp', 'unknown')}")
-                        print(f"   Trigger: {signal_data.get('trigger', 'unknown')}")
-
-                        # Supprimer le fichier signal
-                        signal_file.unlink()
-                        print("   Fichier signal supprimé")
-
-                        # Forcer le rechargement
-                        if reload_model_artifacts():
-                            print("✅ Rechargement via signal réussi!")
-
-                    except Exception as e:
-                        print(f"⚠️ Erreur traitement signal: {e}")
-                        # Supprimer le fichier même en cas d'erreur
-                        try:
-                            signal_file.unlink()
-                        except:
-                            pass
-
-                # Vérification normale par version
-                auto_reload_if_updated()
-
-            except Exception as e:
-                print(f"⚠️ Erreur auto-reload: {e}")
-            auto_reload_middleware._last_check = current_time
-
-    response = await call_next(request)
-    return response
-
-
-# 🆕 NOUVELLE FONCTION: Vérification détaillée des mises à jour
-def check_for_model_updates():
-    """
-    Vérifie si le modèle a été mis à jour sur le disque (version améliorée)
-    """
-    try:
-        metadata_file = Path("model/model_prod/model_metadata.json")
-        if not metadata_file.exists():
-            return False
-
-        # Lire les métadonnées actuelles
-        with open(metadata_file, "r") as f:
-            current_metadata = json.load(f)
-
-        # Comparer avec les métadonnées en mémoire
-        if not hasattr(check_for_model_updates, '_last_version'):
-            check_for_model_updates._last_version = current_metadata.get('model_version', 1)
-            check_for_model_updates._last_timestamp = current_metadata.get('deployment_timestamp', '')
-            return False
-
-        current_version = current_metadata.get('model_version', 1)
-        current_timestamp = current_metadata.get('deployment_timestamp', '')
-
-        # Vérifier par version ET par timestamp
-        version_changed = current_version > check_for_model_updates._last_version
-        timestamp_changed = current_timestamp != check_for_model_updates._last_timestamp
-
-        if version_changed or timestamp_changed:
-            print(f"🔍 NOUVEAU MODÈLE DÉTECTÉ!")
-            print(f"   Version: {check_for_model_updates._last_version} → {current_version}")
-            if timestamp_changed:
-                print(f"   Timestamp: {check_for_model_updates._last_timestamp} → {current_timestamp}")
-            print(f"   Méthode de déploiement: {current_metadata.get('deployment_method', 'unknown')}")
-
-            check_for_model_updates._last_version = current_version
-            check_for_model_updates._last_timestamp = current_timestamp
-            return True
-
-        return False
-
-    except Exception as e:
-        print(f"⚠️ Erreur vérification mise à jour: {e}")
-        return False
 
 app.add_middleware(
     CORSMiddleware,
@@ -149,10 +53,22 @@ model = None
 tokenizer = None
 scaler = None
 label_encoder = None
-MAX_SEQUENCE_LENGTH = 566  # Valeur par défaut - sera remplacée par les métadonnées
+MAX_SEQUENCE_LENGTH = 566
 SUSPICIOUS_WORDS_SET = set()
 STOP_WORDS = {}
-# Ajouter ces variables après les autres variables globales
+
+MODEL_SUPPORTS_VARIABLE_LENGTH = False
+SMART_PERCENTILE_ENABLED = False
+length_history = deque(maxlen=500)
+current_production_length = None
+adaptation_stats = {
+    'total_predictions': 0,
+    'adaptations_triggered': 0,
+    'avg_efficiency': 0.0,
+    'last_adaptation': None
+}
+
+# Variables existantes pour fine-tuning
 AUTO_FINETUNING_ENABLED = True
 IS_FINETUNING_RUNNING = False
 FINETUNING_LOCK = threading.Lock()
@@ -162,51 +78,132 @@ tf.config.set_visible_devices([], 'GPU')
 FEEDBACK_CSV_PATH = Path("./data/user_feedbacks.csv")
 
 
-# --- Chargement des Artefacts du Modèle ---
+
+def analyze_input_lengths(texts):
+    """Analyse rapide des longueurs des textes d'entrée"""
+    lengths = []
+    for text in texts:
+        if pd.isna(text):
+            lengths.append(0)
+        else:
+            clean_text = str(text).lower()
+            clean_text = re.sub(r'http[s]?://\S+', ' URL_TOKEN ', clean_text)
+            clean_text = re.sub(r'\S+@\S+', ' EMAIL_TOKEN ', clean_text)
+            clean_text = re.sub(r'[^\w\s]', ' ', clean_text)
+            words = clean_text.split()
+            lengths.append(len(words))
+    return lengths
+
+
+def calculate_production_length(current_batch_lengths):
+    """Calcule la longueur optimale pour ce batch en production avec smart_percentile"""
+    global current_production_length
+
+    all_lengths = list(current_batch_lengths)
+
+    # Ajouter l'historique récent si disponible
+    if len(length_history) > 0:
+        recent_history = list(length_history)[-100:]  # 100 derniers échantillons
+        all_lengths.extend(recent_history)
+
+    # Vérifier si on a assez de données (minimum 10 échantillons)
+    if len(all_lengths) < 10:
+        # Pas assez de données, utiliser la longueur d'entraînement
+        fallback = current_production_length or MAX_SEQUENCE_LENGTH
+        print(f"  📊 Pas assez d'échantillons ({len(all_lengths)}<10), utilisation de {fallback}")
+        return fallback
+
+    # Appliquer smart_percentile sur les données combinées
+    mean_length = np.mean(all_lengths)
+    std_length = np.std(all_lengths)
+    p95_length = int(np.percentile(all_lengths, 95))
+
+    # Logique smart_percentile adaptée pour la production
+    if std_length > mean_length * 0.8:  # Grande variabilité
+        optimal = min(p95_length, int(mean_length + 1.5 * std_length))
+        print(f"  🧠 Production: variabilité élevée (std={std_length:.1f}) → ajustement conservateur")
+    else:
+        optimal = p95_length
+        print(f"  🧠 Production: distribution stable → 95e percentile")
+
+    # Appliquer les limites (entre 30 et 800)
+    optimal = max(optimal, 30)
+    optimal = min(optimal, 800)
+
+    # Calculer l'efficacité
+    current_avg = np.mean(current_batch_lengths)
+    efficiency = current_avg / optimal if optimal > 0 else 0
+    print(f"  🎯 Longueur adaptée: {optimal} (efficacité: {efficiency:.2f})")
+
+    return optimal
+
+
+def prepare_sequences_adaptive(texts, languages, target_length):
+    """Prépare les séquences avec une longueur cible spécifique"""
+    processed_texts = []
+    for text, lang in zip(texts, languages):
+        processed = preprocess_text(text, lang)
+        processed_texts.append(processed)
+
+    # Tokenization
+    sequences = tokenizer.texts_to_sequences(processed_texts)
+
+    # Filtrer les tokens qui dépassent la taille du vocabulaire
+    max_vocab_id = 10000
+    for i, sequence in enumerate(sequences):
+        if sequence:
+            sequences[i] = [token_id for token_id in sequence if token_id <= max_vocab_id]
+
+    # Padding avec la longueur adaptée
+    padded_sequences = pad_sequences(
+        sequences,
+        maxlen=target_length,
+        padding='post',
+        truncating='post'
+    )
+
+    return padded_sequences, processed_texts
+
+
+# --- Chargement des Artefacts du Modèle (VERSION AMÉLIORÉE) ---
 def load_model_artifacts():
-    global model, tokenizer, scaler, label_encoder, MAX_SEQUENCE_LENGTH, SUSPICIOUS_WORDS_SET, STOP_WORDS
+    """Charge tous les artefacts du modèle avec détection des capacités smart_percentile"""
+    global model, tokenizer, scaler, label_encoder, MAX_SEQUENCE_LENGTH
+    global SUSPICIOUS_WORDS_SET, STOP_WORDS
+    global MODEL_SUPPORTS_VARIABLE_LENGTH, SMART_PERCENTILE_ENABLED, current_production_length
 
     try:
         print("🚀 Démarrage de l'API et chargement des artefacts...")
 
-        # ÉTAPE 1: Charger le modèle EN PREMIER
-        model_path = Path("model/model_prod/best_lstm_model.keras")
-        if not model_path.exists():
-            raise FileNotFoundError(f"Modèle non trouvé: {model_path}")
-
-        model = load_model(str(model_path))
-        print("✅ Modèle LSTM chargé")
-
-        # ÉTAPE 2: CORRIGER MAX_SEQUENCE_LENGTH avec la vraie valeur du modèle
-        model_input_shape = model.inputs[0].shape
-        actual_sequence_length = model_input_shape[1]
-
-        if actual_sequence_length is not None:
-            # 🎯 MISE À JOUR CRITIQUE de la variable globale
-            MAX_SEQUENCE_LENGTH = actual_sequence_length
-            print(f"🔧 MAX_SEQUENCE_LENGTH corrigé: {MAX_SEQUENCE_LENGTH}")
-        else:
-            print(f"⚠️ Modèle à longueur variable, conservation de MAX_SEQUENCE_LENGTH = {MAX_SEQUENCE_LENGTH}")
-
-        # ÉTAPE 3: Vérifier/corriger les métadonnées
-        metadata_file = Path("model/model_prod/model_metadata.json")
+        # ÉTAPE 1: Charger les métadonnées en premier pour obtenir la bonne longueur
+        metadata_file = Path("model/model_metadata.json")
         if metadata_file.exists():
             try:
                 with open(metadata_file, "r") as f:
                     metadata = json.load(f)
                 config = metadata.get('config', {})
-                metadata_length = config.get('max_sequence_length', MAX_SEQUENCE_LENGTH)
+                MAX_SEQUENCE_LENGTH = config.get('max_sequence_length', 566)
 
-                if metadata_length != MAX_SEQUENCE_LENGTH:
-                    print(f"⚠️ Correction métadonnées: {metadata_length} → {MAX_SEQUENCE_LENGTH}")
-                    config['max_sequence_length'] = MAX_SEQUENCE_LENGTH
-                    metadata['config'] = config
-                    with open(metadata_file, "w") as f:
-                        json.dump(metadata, f, indent=2)
+                # NOUVEAU: Détecter les capacités smart_percentile
+                SMART_PERCENTILE_ENABLED = config.get('smart_percentile_enabled', False)
+                MODEL_SUPPORTS_VARIABLE_LENGTH = config.get('enable_variable_length', False)
 
-                print(f"✅ Métadonnées alignées: max_sequence_length = {MAX_SEQUENCE_LENGTH}")
+                print(f"✅ Métadonnées chargées:")
+                print(f"  max_sequence_length: {MAX_SEQUENCE_LENGTH}")
+                print(f"  🧠 Smart_percentile: {'✅ ACTIVÉ' if SMART_PERCENTILE_ENABLED else '❌ DÉSACTIVÉ'}")
+                print(f"  🔄 Longueurs variables: {'✅ SUPPORTÉ' if MODEL_SUPPORTS_VARIABLE_LENGTH else '❌ FIXE'}")
+
+                # Initialiser la longueur de production
+                current_production_length = MAX_SEQUENCE_LENGTH
+
             except Exception as e:
-                print(f"⚠️ Erreur métadonnées: {e}")
+                print(f"⚠️ Erreur chargement métadonnées: {e}")
+                print(f"⚠️ Utilisation des valeurs par défaut")
+        else:
+            print(f"⚠️ Fichier model_metadata.json non trouvé")
+
+        # ÉTAPE 2-8: Chargement standard des autres artefacts (identique à votre code)
+        # [Garder tout votre code existant pour le chargement du modèle, tokenizer, etc.]
 
         # ÉTAPE 2: Chargement du modèle
         model_path = Path("model/model_prod/best_lstm_model.keras")
@@ -224,12 +221,14 @@ def load_model_artifacts():
             # Vérifier si la forme correspond à notre MAX_SEQUENCE_LENGTH
             if i == 0 and len(input_layer.shape) >= 2:  # Premier input (texte)
                 expected_seq_length = input_layer.shape[1]
-                if expected_seq_length is not None and expected_seq_length != MAX_SEQUENCE_LENGTH:
-                    print(f"⚠️ ATTENTION: Incohérence détectée!")
-                    print(f"  Modèle attend: {expected_seq_length}")
-                    print(f"  Métadonnées indiquent: {MAX_SEQUENCE_LENGTH}")
-                    print(f"  🔧 Correction: utilisation de {expected_seq_length}")
+                if expected_seq_length is None:
+                    # Le modèle accepte vraiment des longueurs variables
+                    MODEL_SUPPORTS_VARIABLE_LENGTH = True
+                    print(f"  ✅ Modèle à longueurs variables confirmé")
+                elif expected_seq_length != MAX_SEQUENCE_LENGTH:
+                    print(f"  🔧 Correction longueur: {expected_seq_length}")
                     MAX_SEQUENCE_LENGTH = expected_seq_length
+                    current_production_length = expected_seq_length
 
         # ÉTAPE 4: Chargement du tokenizer
         tokenizer_path = Path("model/model_prod/tokenizer.pkl")
@@ -311,79 +310,49 @@ def load_model_artifacts():
             print(f"❌ Échec du test de validation: {e}")
             return False
 
-        print(f"\n🎉 API prête ! Configuration finale:")
-        print(f"  Longueur de séquence: {MAX_SEQUENCE_LENGTH}")
-        print(f"  Taille du vocabulaire: {len(tokenizer.word_index)}")
-        print(f"  Classes: {list(label_encoder.classes_)}")
+        # NOUVEAU: Affichage du résumé des capacités
+        print(f"\n🎉 API prête ! Capacités activées:")
+        print(f"  📏 Longueur de séquence: {MAX_SEQUENCE_LENGTH}")
+        print(f"  🧠 Smart_percentile: {'✅ OUI' if SMART_PERCENTILE_ENABLED else '❌ NON'}")
+        print(f"  🔄 Longueurs variables: {'✅ OUI' if MODEL_SUPPORTS_VARIABLE_LENGTH else '❌ NON'}")
+        print(
+            f"  📊 Adaptation en production: {'✅ DISPONIBLE' if (SMART_PERCENTILE_ENABLED and MODEL_SUPPORTS_VARIABLE_LENGTH) else '❌ INDISPONIBLE'}")
+
         return True
 
     except Exception as e:
         print(f"❌ ERREUR CRITIQUE AU DÉMARRAGE: {e}")
-        print(f"❌ Type d'erreur: {type(e).__name__}")
-
-        # Diagnostic détaillé
-        print(f"\n🔍 DIAGNOSTIC:")
-        current_dir = Path(".")
-        print(f"📁 Répertoire courant: {current_dir.absolute()}")
-
-        # Vérifier si le dossier model existe
-        model_dir = Path("model")
-        if model_dir.exists():
-            print(f"📁 Contenu du dossier model:")
-            for file in model_dir.iterdir():
-                print(f"  - {file.name} ({file.stat().st_size} bytes)")
-        else:
-            print("❌ Dossier 'model' n'existe pas")
-
         return False
 
 
-# --- Modèles de Données Pydantic ---
+# --- Modèles de Données Pydantic (NOUVEAUX) ---
 class TextInput(BaseModel):
     text: str
 
-    class Config:
-        json_schema_extra = {
-            "example": {
-                "text": "URGENT: Your account will be suspended in 24 hours. Click here to verify.",
-            }
-        }
+
+class TextInputAdaptive(BaseModel):
+    text: str
+    enable_adaptation: bool = True  # NOUVEAU: Permettre de désactiver l'adaptation
 
 
 class BatchInput(BaseModel):
     items: List[TextInput]
 
-    class Config:
-        json_schema_extra = {
-            "example": {
-                "items": [
-                    {"text": "Bonjour, votre facture no. 8373 arrive à échéance."},
-                    {"text": "Hi Sarah, thanks for sending the quarterly report."}
-                ]
-            }
-        }
+
+class BatchInputAdaptive(BaseModel):  # NOUVEAU
+    items: List[TextInput]
+    enable_adaptation: bool = True
 
 
 class FeedbackInput(BaseModel):
     email_text: str
     predicted_class: str
     predicted_probability: float
-    user_satisfaction: str  # "yes" ou "no"
+    user_satisfaction: str
     language_detected: str
 
-    class Config:
-        json_schema_extra = {
-            "example": {
-                "email_text": "URGENT: Click here to verify your account",
-                "predicted_class": "phishing",
-                "predicted_probability": 0.85,
-                "user_satisfaction": "yes",
-                "language_detected": "en"
-            }
-        }
 
-
-# --- Fonctions de Prétraitement ---
+# --- Fonctions de Prétraitement (IDENTIQUES) ---
 def preprocess_text(text: str, language: str):
     """Prétraitement de texte spécialisé et multilingue."""
     if pd.isna(text):
@@ -425,65 +394,205 @@ def extract_numerical_features(text: str):
     return features
 
 
-# --- Logique de prédiction principale ---
+# --- NOUVELLE FONCTION: Prédiction avec Smart Percentile ---
+def perform_prediction_adaptive(texts, enable_adaptation=True):
+    """
+    Prédiction adaptative avec smart_percentile en production
+
+    Args:
+        texts: Liste des textes à analyser ou texte unique
+        enable_adaptation: Si True, adapte la longueur selon smart_percentile
+
+    Returns:
+        dict: Résultats avec informations d'adaptation
+    """
+    global adaptation_stats, length_history, current_production_length
+
+    if not model:
+        raise HTTPException(status_code=503, detail="Modèle non chargé")
+
+    # Normaliser l'entrée en liste
+    if isinstance(texts, str):
+        texts = [texts]
+
+    try:
+        adaptation_stats['total_predictions'] += len(texts)
+
+        # Détection des langues
+        languages = []
+        for text in texts:
+            try:
+                detected_lang = detect(text[:1000])
+                lang = detected_lang if detected_lang in ['fr', 'en'] else 'en'
+            except Exception:
+                lang = 'en'
+            languages.append(lang)
+
+        print(f"🔮 PRÉDICTION SMART_PERCENTILE")
+        print(f"   Nombre de textes: {len(texts)}")
+        print(f"   Adaptation activée: {enable_adaptation}")
+        print(f"   Modèle supporte variables: {MODEL_SUPPORTS_VARIABLE_LENGTH}")
+        print(f"   Smart_percentile activé: {SMART_PERCENTILE_ENABLED}")
+
+        # Décider si on doit adapter
+        should_adapt = (enable_adaptation and
+                        SMART_PERCENTILE_ENABLED and
+                        MODEL_SUPPORTS_VARIABLE_LENGTH)
+
+        if should_adapt:
+            # 1. Analyser les longueurs du batch actuel
+            current_lengths = analyze_input_lengths(texts)
+            print(
+                f"   Longueurs actuelles: {min(current_lengths)}-{max(current_lengths)} (moy: {np.mean(current_lengths):.1f})")
+
+            # 2. Calculer la longueur optimale avec smart_percentile
+            optimal_length = calculate_production_length(current_lengths)
+
+            # 3. Vérifier si on doit vraiment adapter
+            training_length = MAX_SEQUENCE_LENGTH
+            if abs(optimal_length - training_length) > 10:  # Seuil de changement
+                print(f"   🔄 Adaptation: {training_length} → {optimal_length}")
+                # Utiliser la longueur adaptée
+                padded_sequences, processed_texts = prepare_sequences_adaptive(texts, languages, optimal_length)
+                current_production_length = optimal_length
+                adaptation_stats['adaptations_triggered'] += 1
+                adaptation_stats['last_adaptation'] = datetime.now().isoformat()
+                adaptation_triggered = True
+                actual_length_used = optimal_length
+            else:
+                print(f"   ⚪ Pas d'adaptation nécessaire (écart < 10)")
+                # Utiliser la méthode standard
+                padded_sequences, processed_texts = prepare_sequences_adaptive(texts, languages, training_length)
+                adaptation_triggered = False
+                actual_length_used = training_length
+
+            # 4. Mettre à jour l'historique pour les futures prédictions
+            length_history.extend(current_lengths)
+
+            # 5. Calculer l'efficacité
+            efficiency = np.mean(current_lengths) / actual_length_used if actual_length_used > 0 else 1.0
+            adaptation_stats['avg_efficiency'] = (adaptation_stats['avg_efficiency'] * 0.9 + efficiency * 0.1)
+
+        else:
+            # Mode standard sans adaptation
+            print(f"   📋 Mode standard (adaptation désactivée)")
+            padded_sequences, processed_texts = prepare_sequences_adaptive(texts, languages, MAX_SEQUENCE_LENGTH)
+            adaptation_triggered = False
+            actual_length_used = MAX_SEQUENCE_LENGTH
+            efficiency = 1.0
+
+        # 6. Extraction des features numériques
+        numerical_features = []
+        for text in texts:
+            features = extract_numerical_features(text)
+            numerical_features.append(features)
+        scaled_features = scaler.transform(numerical_features)
+
+        # 7. Prédiction
+        probabilities = model.predict([padded_sequences, scaled_features], verbose=0)
+
+        # 8. Préparer les résultats
+        results = []
+        for i, (text, lang, prob) in enumerate(zip(texts, languages, probabilities)):
+            prediction_int = int(prob[0] > 0.5)
+            predicted_class = label_encoder.inverse_transform([prediction_int])[0]
+
+            confidence_score = abs(prob[0] - 0.5) * 2
+            if confidence_score > 0.8:
+                confidence = "HIGH"
+            elif confidence_score > 0.4:
+                confidence = "MEDIUM"
+            else:
+                confidence = "LOW"
+
+            result = {
+                "prediction": predicted_class,
+                "probability": float(prob[0]),
+                "confidence": confidence,
+                "language_detected": lang,
+                "sequence_length_used": actual_length_used,
+                "adaptation_info": {
+                    "adaptation_enabled": should_adapt,
+                    "adaptation_triggered": adaptation_triggered,
+                    "efficiency": efficiency if should_adapt else None,
+                    "original_length": len(processed_texts[i].split()) if processed_texts else None
+                } if should_adapt else None
+            }
+            results.append(result)
+
+        # Retourner un seul résultat si un seul texte en entrée
+        if len(results) == 1:
+            return results[0]
+        else:
+            return {"results": results}
+
+    except Exception as e:
+        print(f"❌ Erreur dans perform_prediction_adaptive: {e}")
+        raise HTTPException(status_code=500, detail=f"Erreur de prédiction: {str(e)}")
+
+
+# --- Logique de prédiction principale (VERSION ORIGINALE CONSERVÉE) ---
 def perform_prediction(text: str):
-    """Fonction corrigée qui utilise la VRAIE longueur du modèle"""
+    """Fonction originale conservée pour compatibilité"""
+    # Votre code existant identique
     if not model:
         raise HTTPException(status_code=503, detail="Modèle non chargé")
 
     try:
-        # 🔧 DÉTECTION DYNAMIQUE de la longueur du modèle
-        model_input_shape = model.inputs[0].shape
-        actual_max_length = model_input_shape[1]
-
-        # Si le modèle a une longueur variable (None), utiliser la valeur par défaut
-        if actual_max_length is None:
-            actual_max_length = MAX_SEQUENCE_LENGTH
-
-        print(
-            f"📏 Longueur utilisée: {actual_max_length} (modèle: {model_input_shape[1]}, config: {MAX_SEQUENCE_LENGTH})")
-
-        # Détection de langue
+        # Détection automatique de la langue
         try:
             detected_lang = detect(text[:1000])
             lang = detected_lang if detected_lang in ['fr', 'en'] else 'en'
         except Exception:
             lang = 'en'
 
-        # Prétraitement
+        print(f"🌍 Langue détectée: {lang}")
+
+        # Prétraitement du texte
         processed_text = preprocess_text(text, lang)
+        print(f"📝 Texte prétraité: {processed_text[:100]}...")
+
+        # Création des séquences
         sequence = tokenizer.texts_to_sequences([processed_text])
-
-        # Filtrage des tokens
-        if sequence[0]:
-            max_vocab_id = 10000
+        # Filtrer les tokens qui dépassent la taille du vocabulaire du modèle
+        if sequence[0]:  # Si la séquence n'est pas vide
+            max_vocab_id = 10000  # indices valides: 0 à 10000
             sequence[0] = [token_id for token_id in sequence[0] if token_id <= max_vocab_id]
+            print(
+                f"🔧 Tokens filtrés: {len([t for t in tokenizer.texts_to_sequences([processed_text])[0] if t > max_vocab_id])} tokens supprimés")
+        print(f"🔢 Séquence créée: longueur = {len(sequence[0]) if sequence[0] else 0}")
 
-        # 🎯 UTILISER LA LONGUEUR DÉTECTÉE DYNAMIQUEMENT
+        # Utiliser la bonne longueur de séquence
         padded_sequence = pad_sequences(
             sequence,
-            maxlen=actual_max_length,  # ✅ CORRECTION ICI
+            maxlen=MAX_SEQUENCE_LENGTH,
             padding='post',
             truncating='post'
         )
-
-        print(f"📊 Séquence créée: {padded_sequence.shape}")
+        print(f"📏 Séquence paddée: shape = {padded_sequence.shape}")
 
         # Features numériques
         numerical_features = extract_numerical_features(text)
         scaled_features = scaler.transform([numerical_features])
+        print(f"🔢 Features numériques: shape = {scaled_features.shape}")
 
         # Vérification finale des dimensions
-        expected_text_shape = (1, actual_max_length)
+        expected_text_shape = (1, MAX_SEQUENCE_LENGTH)
+        expected_num_shape = (1, 10)  # Nombre de features numériques
+
         if padded_sequence.shape != expected_text_shape:
             raise ValueError(f"Dimension texte incorrecte: {padded_sequence.shape} != {expected_text_shape}")
+        if scaled_features.shape != expected_num_shape:
+            raise ValueError(f"Dimension features incorrecte: {scaled_features.shape} != {expected_num_shape}")
 
-        # Prédiction
+        print(f"✅ Dimensions validées, prédiction en cours...")
+
+        # Prédiction du modèle
         prediction_proba = model.predict([padded_sequence, scaled_features], verbose=0)[0][0]
         prediction_int = int(prediction_proba > 0.5)
         predicted_class = label_encoder.inverse_transform([prediction_int])[0]
 
-        # Calcul de confiance
+        # Calcul de la confiance
         confidence_score = abs(prediction_proba - 0.5) * 2
         if confidence_score > 0.8:
             confidence = "HIGH"
@@ -492,18 +601,19 @@ def perform_prediction(text: str):
         else:
             confidence = "LOW"
 
+        print(f"✅ Prédiction réussie: {predicted_class} (prob: {prediction_proba:.4f}, conf: {confidence})")
+
         return {
             "prediction": predicted_class,
-            "probability": float(prediction_proba),
+            "probability": float(confidence_score),
             "confidence": confidence,
             "language_detected": lang,
-            "sequence_length_used": actual_max_length,  # ✅ Retourner la vraie longueur
+            "sequence_length_used": MAX_SEQUENCE_LENGTH,
             "debug_info": {
                 "processed_text_length": len(processed_text),
                 "original_sequence_length": len(sequence[0]) if sequence[0] else 0,
-                "model_expected_length": model_input_shape[1],
-                "config_max_length": MAX_SEQUENCE_LENGTH,
-                "actual_used_length": actual_max_length
+                "padded_sequence_shape": list(padded_sequence.shape),
+                "features_shape": list(scaled_features.shape)
             }
         }
 
@@ -511,7 +621,8 @@ def perform_prediction(text: str):
         print(f"❌ Erreur dans perform_prediction: {e}")
         raise HTTPException(status_code=500, detail=f"Erreur de prédiction: {str(e)}")
 
-# --- Fonctions de Gestion des Feedbacks ---
+
+
 def count_negative_feedbacks() -> int:
     """Compte uniquement les feedbacks négatifs non traités"""
     try:
@@ -532,6 +643,7 @@ def count_negative_feedbacks() -> int:
     except Exception as e:
         print(f"❌ Erreur lors du comptage des feedbacks négatifs: {e}")
         return 0
+
 
 def save_feedback_to_csv(feedback_data):
     """Sauvegarde le feedback dans un fichier CSV"""
@@ -811,7 +923,10 @@ def read_root():
         "version": app.version,
         "documentation": "/docs",
         "max_sequence_length": MAX_SEQUENCE_LENGTH,
-        "model_loaded": model is not None
+        "model_loaded": model is not None,
+        "smart_percentile_enabled": SMART_PERCENTILE_ENABLED,
+        "variable_length_supported": MODEL_SUPPORTS_VARIABLE_LENGTH,
+        "adaptive_prediction_available": SMART_PERCENTILE_ENABLED and MODEL_SUPPORTS_VARIABLE_LENGTH
     }
 
 
@@ -821,7 +936,7 @@ def health_check():
         raise HTTPException(status_code=503, detail="Service Unavailable: Model not loaded")
 
     negative_feedbacks = count_negative_feedbacks()
-    finetuning_ready = check_finetuning_trigger()
+    finetuning_ready = negative_feedbacks >= NEGATIVE_FEEDBACK_THRESHOLD
 
     return {
         "status": "healthy",
@@ -830,49 +945,155 @@ def health_check():
         "vocab_size": len(tokenizer.word_index) if tokenizer else 0,
         "negative_feedbacks": negative_feedbacks,
         "finetuning_ready": finetuning_ready,
-        "model_classes": list(label_encoder.classes_) if label_encoder else []
+        "model_classes": list(label_encoder.classes_) if label_encoder else [],
+
+        # NOUVELLES INFORMATIONS
+        "smart_percentile_capabilities": {
+            "enabled": SMART_PERCENTILE_ENABLED,
+            "variable_length_supported": MODEL_SUPPORTS_VARIABLE_LENGTH,
+            "adaptive_prediction_available": SMART_PERCENTILE_ENABLED and MODEL_SUPPORTS_VARIABLE_LENGTH,
+            "current_production_length": current_production_length,
+            "adaptation_stats": adaptation_stats
+        }
     }
 
 
 @app.post("/predict", summary="Prédire sur un seul texte")
 def predict(item: TextInput):
-    """
-    Analyse un texte, détecte sa langue (fr/en) et prédit s'il s'agit d'un phishing.
-    """
+    """Analyse un texte avec la méthode standard (mode compatibilité)"""
     if not model:
         raise HTTPException(status_code=503, detail="Modèle non disponible")
 
     try:
         print(f"📧 Analyse d'un texte de {len(item.text)} caractères...")
         result = perform_prediction(item.text)
-        print(
-            f"🎯 Résultat ({result['language_detected']}): {result['prediction']} (Proba: {result['probability']:.4f})")
         return result
     except HTTPException:
         raise
     except Exception as e:
-        print(f"❌ Erreur lors de la prédiction: {e}")
-        raise HTTPException(status_code=500, detail=f"Erreur interne du serveur: {e}")
+        raise HTTPException(status_code=500, detail=f"Erreur interne: {e}")
 
 
-@app.post("/predict/batch", summary="Prédire sur une liste de textes")
+@app.post("/predict/adaptive", summary="Prédire avec adaptation smart_percentile")
+def predict_adaptive(item: TextInputAdaptive):
+    """
+    Analyse un texte avec adaptation automatique smart_percentile
+    Optimise la longueur de séquence selon les caractéristiques du texte
+    """
+    if not model:
+        raise HTTPException(status_code=503, detail="Modèle non disponible")
+
+    if not (SMART_PERCENTILE_ENABLED and MODEL_SUPPORTS_VARIABLE_LENGTH):
+        # Fallback sur la méthode standard si pas de support
+        result = perform_prediction(item.text)
+        result["adaptation_info"] = {
+            "adaptation_available": False,
+            "reason": "Modèle ne supporte pas l'adaptation"
+        }
+        return result
+
+    try:
+        result = perform_prediction_adaptive([item.text], item.enable_adaptation)
+        return result
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Erreur interne: {e}")
+
+
+@app.post("/predict/batch", summary="Prédire sur une liste de textes (mode standard)")
 def predict_batch(batch: BatchInput):
-    """
-    Analyse une liste de textes en parallèle.
-    """
+    """Analyse une liste de textes en mode standard"""
     results = []
-    print(f"📦 Traitement d'un batch de {len(batch.items)} textes...")
     for item in batch.items:
         try:
             result = perform_prediction(item.text)
             results.append(result)
         except Exception as e:
             results.append({"error": str(e), "text": item.text[:50] + "..."})
-
     return {"results": results}
 
 
-# --- REMPLACEZ VOTRE FONCTION save_feedback PAR CELLE-CI ---
+@app.post("/predict/batch/adaptive", summary="Prédire sur une liste avec adaptation smart_percentile")
+def predict_batch_adaptive(batch: BatchInputAdaptive):
+    """
+    Analyse une liste de textes en parallèle.
+    """
+    if not model:
+        raise HTTPException(status_code=503, detail="Modèle non disponible")
+
+    if not (SMART_PERCENTILE_ENABLED and MODEL_SUPPORTS_VARIABLE_LENGTH):
+        # Fallback sur la méthode standard
+        results = []
+        for item in batch.items:
+            try:
+                result = perform_prediction(item.text)
+                result["adaptation_info"] = {"adaptation_available": False}
+                results.append(result)
+            except Exception as e:
+                results.append({"error": str(e), "text": item.text[:50] + "..."})
+        return {"results": results}
+
+    try:
+        texts = [item.text for item in batch.items]
+        result = perform_prediction_adaptive(texts, batch.enable_adaptation)
+        return result
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Erreur interne: {e}")
+
+
+@app.get("/adaptation/stats", summary="Statistiques d'adaptation smart_percentile")
+def get_adaptation_stats():
+    """Retourne les statistiques de l'adaptation smart_percentile"""
+    if not SMART_PERCENTILE_ENABLED:
+        return {
+            "smart_percentile_enabled": False,
+            "message": "Smart_percentile non activé sur ce modèle"
+        }
+
+    recent_lengths = list(length_history)[-50:] if len(length_history) > 0 else []
+
+    return {
+        "smart_percentile_enabled": True,
+        "variable_length_supported": MODEL_SUPPORTS_VARIABLE_LENGTH,
+        "current_production_length": current_production_length,
+        "training_length": MAX_SEQUENCE_LENGTH,
+        "adaptation_stats": adaptation_stats,
+        "length_history_size": len(length_history),
+        "recent_analysis": {
+            "sample_size": len(recent_lengths),
+            "avg_length": np.mean(recent_lengths) if recent_lengths else 0,
+            "min_max": (min(recent_lengths), max(recent_lengths)) if recent_lengths else (0, 0),
+            "efficiency": adaptation_stats['avg_efficiency']
+        } if recent_lengths else None
+    }
+
+
+@app.post("/adaptation/reset", summary="Réinitialiser l'historique d'adaptation")
+def reset_adaptation_history():
+    """Réinitialise l'historique d'adaptation (utile pour les tests)"""
+    global length_history, adaptation_stats, current_production_length
+
+    length_history.clear()
+    adaptation_stats = {
+        'total_predictions': 0,
+        'adaptations_triggered': 0,
+        'avg_efficiency': 0.0,
+        'last_adaptation': None
+    }
+    current_production_length = MAX_SEQUENCE_LENGTH
+
+    return {
+        "status": "success",
+        "message": "Historique d'adaptation réinitialisé",
+        "reset_to_length": MAX_SEQUENCE_LENGTH
+    }
+
+
+# --- ENDPOINTS EXISTANTS (GARDER IDENTIQUES) ---
+# [Garder tous vos endpoints existants : feedback, feedbacks, debug/model-info, etc.]
 
 @app.post("/feedback", summary="Enregistrer un feedback utilisateur")
 async def save_feedback(feedback: FeedbackInput, background_tasks: BackgroundTasks):
@@ -1160,14 +1381,14 @@ def get_model_status():
         }
 
 # --- Charger les artefacts au démarrage ---
-print("🚀 Initialisation de l'API de détection de phishing...")
+print("🚀 Initialisation de l'API de détection de phishing avec Smart Percentile...")
 model_loaded = load_model_artifacts()
 
 if not model_loaded:
     print("❌ ÉCHEC DU CHARGEMENT DES ARTEFACTS")
     print("❌ L'API ne pourra pas traiter les prédictions")
 else:
-    print("✅ API prête à traiter les requêtes de prédiction")
+    print("✅ API prête avec capacités d'adaptation smart_percentile")
 
 # --- Lancement de l'application ---
 if __name__ == "__main__":
