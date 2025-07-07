@@ -110,7 +110,7 @@ def clean_input_field(text: str) -> str:
 def get_raw_email_from_csv(email_id: str) -> dict:
     """Récupère les données brutes d'un email depuis le fichier CSV"""
     print(f"🔍 Recherche du fichier CSV pour email ID: {email_id}")
-
+    
     # Essayer plusieurs emplacements possibles (volume partagé en priorité)
     possible_paths = [
         Path("/shared/data/emails_live.csv"),  # Volume partagé Docker
@@ -118,7 +118,7 @@ def get_raw_email_from_csv(email_id: str) -> dict:
         Path("./src/pages/emails_live.csv"),   # Dossier src/pages
         Path("/app/emails_live.csv"),          # Dans le container
     ]
-
+    
     csv_path = None
     for path in possible_paths:
         print(f"🔍 Vérification: {path} - Existe: {path.exists()}")
@@ -126,7 +126,7 @@ def get_raw_email_from_csv(email_id: str) -> dict:
             csv_path = path
             print(f"✅ Fichier trouvé: {csv_path}")
             break
-
+    
     if csv_path is None:
         print(f"❌ Aucun fichier CSV trouvé")
         # Lister le contenu des dossiers pour debug
@@ -138,20 +138,20 @@ def get_raw_email_from_csv(email_id: str) -> dict:
                     print(f"📁 Contenu de {check_dir}: {[f.name for f in files]}")
             except:
                 print(f"📁 Impossible de lire {check_dir}")
-
+        
         raise HTTPException(status_code=404, detail=f"Fichier emails_live.csv non trouvé dans: {[str(p) for p in possible_paths]}")
-
+    
     try:
         df = pd.read_csv(csv_path)
-
+        
         # Chercher l'email par ID
         email_row = df[df['id'] == email_id]
-
+        
         if email_row.empty:
             raise HTTPException(status_code=404, detail=f"Email avec ID {email_id} non trouvé")
-
+        
         row = email_row.iloc[0]
-
+        
         # Retourner les données brutes SANS nettoyage
         return {
             'id': row['id'],
@@ -160,7 +160,7 @@ def get_raw_email_from_csv(email_id: str) -> dict:
             'body': str(row['body']) if not pd.isna(row['body']) else "",
             'type': row['type'] if 'type' in row else 'unknown'
         }
-
+        
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Erreur lecture CSV: {str(e)}")
 
@@ -262,7 +262,7 @@ def load_model_artifacts():
         print("🚀 Démarrage de l'API et chargement des artefacts...")
 
         # ÉTAPE 1: Charger les métadonnées en premier pour obtenir la bonne longueur
-        metadata_file = Path("model/model_metadata.json")
+        metadata_file = Path("model/model_prod/model_metadata.json")
         if metadata_file.exists():
             try:
                 with open(metadata_file, "r") as f:
@@ -651,7 +651,7 @@ def perform_prediction(text: str):
         else:
             confidence = "LOW"
 
-        print(f"✅ Prédiction réussie: {predicted_class} (prob: {prediction_proba:.4f}, conf: {confidence})")
+        print(f"✅ PREDICTION: {predicted_class} (prob: {prediction_proba:.4f}, confidence: {confidence})")
 
         return {
             "prediction": predicted_class,
@@ -759,6 +759,8 @@ def health_check():
 @app.post("/predict", summary="Predict on single text (standard mode)")
 def predict(item: TextInput):
     """Analyze text with standard method (compatibility mode)"""
+    print(f"⚠️ ANCIEN ENDPOINT /predict APPELÉ avec texte de {len(item.text)} chars")
+    
     if not model:
         raise HTTPException(status_code=503, detail="Modèle non disponible")
 
@@ -775,30 +777,30 @@ def predict(item: TextInput):
 def predict_by_email_id(item: EmailIDInput):
     """Analyze email using raw data directly from CSV file"""
     print(f"🎯 ENDPOINT /predict/email-id APPELÉ avec ID: {item.email_id}")
-
+    
     if not model:
         raise HTTPException(status_code=503, detail="Modèle non disponible")
 
     try:
         # Récupérer les données brutes depuis le CSV
         email_data = get_raw_email_from_csv(item.email_id)
-
+        
         # Créer le texte combiné avec les données BRUTES
         raw_text = f"From: {email_data['from']}\nSubject: {email_data['subject']}\nBody: {email_data['body']}"
-
+        
         print(f"🔍 RAW EMAIL ID {item.email_id} - INPUT (1000 chars):")
         print(f"'{raw_text[:1000]}'")
         print(f"Total length: {len(raw_text)}")
-
+        
         # Prédiction avec les données brutes
         result = perform_prediction(raw_text)
-
+        
         # Ajouter l'ID de l'email dans la réponse
         result['email_id'] = item.email_id
         result['data_source'] = 'raw_csv'
-
+        
         return result
-
+        
     except HTTPException:
         raise
     except Exception as e:
@@ -1278,7 +1280,7 @@ async def process_csv_file(file: UploadFile = File(...)):
                     from_field = str(row['from']) if not pd.isna(row['from']) else ""
                     subject_field = str(row['subject']) if not pd.isna(row['subject']) else ""
                     body_field = str(row['body']) if not pd.isna(row['body']) else ""
-
+                    
                     # Créer le texte combiné pour l'analyse (même format que l'interface web)
                     combined_text = f"From: {from_field}\nSubject: {subject_field}\nBody: {body_field}".strip()
 
