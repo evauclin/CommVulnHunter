@@ -18,7 +18,6 @@ import nltk
 from nltk.corpus import stopwords
 import shutil
 import os
-import time  # Ajoutez cet import si pas déjà présent
 
 # Configuration pour la reproductibilité
 tf.random.set_seed(42)
@@ -114,41 +113,32 @@ class IndividualFeedbackRetrainingManager:
 
         # Configuration re-entraînement pour feedback individuel
         self.retrain_config = {
-            'learning_rate_initial': 0.001,
-            'learning_rate_min': 0.00001,
-            'learning_rate_decay': 0.8,  # Réduction à chaque tentative
-            'epochs_initial': 10,
-            'epochs_max': 50,
-            'epochs_increment': 5,  # +5 époques à chaque tentative
-            'batch_size': 5,
-            'patience_initial': 3,
-            'patience_max': 10,
-            'patience_increment': 2,
-            'base_sample_size': 50,
-            'validation_split': 0.3,
-            'feedback_weight_initial': 6.0,
-            'feedback_weight_max': 15.0,  # Poids plus agressif si nécessaire
-            'feedback_weight_increment': 1.5,
-            'support_weight': 1.0,
+            'learning_rate': 0.001,  # Très faible pour stabilité
+            'epochs': 10,  # Peu d'époques pour éviter overfitting
+            'batch_size': 5,  # Un seul feedback
+            'patience': 3,  # Patience réduite
+            'base_sample_size': 50,  # Échantillon de support
+            'validation_split': 0.3,  # Plus de validation
+            # Pondération intelligente
+
+            'feedback_weight': 6.0,  # Prioritaire mais pas excessif
+            'support_weight': 1.0,  # Poids normal
+
             'safety_backup': True,
-            'max_gradient_norm': 1.0
+            'min_confidence_threshold': 0.7,  # Seuil de confiance minimum
+            'max_gradient_norm': 1.0  # Gradient clipping
         }
 
         # Critères de déploiement pour feedback individuel
         self.deployment_criteria = {
-            'require_feedback_corrected': True,
-            'min_confidence': 0.6,
-            'min_confidence_relaxed': 0.5,  # Après plusieurs échecs
-            'max_attempts_per_feedback': 10,  # NOUVEAU: Maximum 10 tentatives
-            'learning_progress_threshold': 0.05,
-            'allow_confidence_relaxation': True,  # Assouplir après 5 échecs
-            'safety_threshold': 0.80,
-            'max_consecutive_failures': 5  # Changé de 3 à 5
+            'require_feedback_corrected': True,  # Le feedback DOIT être corrigé
+            'min_confidence': 0.6,  # Confiance minimum dans la correction
+            'allow_slight_degradation': 0.01,  # 1% de dégradation max sur performance globale
+            'safety_threshold': 0.80,  # 80% accuracy minimum
+            'max_consecutive_failures': 3  # Maximum d'échecs consécutifs avant arrêt
         }
 
         # Compteurs
-        self.current_attempt = 0
-        self.best_result_so_far = None
         self.consecutive_failures = 0
         self.total_retrainings = 0
         self.successful_deployments = 0
@@ -161,44 +151,6 @@ class IndividualFeedbackRetrainingManager:
         print(f"   DÉPLOIEMENT: Immédiat si la correction fonctionne")
         print(f"   SÉCURITÉ: Confiance ≥ {self.deployment_criteria['min_confidence']:.0%}")
 
-    def get_adaptive_config_for_attempt(self, attempt_number):
-        """
-        Génère une configuration adaptée selon le numéro de tentative
-        """
-        config = self.retrain_config.copy()
-
-        # Adapter le learning rate (décroissant)
-        lr_reduction = config['learning_rate_decay'] ** (attempt_number - 1)
-        config['learning_rate'] = max(
-            config['learning_rate_initial'] * lr_reduction,
-            config['learning_rate_min']
-        )
-
-        # Adapter les époques (croissant)
-        config['epochs'] = min(
-            config['epochs_initial'] + ((attempt_number - 1) * config['epochs_increment']),
-            config['epochs_max']
-        )
-
-        # Adapter la patience (croissant)
-        config['patience'] = min(
-            config['patience_initial'] + ((attempt_number - 1) * config['patience_increment']),
-            config['patience_max']
-        )
-
-        # Adapter le poids du feedback (croissant)
-        config['feedback_weight'] = min(
-            config['feedback_weight_initial'] + ((attempt_number - 1) * config['feedback_weight_increment']),
-            config['feedback_weight_max']
-        )
-
-        print(f"🔧 Configuration tentative #{attempt_number}:")
-        print(f"   Learning rate: {config['learning_rate']:.6f}")
-        print(f"   Époques: {config['epochs']}")
-        print(f"   Patience: {config['patience']}")
-        print(f"   Poids feedback: {config['feedback_weight']:.1f}")
-
-        return config
     def _setup_stopwords(self):
         """Configure les stopwords NLTK"""
         try:
@@ -368,15 +320,12 @@ class IndividualFeedbackRetrainingManager:
             print(f"❌ Erreur récupération feedback: {e}")
             return None
 
-    def create_individual_training_dataset(self, feedback_data, dataset_path, attempt_number=1):
+    def create_individual_training_dataset(self, feedback_data, dataset_path):
         """
-        Crée un dataset d'entraînement avec LE feedback + échantillon de support ADAPTATIF
+        Crée un dataset d'entraînement avec LE feedback + échantillon de support
         """
-        print(f"\n📊 CRÉATION DATASET POUR FEEDBACK INDIVIDUEL (Tentative #{attempt_number})")
-        print("=" * 60)
-
-        # Configuration adaptée
-        config = self.get_adaptive_config_for_attempt(attempt_number)
+        print(f"\n📊 CRÉATION DATASET POUR FEEDBACK INDIVIDUEL")
+        print("=" * 50)
 
         try:
             # Dataset avec LE feedback à corriger
@@ -385,65 +334,39 @@ class IndividualFeedbackRetrainingManager:
                 'label': feedback_data['label'],
                 'language': feedback_data['language'],
                 'source': 'feedback',
-                'weight': config['feedback_weight']
+                'weight': self.retrain_config['feedback_weight']  # Utiliser la config
             }])
 
-            print(f"📝 Feedback individuel ajouté (poids: {config['feedback_weight']:.1f})")
+            print(f"📝 Feedback individuel ajouté (poids: {self.retrain_config['feedback_weight']})")
 
-            # Ajouter un échantillon de support ADAPTATIF
+            # Ajouter un échantillon de support pour stabilité
             base_sample_df = pd.DataFrame()
             if Path(dataset_path).exists():
                 df = pd.read_csv(dataset_path)
 
-                # Taille d'échantillon adaptée à la tentative
-                sample_size = config['base_sample_size'] + ((attempt_number - 1) * 10)
-                sample_size = min(sample_size, len(df) // 2)  # Max 50% du dataset
-
+                # Échantillon équilibré pour stabilité
+                sample_size = self.retrain_config['base_sample_size']
                 if len(df) > sample_size:
-                    # Pour les tentatives avancées, privilégier les exemples similaires
-                    if attempt_number > 3:
-                        target_label = feedback_data['label']
-                        similar_examples = df[df['label'] == target_label]
-                        other_examples = df[df['label'] != target_label]
+                    # Échantillonnage stratifié équilibré
+                    balanced_sample = []
+                    for label in df['label'].unique():
+                        label_df = df[df['label'] == label]
+                        label_sample_size = sample_size // len(df['label'].unique())
 
-                        # 70% d'exemples du bon label, 30% autres
-                        target_sample_size = int(sample_size * 0.7)
-                        other_sample_size = sample_size - target_sample_size
-
-                        balanced_sample = []
-                        if len(similar_examples) >= target_sample_size:
-                            balanced_sample.append(similar_examples.sample(n=target_sample_size, random_state=42))
+                        if len(label_df) >= label_sample_size:
+                            label_sample = label_df.sample(n=label_sample_size, random_state=42)
                         else:
-                            balanced_sample.append(similar_examples)
+                            label_sample = label_df
 
-                        if len(other_examples) >= other_sample_size:
-                            balanced_sample.append(other_examples.sample(n=other_sample_size, random_state=42))
-                        else:
-                            balanced_sample.append(other_examples)
+                        balanced_sample.append(label_sample)
 
-                        base_sample_df = pd.concat(balanced_sample, ignore_index=True)
-                        print(f"📊 Échantillonnage ciblé pour tentative #{attempt_number}")
-                    else:
-                        # Échantillonnage équilibré standard
-                        balanced_sample = []
-                        for label in df['label'].unique():
-                            label_df = df[df['label'] == label]
-                            label_sample_size = sample_size // len(df['label'].unique())
-
-                            if len(label_df) >= label_sample_size:
-                                label_sample = label_df.sample(n=label_sample_size, random_state=42)
-                            else:
-                                label_sample = label_df
-
-                            balanced_sample.append(label_sample)
-
-                        base_sample_df = pd.concat(balanced_sample, ignore_index=True)
+                    base_sample_df = pd.concat(balanced_sample, ignore_index=True)
                 else:
                     base_sample_df = df.copy()
 
                 base_sample_df = base_sample_df[['text', 'label', 'language']].copy()
                 base_sample_df['source'] = 'dataset'
-                base_sample_df['weight'] = config['support_weight']
+                base_sample_df['weight'] = self.retrain_config['support_weight']
 
                 print(f"📊 Échantillon de support: {len(base_sample_df)} échantillons")
 
@@ -455,12 +378,14 @@ class IndividualFeedbackRetrainingManager:
 
             print(f"🔗 Dataset final: {len(combined_df)} échantillons")
             print(f"   Distribution: {combined_df['label'].value_counts().to_dict()}")
+            print(f"   📊 Ratio feedback/support: 1/{len(base_sample_df)}")
 
             return combined_df
 
         except Exception as e:
             print(f"❌ Erreur création dataset: {e}")
             return pd.DataFrame()
+
     def preprocess_text(self, text, language='en'):
         """Préprocesse le texte"""
         if pd.isna(text):
@@ -645,47 +570,40 @@ class IndividualFeedbackRetrainingManager:
                 return backup_dir
             except:
                 return None
-
-    def perform_individual_retraining(self, training_data, feedback_data, attempt_number=1):
+    def perform_individual_retraining(self, training_data, feedback_data):
         """
-        RE-ENTRAÎNE le modèle pour corriger LE feedback spécifique avec configuration adaptative
+        RE-ENTRAÎNE le modèle pour corriger LE feedback spécifique
         """
-        print(f"\n🎯 RE-ENTRAÎNEMENT ADAPTATIF (Tentative #{attempt_number})")
+        print(f"\n🎯 RE-ENTRAÎNEMENT POUR FEEDBACK #{feedback_data['id']}")
         print("=" * 60)
         print(f"🎯 OBJECTIF: Corriger '{feedback_data['original_prediction']}' → '{feedback_data['label']}'")
-
-        # Configuration adaptée
-        config = self.get_adaptive_config_for_attempt(attempt_number)
 
         try:
             # Créer une copie du modèle
             model_retrained = tf.keras.models.clone_model(self.model)
             model_retrained.set_weights(self.model.get_weights())
 
-            # Optimiseur adaptatif
-            optimizer = Adam(
-                learning_rate=config['learning_rate'],
-                clipnorm=config['max_gradient_norm']
-            )
+            # Configuration optimisée
+            print(f"🔧 Configuration re-entraînement:")
+            for key, value in self.retrain_config.items():
+                if key not in ['base_sample_size', 'safety_backup']:
+                    print(f"   {key}: {value}")
+
+            # Optimiseur conservateur
+            optimizer = Adam(learning_rate=self.retrain_config['learning_rate'])
             model_retrained.compile(
                 optimizer=optimizer,
                 loss='binary_crossentropy',
                 metrics=['accuracy']
             )
 
-            # Callbacks adaptatifs
+            # Callbacks conservateurs
             callbacks = [
                 EarlyStopping(
-                    patience=config['patience'],
+                    patience=self.retrain_config['patience'],
                     restore_best_weights=True,
                     monitor='loss',
                     min_delta=0.0001
-                ),
-                ReduceLROnPlateau(
-                    factor=0.5,
-                    patience=max(2, config['patience'] // 2),
-                    min_lr=config['learning_rate_min'],
-                    verbose=1
                 )
             ]
 
@@ -698,38 +616,37 @@ class IndividualFeedbackRetrainingManager:
             y_val = training_data['y_val']
             weights_train = training_data['weights_train']
 
-            print(f"\n🚀 Début du re-entraînement adaptatif...")
-
             # Re-entraînement ciblé
+            print(f"\n🚀 Début du re-entraînement ciblé...")
+
             history = model_retrained.fit(
                 [X_text_train, X_num_train], y_train,
                 validation_data=([X_text_val, X_num_val], y_val),
-                batch_size=config['batch_size'],
-                epochs=config['epochs'],
+                batch_size=self.retrain_config['batch_size'],
+                epochs=self.retrain_config['epochs'],
                 sample_weight=weights_train,
                 callbacks=callbacks,
                 verbose=1
             )
 
-            print(f"✅ Re-entraînement tentative #{attempt_number} terminé")
+            print(f"✅ Re-entraînement terminé")
 
             return model_retrained, history
 
         except Exception as e:
-            print(f"❌ Erreur re-entraînement tentative #{attempt_number}: {e}")
+            print(f"❌ Erreur re-entraînement: {e}")
             import traceback
             traceback.print_exc()
             return None, None
 
-    def validate_feedback_correction(self, retrained_model, feedback_data, attempt_number=1):
+    def validate_feedback_correction(self, retrained_model, feedback_data):
         """
-        Valide que LE feedback spécifique est maintenant corrigé avec critères adaptatifs
+        Valide que LE feedback spécifique est maintenant corrigé
         """
-        print(f"\n🔍 VALIDATION DE LA CORRECTION (Tentative #{attempt_number})")
+        print(f"\n🔍 VALIDATION DE LA CORRECTION DU FEEDBACK #{feedback_data['id']}")
         print("=" * 60)
 
         try:
-            # AJOUTER CETTE PARTIE MANQUANTE - Préparation des données
             # Préparer le texte du feedback pour test
             processed_text = self.preprocess_text(feedback_data['text'], feedback_data.get('language', 'en'))
 
@@ -765,84 +682,61 @@ class IndividualFeedbackRetrainingManager:
             new_pred_proba = retrained_model.predict([X_text, X_num], verbose=0)[0][0]
             new_pred_class_int = int(new_pred_proba > 0.5)
             new_pred_class = self.label_encoder.inverse_transform([new_pred_class_int])[0]
-            # FIN DE LA PARTIE À AJOUTER
 
-            # Calculs de confiance et amélioration
-            confidence_score = abs(new_pred_proba - 0.5) * 2
-            original_confidence = abs(original_pred_proba - 0.5) * 2
-            confidence_improvement = confidence_score - original_confidence
+            # Calculer la confiance
+            confidence_score = abs(new_pred_proba - 0.5) * 2  # 0 à 1
 
-            # Critères adaptatifs selon la tentative
-            min_confidence = self.deployment_criteria['min_confidence']
-            if attempt_number > 5 and self.deployment_criteria['allow_confidence_relaxation']:
-                min_confidence = self.deployment_criteria['min_confidence_relaxed']
-                print(f"🔧 Critères assouplis après {attempt_number} tentatives")
-
+            # Vérifier si la correction a fonctionné
             expected_label = feedback_data['label']
             is_corrected = (new_pred_class == expected_label)
-            confidence_sufficient = confidence_score >= min_confidence
-            shows_improvement = confidence_improvement >= self.deployment_criteria['learning_progress_threshold']
+            confidence_sufficient = confidence_score >= self.deployment_criteria['min_confidence']
 
-            print(f"📊 RÉSULTATS DE LA VALIDATION (Tentative #{attempt_number}):")
+            print(f"📊 RÉSULTATS DE LA VALIDATION:")
             print(f"   Texte testé: {feedback_data['text'][:100]}...")
             print(f"   Label attendu: {expected_label}")
             print(f"   Prédiction originale: {original_pred_class} (prob: {original_pred_proba:.3f})")
             print(f"   Nouvelle prédiction: {new_pred_class} (prob: {new_pred_proba:.3f})")
-            print(f"   Confiance: {confidence_score:.3f} (min requis: {min_confidence:.3f})")
-            print(f"   Amélioration: {confidence_improvement:+.3f}")
+            print(f"   Confiance: {confidence_score:.3f}")
             print(f"   Correction réussie: {'✅' if is_corrected else '❌'}")
             print(f"   Confiance suffisante: {'✅' if confidence_sufficient else '❌'}")
 
             validation_result = {
                 'feedback_id': feedback_data['id'],
-                'attempt_number': attempt_number,
                 'expected_label': expected_label,
                 'original_prediction': original_pred_class,
                 'original_probability': float(original_pred_proba),
-                'original_confidence': float(original_confidence),
                 'new_prediction': new_pred_class,
                 'new_probability': float(new_pred_proba),
-                'confidence_score': float(confidence_score),
-                'confidence_improvement': float(confidence_improvement),
+                'confidence_score': confidence_score,
                 'is_corrected': is_corrected,
                 'confidence_sufficient': confidence_sufficient,
-                'shows_improvement': shows_improvement,
-                'validation_passed': is_corrected and confidence_sufficient,
-                'criteria_used': {
-                    'min_confidence': min_confidence,
-                    'relaxed_criteria': attempt_number > 5
-                }
+                'validation_passed': is_corrected and confidence_sufficient
             }
-
-            # Tracking du meilleur résultat
-            if (self.best_result_so_far is None or
-                    confidence_score > self.best_result_so_far.get('confidence_score', 0)):
-                self.best_result_so_far = validation_result.copy()
-                print(f"🌟 NOUVEAU MEILLEUR RÉSULTAT enregistré!")
 
             if validation_result['validation_passed']:
                 print(f"\n🎉 VALIDATION RÉUSSIE!")
                 print(f"   Le feedback a été corrigé avec confiance suffisante")
-                self.consecutive_failures = 0
+                self.consecutive_failures = 0  # Reset compteur d'échecs
             else:
-                print(f"\n⚠️ VALIDATION ÉCHOUÉE pour tentative #{attempt_number}")
+                print(f"\n❌ VALIDATION ÉCHOUÉE!")
                 if not is_corrected:
                     print(f"   Le modèle n'a pas appris la correction")
                 if not confidence_sufficient:
-                    print(f"   Confiance insuffisante ({confidence_score:.3f} < {min_confidence:.3f})")
-                if shows_improvement:
-                    print(f"   ✅ Mais amélioration détectée (+{confidence_improvement:.3f})")
+                    print(
+                        f"   Confiance insuffisante ({confidence_score:.3f} < {self.deployment_criteria['min_confidence']:.3f})")
+                self.consecutive_failures += 1
 
             return validation_result
 
         except Exception as e:
-            print(f"❌ Erreur validation tentative #{attempt_number}: {e}")
+            print(f"❌ Erreur validation correction: {e}")
+            self.consecutive_failures += 1
             return {
                 'feedback_id': feedback_data['id'],
-                'attempt_number': attempt_number,
                 'validation_passed': False,
                 'error': str(e)
             }
+
     def trigger_api_reload(self):
         """Déclenche le rechargement du modèle dans l'API via un appel HTTP"""
         try:
@@ -1072,12 +966,11 @@ class IndividualFeedbackRetrainingManager:
             return False
 
     def process_single_feedback(self, dataset_path="./data/full_merged_dataset_fr_en_spam.csv"):
-        """
-        FONCTION PRINCIPALE MODIFIÉE: Traite UN feedback avec RE-ENTRAÎNEMENT CONTINU jusqu'à réussite
-        """
-        print("\n" + "🔄" * 50)
-        print("TRAITEMENT FEEDBACK AVEC RE-ENTRAÎNEMENT CONTINU")
-        print("🔄" * 50)
+        """FONCTION PRINCIPALE: Traite UN SEUL feedback avec re-entraînement immédiat"""
+        print("\n" + "🎯" * 50)
+        print("TRAITEMENT D'UN FEEDBACK INDIVIDUEL")
+        print("RE-ENTRAÎNEMENT + VALIDATION + DÉPLOIEMENT IMMÉDIAT")
+        print("🎯" * 50)
 
         start_time = datetime.now()
 
@@ -1092,9 +985,13 @@ class IndividualFeedbackRetrainingManager:
             print("ℹ️ Aucun feedback à traiter")
             return False
 
+        # Vérifier les échecs consécutifs
+        if self.consecutive_failures >= self.deployment_criteria['max_consecutive_failures']:
+            print(f"🚨 ARRÊT: {self.consecutive_failures} échecs consécutifs")
+            print("💡 Le modèle semble avoir des difficultés d'apprentissage")
+            return False
+
         print(f"🎯 Traitement du feedback #{feedback_data['id']}")
-        print(f"📊 Prédiction erronée: {feedback_data['original_prediction']}")
-        print(f"✅ Correction attendue: {feedback_data['label']}")
 
         # Étape 3: Créer une sauvegarde
         backup_dir = self.create_backup_for_feedback(feedback_data['id'])
@@ -1102,144 +999,76 @@ class IndividualFeedbackRetrainingManager:
             print("❌ Impossible de créer la sauvegarde - Arrêt")
             return False
 
-        # Initialisation pour la boucle
-        self.current_attempt = 0
-        self.best_result_so_far = None
-        success = False
-        final_model = None
-        final_validation_result = None
+        # Étape 4: Créer le dataset d'entraînement
+        training_dataset = self.create_individual_training_dataset(feedback_data, dataset_path)
+        if training_dataset.empty:
+            print("❌ Impossible de créer le dataset d'entraînement")
+            return False
 
-        # 🔄 BOUCLE DE RE-ENTRAÎNEMENT CONTINU
-        while self.current_attempt < self.deployment_criteria['max_attempts_per_feedback']:
-            self.current_attempt += 1
+        # Étape 5: Préparer les données
+        training_data = self.prepare_training_data(training_dataset)
+        if training_data is None:
+            print("❌ Échec de la préparation des données")
+            return False
 
-            print(
-                f"\n{'🎯' * 20} TENTATIVE {self.current_attempt}/{self.deployment_criteria['max_attempts_per_feedback']} {'🎯' * 20}")
+        # Étape 6: Re-entraînement ciblé
+        retrained_model, history = self.perform_individual_retraining(training_data, feedback_data)
+        if retrained_model is None:
+            print("❌ Échec du re-entraînement")
+            validation_result = {'validation_passed': False, 'error': 'retraining_failed'}
+            self.mark_feedback_as_processed(feedback_data['id'], deployed=False, validation_result=validation_result)
+            self.log_retraining_attempt(feedback_data, validation_result, False, backup_dir)
+            return False
 
-            # Étape 4: Créer le dataset d'entraînement adaptatif
-            training_dataset = self.create_individual_training_dataset(
-                feedback_data, dataset_path, self.current_attempt
-            )
-            if training_dataset.empty:
-                print(f"❌ Impossible de créer le dataset pour tentative {self.current_attempt}")
-                continue
+        # Étape 7: Validation de la correction
+        validation_result = self.validate_feedback_correction(retrained_model, feedback_data)
 
-            # Étape 5: Préparer les données
-            training_data = self.prepare_training_data(training_dataset)
-            if training_data is None:
-                print(f"❌ Échec de la préparation des données pour tentative {self.current_attempt}")
-                continue
-
-            # Étape 6: Re-entraînement adaptatif
-            retrained_model, history = self.perform_individual_retraining(
-                training_data, feedback_data, self.current_attempt
-            )
-            if retrained_model is None:
-                print(f"❌ Échec du re-entraînement pour tentative {self.current_attempt}")
-                continue
-
-            # Étape 7: Validation de la correction
-            validation_result = self.validate_feedback_correction(
-                retrained_model, feedback_data, self.current_attempt
-            )
-
-            # Étape 8: Vérifier le succès
-            if validation_result['validation_passed']:
-                print(f"\n🎉 SUCCÈS À LA TENTATIVE {self.current_attempt}!")
-                print(f"✅ Le feedback a été corrigé avec succès")
-                success = True
-                final_model = retrained_model
-                final_validation_result = validation_result
-                break
-            else:
-                print(f"\n⚠️ TENTATIVE {self.current_attempt} ÉCHOUÉE")
-                if validation_result.get('shows_improvement', False):
-                    print(f"📈 Mais amélioration détectée, on continue...")
-                else:
-                    print(f"❌ Pas d'amélioration, adaptation des paramètres...")
-
-                # Pause entre tentatives
-                if self.current_attempt < self.deployment_criteria['max_attempts_per_feedback']:
-                    print(f"⏳ Pause de 2 secondes avant prochaine tentative...")
-                    time.sleep(2)
-
-        # Étape 9: Décision finale
+        # Étape 8: Décision de déploiement
+        should_deploy = validation_result['validation_passed']
         deployment_success = False
-        if success:
-            print(f"\n🎉 FEEDBACK CORRIGÉ AVEC SUCCÈS!")
-            deployment_success = self.deploy_retrained_model(
-                final_model, feedback_data, backup_dir, final_validation_result
-            )
+
+        if should_deploy:
+            deployment_success = self.deploy_retrained_model(retrained_model, feedback_data, backup_dir,
+                                                             validation_result)
         else:
-            print(f"\n❌ ÉCHEC APRÈS {self.current_attempt} TENTATIVES")
-            if self.best_result_so_far and self.best_result_so_far.get('shows_improvement', False):
-                print(f"🤔 Meilleur résultat obtenu à la tentative #{self.best_result_so_far['attempt_number']}")
-                print(f"📊 Confiance: {self.best_result_so_far['confidence_score']:.3f}")
-                # Optionnel: déployer le meilleur modèle même imparfait
+            print(f"\n🛑 PAS DE DÉPLOIEMENT")
+            print(f"   Le feedback n'a pas été corrigé correctement")
 
-            self.consecutive_failures += 1
-
-        # Étape 10: Marquer comme traité
+        # Étape 9: Marquer comme traité
         self.mark_feedback_as_processed(feedback_data['id'], deployed=deployment_success,
-                                        validation_result=final_validation_result or self.best_result_so_far)
+                                        validation_result=validation_result)
 
-        # Résumé final
+        # Étape 10: Log de la tentative
+        self.log_retraining_attempt(feedback_data, validation_result, deployment_success, backup_dir)
+
+        # Résumé
         end_time = datetime.now()
         duration = end_time - start_time
 
-        print(f"\n🎉 RÉSUMÉ DU TRAITEMENT CONTINU")
+        print(f"\n🎉 RÉSUMÉ DU TRAITEMENT INDIVIDUEL")
         print("=" * 50)
         print(f"⏱️ Durée: {duration}")
         print(f"🎯 Feedback traité: #{feedback_data['id']}")
-        print(f"🔄 Tentatives utilisées: {self.current_attempt}")
         print(f"🔧 Prédiction originale: {feedback_data['original_prediction']}")
         print(f"✅ Correction attendue: {feedback_data['label']}")
 
-        if success:
+        if validation_result and 'new_prediction' in validation_result:
+            print(f"🔄 Nouvelle prédiction: {validation_result['new_prediction']}")
+            print(f"📊 Confiance: {validation_result.get('confidence_score', 0):.3f}")
+
+        if deployment_success:
             print(f"\n🚀 RÉSULTAT: MODÈLE RE-ENTRAÎNÉ ET DÉPLOYÉ!")
-            print(f"   Feedback corrigé à la tentative #{self.current_attempt}")
-            print(f"   Confiance finale: {final_validation_result['confidence_score']:.3f}")
+            print(f"   Le feedback a été corrigé avec succès")
+            print(f"   Version du modèle: {self.total_retrainings + 1}")
+            print(f"💾 Sauvegarde: {backup_dir}")
+            print(f"🔄 L'API devrait maintenant utiliser le nouveau modèle automatiquement")
         else:
             print(f"\n🛑 RÉSULTAT: Modèle original conservé")
-            print(f"💡 Le re-entraînement n'a pas réussi à corriger ce feedback")
-            if self.best_result_so_far:
-                print(f"📊 Meilleure confiance atteinte: {self.best_result_so_far['confidence_score']:.3f}")
+            print(f"💡 Le re-entraînement n'a pas réussi à corriger le feedback")
+            print(f"📊 Échecs consécutifs: {self.consecutive_failures}")
 
         return deployment_success
 
-    def mark_feedback_as_processed(self, feedback_id, deployed=True, validation_result=None):
-        """Marque LE feedback comme traité avec info sur les tentatives"""
-        print(f"\n📝 MARQUAGE DU FEEDBACK #{feedback_id} COMME TRAITÉ")
-        print("=" * 50)
-
-        try:
-            df = pd.read_csv(self.feedback_csv_path)
-
-            # Marquer le feedback spécifique
-            df.loc[feedback_id, 'processed'] = True
-            df.loc[feedback_id, 'processed_at'] = datetime.now().isoformat()
-            df.loc[feedback_id, 'deployed'] = bool(deployed)
-            df.loc[feedback_id, 'retraining_method'] = 'continuous_individual_feedback'
-            df.loc[feedback_id, 'attempts_used'] = int(self.current_attempt)  # NOUVEAU
-
-            if validation_result:
-                df.loc[feedback_id, 'correction_validated'] = bool(validation_result.get('validation_passed', False))
-                df.loc[feedback_id, 'new_prediction'] = str(validation_result.get('new_prediction', ''))
-                df.loc[feedback_id, 'final_confidence'] = float(validation_result.get('confidence_score', 0.0))
-                df.loc[feedback_id, 'confidence_improvement'] = float(
-                    validation_result.get('confidence_improvement', 0.0))
-
-            # Sauvegarder
-            df.to_csv(self.feedback_csv_path, index=False)
-
-            status = "et déployé" if deployed else "mais non déployé"
-            print(f"✅ Feedback #{feedback_id} marqué comme traité {status}")
-            print(f"📊 Tentatives utilisées: {self.current_attempt}")
-            return True
-
-        except Exception as e:
-            print(f"❌ Erreur marquage feedback: {e}")
-            return False
     def run_continuous_individual_processing(self, dataset_path="./data/test_dataset.csv", max_iterations=None):
         """Traite en continu CHAQUE feedback individuellement"""
         print("\n" + "🔄" * 50)
