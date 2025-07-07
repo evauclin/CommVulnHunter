@@ -17,8 +17,8 @@ __pycache__/
 app/data/dataset_fr_en.csv
 app/data/full_merged_dataset_fr_en_spam.csv
 app/data/*.csv
-model/*.keras
-model/*.pkl
+model/prod/prod/*.keras
+model/prod/*.pkl
 data/user_feedbacks.csv
 logs/
 *.log
@@ -26,4 +26,4 @@ logs/
 # Gardez seulement les fichiers essentiels
 !app/data/dataset_sample.csv
 !app/data/.gitkeep
-!model/.gitkeep
+!model/prod/.gitkeep
