@@ -709,6 +709,171 @@ def save_feedback_to_csv(feedback_data):
         print(f"❌ Erreur sauvegarde feedback: {e}")
         return False
 
+def run_finetuning_script():
+    """
+    Lance le script de fine-tuning en arrière-plan et AFFICHE LES LOGS EN TEMPS RÉEL.
+    """
+    global IS_FINETUNING_RUNNING
+
+    print("🚀 DÉMARRAGE DU FINE-TUNING AUTOMATIQUE (avec logs en temps réel)")
+    print("=" * 60)
+
+    try:
+        # Marquer que le fine-tuning est en cours
+        IS_FINETUNING_RUNNING = True
+
+        script_path = Path("traitement.py")
+        if not script_path.exists():
+            print(f"❌ Script de fine-tuning non trouvé: {script_path}")
+            IS_FINETUNING_RUNNING = False
+            return False
+
+        # Lancer le processus avec Popen pour capturer la sortie en temps réel
+        process = subprocess.Popen(
+            ["python", "-u", "traitement.py"],  # Le flag -u est CRUCIAL pour désactiver le buffering
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT, # Redirige stderr vers stdout pour tout voir
+            text=True,
+            encoding='utf-8',
+            errors='replace' # Gère les erreurs de décodage
+        )
+
+        print("🎯 Processus de fine-tuning lancé. Affichage des logs...")
+        print("-" * 60)
+
+        # Lire la sortie ligne par ligne et l'afficher
+        while True:
+            output_line = process.stdout.readline()
+            if output_line == '' and process.poll() is not None:
+                break
+            if output_line:
+                # Affiche la ligne dans la console de l'API
+                print(f"FT-LOG | {output_line.strip()}", flush=True)
+
+        # Attendre la fin du processus et récupérer le code de retour
+        return_code = process.poll()
+        print("-" * 60)
+
+        if return_code == 0:
+            print("✅ FINE-TUNING TERMINÉ AVEC SUCCÈS!")
+            print("💡 Pour utiliser le nouveau modèle, redémarrez l'API si le déploiement a eu lieu:")
+            print("   docker-compose restart fastapi")
+            return True
+        else:
+            print(f"❌ FINE-TUNING ÉCHOUÉ! (Code de retour: {return_code})")
+            return False
+
+    except Exception as e:
+        print(f"❌ Erreur critique lors du lancement du fine-tuning: {e}")
+        return False
+    finally:
+        # S'assurer que le statut est bien réinitialisé
+        IS_FINETUNING_RUNNING = False
+        print("=" * 60)
+        print("🚀 Processus de fine-tuning terminé.")
+
+def trigger_automatic_finetuning():
+    """
+    Déclenche le fine-tuning automatique en arrière-plan
+    """
+    global IS_FINETUNING_RUNNING
+
+    # Utiliser un verrou pour éviter les conditions de course
+    with FINETUNING_LOCK:
+        if IS_FINETUNING_RUNNING:
+            print("⚠️ Fine-tuning déjà en cours, ignorer le déclenchement")
+            return False
+
+        if not AUTO_FINETUNING_ENABLED:
+            print("⚠️ Fine-tuning automatique désactivé")
+            return False
+
+        # Lancer le fine-tuning dans un thread séparé
+        finetuning_thread = threading.Thread(
+            target=run_finetuning_script,
+            name="AutoFineTuning"
+        )
+        finetuning_thread.daemon = True
+        finetuning_thread.start()
+
+        # ---- LA MODIFICATION EST ICI ----
+        # Ajout d'un \n pour éviter le collage des logs
+        print("\n🚀 Fine-tuning automatique lancé en arrière-plan.")
+        # -------------------------------
+        return True
+
+
+def check_and_trigger_finetuning():
+    """
+    Vérifie si les conditions pour déclencher le fine-tuning sont remplies et lance si nécessaire
+    """
+    try:
+        negative_count = count_negative_feedbacks()
+
+        if negative_count >= NEGATIVE_FEEDBACK_THRESHOLD:
+            print(f"🚨 Seuil de fine-tuning atteint: {negative_count}/{NEGATIVE_FEEDBACK_THRESHOLD} feedbacks négatifs")
+
+            if AUTO_FINETUNING_ENABLED and not IS_FINETUNING_RUNNING:
+                print("🚀 Déclenchement automatique du fine-tuning...")
+                return trigger_automatic_finetuning()
+            elif IS_FINETUNING_RUNNING:
+                print("⚠️ Fine-tuning déjà en cours")
+                return False
+            else:
+                print("💡 Fine-tuning automatique désactivé, déclenchement manuel requis")
+                return False
+        else:
+            print(f"📊 Feedbacks négatifs: {negative_count}/{NEGATIVE_FEEDBACK_THRESHOLD}")
+            return False
+
+    except Exception as e:
+        print(f"❌ Erreur vérification fine-tuning: {e}")
+        return False
+
+
+def reload_model_artifacts():
+    """
+    Recharge le modèle et tous les artefacts depuis le disque
+    """
+    global model, tokenizer, scaler, label_encoder, MAX_SEQUENCE_LENGTH, SUSPICIOUS_WORDS_SET, STOP_WORDS
+
+    print("🔄 RECHARGEMENT DU MODÈLE EN COURS...")
+    print("=" * 50)
+
+    try:
+        # Sauvegarder l'ancien modèle au cas où
+        old_model = model
+
+        # Recharger tous les artefacts
+        success = load_model_artifacts()
+
+        if success:
+            print("✅ MODÈLE RECHARGÉ AVEC SUCCÈS!")
+            print(f"   Nouvelle longueur de séquence: {MAX_SEQUENCE_LENGTH}")
+            print(f"   Vocabulaire: {len(tokenizer.word_index)} mots")
+
+            # Test rapide du nouveau modèle
+            try:
+                test_text = "Test de validation du nouveau modèle"
+                test_result = perform_prediction(test_text)
+                print(f"   Test de validation réussi: {test_result['prediction']}")
+
+                return True
+            except Exception as e:
+                print(f"❌ Test de validation échoué: {e}")
+                # Restaurer l'ancien modèle si possible
+                if old_model is not None:
+                    model = old_model
+                    print("🔄 Ancien modèle restauré")
+                return False
+        else:
+            print("❌ Échec du rechargement")
+            return False
+
+    except Exception as e:
+        print(f"❌ Erreur critique lors du rechargement: {e}")
+        return False
+
 
 # [Garder toutes vos autres fonctions de fine-tuning existantes]
 
