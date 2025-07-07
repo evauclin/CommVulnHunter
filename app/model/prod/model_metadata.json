@@ -1,0 +1,41 @@
+{
+  "model_type": "LSTM_Hybrid_FR_EN",
+  "model_file": "best_lstm_model.keras",
+  "tokenizer_file": "tokenizer.pkl",
+  "scaler_file": "scaler.pkl",
+  "label_encoder_file": "label_encoder.pkl",
+  "config": {
+    "embedding_dim": 128,
+    "lstm_units": 64,
+    "dense_units": 32,
+    "dropout_rate": 0.4,
+    "learning_rate": 0.001,
+    "batch_size": 128,
+    "epochs": 30,
+    "patience": 2,
+    "suspicious_words_path": "suspicious_words.json",
+    "vocab_coverage": 0.95,
+    "sequence_percentile": 95,
+    "min_word_frequency": 2,
+    "smart_percentile_enabled": true,
+    "min_sequence_length": 30,
+    "max_absolute_length": 800,
+    "enable_variable_length": true,
+    "max_vocab_size": 44308,
+    "max_sequence_length": 346
+  },
+  "vocabulary_size": 469792,
+  "actual_vocab_size": 44308,
+  "classes": [
+    "benign",
+    "phishing"
+  ],
+  "creation_date": "2025-06-24T23:07:47.520911",
+  "smart_percentile_enabled": true,
+  "variable_length_enabled": true,
+  "sequence_analysis": {
+    "min_length": 30,
+    "max_length": 800,
+    "calculated_length": 346
+  }
+}
