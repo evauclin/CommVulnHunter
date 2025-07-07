@@ -11,33 +11,86 @@ from tensorflow.keras.preprocessing.sequence import pad_sequences
 from tensorflow.keras.optimizers import Adam
 from tensorflow.keras.callbacks import EarlyStopping, ReduceLROnPlateau
 from sklearn.model_selection import train_test_split
-from sklearn.metrics import classification_report, accuracy_score, precision_score, recall_score, f1_score
+from sklearn.metrics import classification_report, accuracy_score, precision_score, recall_score, f1_score, \
+    roc_auc_score, confusion_matrix
 from sklearn.utils.class_weight import compute_class_weight
 import nltk
 from nltk.corpus import stopwords
+import shutil
+import os
+import time  # Ajoutez cet import si pas déjà présent
 
 # Configuration pour la reproductibilité
 tf.random.set_seed(42)
 np.random.seed(42)
 
 
-class FineTuningManager:
+# Ligne ~27, remplacez la fonction convert_numpy_types par :
+def convert_numpy_types(obj):
+    """Convertit récursivement les types NumPy/Pandas en types Python natifs SANS tout convertir en string"""
+    import numpy as np
+    import pandas as pd
+
+    if obj is None:
+        return None
+    elif isinstance(obj, dict):
+        return {str(key): convert_numpy_types(value) for key, value in obj.items()}
+    elif isinstance(obj, (list, tuple)):
+        return [convert_numpy_types(item) for item in obj]
+    elif isinstance(obj, (np.bool_, bool)):
+        return bool(obj)
+    elif isinstance(obj, (np.integer, np.int8, np.int16, np.int32, np.int64)):
+        return int(obj)  # GARDER comme int Python
+    elif isinstance(obj, (np.floating, np.float16, np.float32, np.float64)):
+        return float(obj)  # GARDER comme float Python
+    elif isinstance(obj, np.ndarray):
+        return obj.tolist()
+    elif isinstance(obj, pd.Series):
+        return obj.tolist()
+    elif isinstance(obj, pd.DataFrame):
+        return obj.to_dict('records')
+    elif isinstance(obj, pd.Timestamp):
+        return obj.isoformat()
+    elif hasattr(obj, 'item'):  # Scalaires NumPy
+        try:
+            # 🔧 CORRECTION CRITIQUE: Préserver le type
+            value = obj.item()
+            if isinstance(value, (int, float, bool)):
+                return value  # Garder le type original
+            else:
+                return str(value)
+        except:
+            return str(obj)
+    elif hasattr(obj, 'tolist'):  # Arrays NumPy
+        try:
+            return obj.tolist()
+        except:
+            return str(obj)
+    else:
+        # 🔧 CRITIQUE: Ne convertir en string QUE si nécessaire
+        if isinstance(obj, (int, float, bool, str)):
+            return obj  # Types Python natifs : ne pas toucher !
+        else:
+            return str(obj)  # Conversion en string seulement pour les types non supportés
+
+class IndividualFeedbackRetrainingManager:
     """
-    Gestionnaire pour le fine-tuning du modèle LSTM basé sur les feedbacks négatifs
+    Gestionnaire qui RE-ENTRAÎNE le modèle pour CHAQUE feedback négatif individuel
+    et déploie immédiatement si la correction fonctionne
     """
 
-    def __init__(self, model_dir="./model", data_dir="./data"):
+    def __init__(self, model_dir="./model/model_prod", data_dir="./data"):
         """
-        Initialise le gestionnaire de fine-tuning
+        Initialise le gestionnaire de re-entraînement par feedback individuel
 
         Args:
-            model_dir: Répertoire contenant les artefacts du modèle
+            model_dir: Répertoire contenant les artefacts du modèle de production
             data_dir: Répertoire contenant les données et feedbacks
         """
         self.model_dir = Path(model_dir)
         self.data_dir = Path(data_dir)
 
-        # Chemins des artefacts
+        # Chemins des artefacts du modèle de production
         self.model_path = self.model_dir / "best_lstm_model.keras"
         self.tokenizer_path = self.model_dir / "tokenizer.pkl"
         self.scaler_path = self.model_dir / "scaler.pkl"
@@ -48,6 +101,9 @@ class FineTuningManager:
         # Chemin du fichier de feedbacks
         self.feedback_csv_path = self.data_dir / "user_feedbacks.csv"
 
+        # Log des re-entraînements individuels
+        self.retraining_log_path = self.data_dir / "individual_retraining_log.json"
+
         # Artefacts du modèle
         self.model = None
         self.tokenizer = None
@@ -56,23 +112,93 @@ class FineTuningManager:
         self.metadata = None
         self.suspicious_words_set = set()
 
-        # Configuration fine-tuning
-        self.finetune_config = {
-            'learning_rate': 0.00005,  # Learning rate très faible
-            'epochs': 10,  # Peu d'époques pour éviter l'overfitting
-            'batch_size': 32,  # Petit batch size
-            'patience': 3,  # Patience réduite
-            'validation_split': 0.2,  # Split pour validation
-            'sample_size': 200  # Taille échantillon dataset principal
+        # Configuration re-entraînement pour feedback individuel
+        self.retrain_config = {
+            'learning_rate_initial': 0.001,
+            'learning_rate_min': 0.00001,
+            'learning_rate_decay': 0.8,  # Réduction à chaque tentative
+            'epochs_initial': 10,
+            'epochs_max': 50,
+            'epochs_increment': 5,  # +5 époques à chaque tentative
+            'batch_size': 5,
+            'patience_initial': 3,
+            'patience_max': 10,
+            'patience_increment': 2,
+            'base_sample_size': 50,
+            'validation_split': 0.3,
+            'feedback_weight_initial': 6.0,
+            'feedback_weight_max': 15.0,  # Poids plus agressif si nécessaire
+            'feedback_weight_increment': 1.5,
+            'support_weight': 1.0,
+            'safety_backup': True,
+            'max_gradient_norm': 1.0
         }
+
+        # Critères de déploiement pour feedback individuel
+        self.deployment_criteria = {
+            'require_feedback_corrected': True,
+            'min_confidence': 0.6,
+            'min_confidence_relaxed': 0.5,  # Après plusieurs échecs
+            'max_attempts_per_feedback': 10,  # NOUVEAU: Maximum 10 tentatives
+            'learning_progress_threshold': 0.05,
+            'allow_confidence_relaxation': True,  # Assouplir après 5 échecs
+            'safety_threshold': 0.80,
+            'max_consecutive_failures': 5  # Changé de 3 à 5
+        }
+
+        # Compteurs
+        self.current_attempt = 0
+        self.best_result_so_far = None
+        self.consecutive_failures = 0
+        self.total_retrainings = 0
+        self.successful_deployments = 0
 
         # Charger stopwords
         self._setup_stopwords()
 
-        print("🎯 FineTuningManager initialisé")
-        print(f"   Model dir: {self.model_dir}")
-        print(f"   Data dir: {self.data_dir}")
+        print("🎯 IndividualFeedbackRetrainingManager initialisé")
+        print(f"   APPROCHE: UN feedback négatif = UN re-entraînement")
+        print(f"   DÉPLOIEMENT: Immédiat si la correction fonctionne")
+        print(f"   SÉCURITÉ: Confiance ≥ {self.deployment_criteria['min_confidence']:.0%}")
 
+    def get_adaptive_config_for_attempt(self, attempt_number):
+        """
+        Génère une configuration adaptée selon le numéro de tentative
+        """
+        config = self.retrain_config.copy()
+
+        # Adapter le learning rate (décroissant)
+        lr_reduction = config['learning_rate_decay'] ** (attempt_number - 1)
+        config['learning_rate'] = max(
+            config['learning_rate_initial'] * lr_reduction,
+            config['learning_rate_min']
+        )
+
+        # Adapter les époques (croissant)
+        config['epochs'] = min(
+            config['epochs_initial'] + ((attempt_number - 1) * config['epochs_increment']),
+            config['epochs_max']
+        )
+
+        # Adapter la patience (croissant)
+        config['patience'] = min(
+            config['patience_initial'] + ((attempt_number - 1) * config['patience_increment']),
+            config['patience_max']
+        )
+
+        # Adapter le poids du feedback (croissant)
+        config['feedback_weight'] = min(
+            config['feedback_weight_initial'] + ((attempt_number - 1) * config['feedback_weight_increment']),
+            config['feedback_weight_max']
+        )
+
+        print(f"🔧 Configuration tentative #{attempt_number}:")
+        print(f"   Learning rate: {config['learning_rate']:.6f}")
+        print(f"   Époques: {config['epochs']}")
+        print(f"   Patience: {config['patience']}")
+        print(f"   Poids feedback: {config['feedback_weight']:.1f}")
+
+        return config
     def _setup_stopwords(self):
         """Configure les stopwords NLTK"""
         try:
@@ -86,16 +212,12 @@ class FineTuningManager:
                 'en': set(stopwords.words('english')),
                 'fr': set(stopwords.words('french'))
             }
-            print("✅ Stopwords configurés")
         except Exception as e:
             print(f"⚠️ Erreur stopwords: {e}")
-            # Fallback basique
             self.stop_words = {
                 'en': {'the', 'a', 'an', 'and', 'or', 'but', 'in', 'on', 'at'},
                 'fr': {'le', 'la', 'les', 'un', 'une', 'des', 'et', 'ou', 'mais'}
             }
-
-    # CORRECTION À APPLIQUER DANS traitement.py
 
     def load_model_artifacts(self):
         """
@@ -106,17 +228,17 @@ class FineTuningManager:
         print("=" * 60)
 
         try:
-            # Charger le modèle EN PREMIER pour obtenir la vraie longueur de séquence
+            # Charger le modèle EN PREMIER
             if not self.model_path.exists():
                 raise FileNotFoundError(f"Modèle non trouvé: {self.model_path}")
 
             self.model = load_model(str(self.model_path))
             print(f"✅ Modèle chargé: {self.model_path}")
 
-            # CORRECTION CRITIQUE: Détecter la vraie longueur de séquence depuis le modèle
+            # Détecter la longueur de séquence
             model_input_shape = self.model.inputs[0].shape
             actual_sequence_length = model_input_shape[1]
-            print(f"🔍 Longueur de séquence détectée depuis le modèle: {actual_sequence_length}")
+            print(f"🔍 Longueur de séquence détectée: {actual_sequence_length}")
 
             # Charger le tokenizer
             with open(self.tokenizer_path, 'rb') as f:
@@ -133,34 +255,52 @@ class FineTuningManager:
                 self.label_encoder = pickle.load(f)
             print(f"✅ Label encoder chargé: {self.label_encoder.classes_}")
 
-            # Charger les métadonnées
-            with open(self.metadata_path, 'r') as f:
-                self.metadata = json.load(f)
-            print("✅ Métadonnées chargées")
+            # 🔧 CORRECTION: Chargement sécurisé des métadonnées
+            try:
+                if self.metadata_path.exists():
+                    with open(self.metadata_path, 'r', encoding='utf-8') as f:
+                        content = f.read().strip()
+                        if content:
+                            self.metadata = json.loads(content)
+                            print("✅ Métadonnées chargées depuis le fichier")
+                        else:
+                            print("⚠️ Fichier métadonnées vide")
+                            self.metadata = {}
+                else:
+                    print("⚠️ Fichier métadonnées non trouvé")
+                    self.metadata = {}
+            except (json.JSONDecodeError, UnicodeDecodeError) as e:
+                print(f"⚠️ Erreur lecture métadonnées: {e}")
+                print("🔧 Création de nouvelles métadonnées")
+                self.metadata = {}
 
-            # CORRECTION CRITIQUE: Utiliser la longueur détectée du modèle
+            # Créer/corriger la configuration
             if 'config' not in self.metadata:
                 self.metadata['config'] = {}
 
-            # Forcer l'utilisation de la longueur réelle du modèle
+            # Utiliser la longueur détectée du modèle
             self.metadata['config']['max_sequence_length'] = actual_sequence_length
-            print(f"🔧 Longueur de séquence corrigée: {actual_sequence_length}")
+            print(f"🔧 Longueur de séquence configurée: {actual_sequence_length}")
 
             # Charger les mots suspects
             if self.suspicious_words_path.exists():
-                with open(self.suspicious_words_path, 'r') as f:
-                    suspicious_data = json.load(f)
-                self.suspicious_words_set = set(
-                    suspicious_data.get('en', []) + suspicious_data.get('fr', [])
-                )
-                print(f"✅ Mots suspects chargés: {len(self.suspicious_words_set)}")
+                try:
+                    with open(self.suspicious_words_path, 'r') as f:
+                        suspicious_data = json.load(f)
+                    self.suspicious_words_set = set(
+                        suspicious_data.get('en', []) + suspicious_data.get('fr', [])
+                    )
+                    print(f"✅ Mots suspects chargés: {len(self.suspicious_words_set)}")
+                except Exception as e:
+                    print(f"⚠️ Erreur mots suspects: {e}")
+                    self.suspicious_words_set = set()
             else:
                 print("⚠️ Fichier mots suspects non trouvé")
+                self.suspicious_words_set = set()
 
-            print(f"\n📋 Configuration du modèle:")
+            print(f"\n📋 Configuration finale:")
             print(f"   max_sequence_length: {self.metadata['config']['max_sequence_length']}")
-            print(f"   max_vocab_size: {self.metadata['config'].get('max_vocab_size', 'Non défini')}")
-            print(f"   Classes: {self.metadata.get('classes', self.label_encoder.classes_)}")
+            print(f"   Classes: {list(self.label_encoder.classes_)}")
 
             return True
 
@@ -169,182 +309,164 @@ class FineTuningManager:
             import traceback
             traceback.print_exc()
             return False
-    def extract_negative_feedbacks(self):
+    def get_next_unprocessed_feedback(self):
         """
-        ÉTAPE 2: Extrait les feedbacks négatifs non traités du fichier CSV
+        Récupère le PROCHAIN feedback négatif non traité (un seul à la fois)
         """
         print("\n" + "=" * 60)
-        print("ÉTAPE 2: EXTRACTION DES FEEDBACKS NÉGATIFS")
+        print("RECHERCHE DU PROCHAIN FEEDBACK NÉGATIF À TRAITER")
         print("=" * 60)
 
         if not self.feedback_csv_path.exists():
             print(f"❌ Fichier feedback non trouvé: {self.feedback_csv_path}")
-            return pd.DataFrame()
+            return None
 
         try:
-            # Charger tous les feedbacks
             df = pd.read_csv(self.feedback_csv_path)
             print(f"📊 Total feedbacks: {len(df)}")
 
-            # Filtrer les feedbacks négatifs non traités
-            negative_feedbacks = df[
+            # Filtrer UN SEUL feedback négatif non traité (le plus ancien)
+            unprocessed_negative = df[
                 (df['user_satisfaction'] == 'no') &
                 (df['processed'] == False)
-                ].copy()
+            ].copy()
 
-            print(f"🔍 Feedbacks négatifs non traités: {len(negative_feedbacks)}")
-
-            if len(negative_feedbacks) == 0:
+            if len(unprocessed_negative) == 0:
                 print("ℹ️ Aucun feedback négatif à traiter")
-                return pd.DataFrame()
+                return None
 
-            # Afficher les détails
-            print(f"\n📋 Distribution des feedbacks négatifs:")
-            if 'language_detected' in negative_feedbacks.columns:
-                lang_dist = negative_feedbacks['language_detected'].value_counts()
-                for lang, count in lang_dist.items():
-                    print(f"   {lang}: {count}")
+            # Prendre le PREMIER (plus ancien) feedback non traité
+            feedback_row = unprocessed_negative.iloc[0]
 
-            # Préparer les données pour l'entraînement
-            feedback_data = []
-            for _, row in negative_feedbacks.iterrows():
-                # Déterminer le vrai label (inverse de la prédiction)
-                predicted_class = row['predicted_class']
-                if predicted_class in ['phishing', 'spam']:
-                    true_label = 'benign'
-                else:
-                    true_label = 'phishing'
+            # Déterminer le vrai label (inverse de la prédiction erronée)
+            predicted_class = feedback_row['predicted_class']
+            if predicted_class in ['phishing', 'spam']:
+                true_label = 'benign'
+            else:
+                true_label = 'phishing'
 
-                feedback_data.append({
-                    'text': row['email_text'],
-                    'label': true_label,
-                    'language': row['language_detected'],
-                    'feedback_id': row.name,
-                    'original_prediction': predicted_class,
-                    'confidence': row['predicted_probability']
-                })
+            feedback_data = {
+                'id': feedback_row.name,  # Index dans le DataFrame
+                'text': feedback_row['email_text'],
+                'label': true_label,
+                'language': feedback_row['language_detected'],
+                'original_prediction': predicted_class,
+                'confidence': feedback_row['predicted_probability'],
+                'timestamp': feedback_row.get('timestamp', datetime.now().isoformat())
+            }
 
-            feedback_df = pd.DataFrame(feedback_data)
-            print(f"✅ Données de feedback préparées: {len(feedback_df)} échantillons")
+            print(f"🎯 FEEDBACK SÉLECTIONNÉ POUR RE-ENTRAÎNEMENT:")
+            print(f"   ID: {feedback_data['id']}")
+            print(f"   Texte: {feedback_data['text'][:100]}...")
+            print(f"   Prédiction erronée: {feedback_data['original_prediction']}")
+            print(f"   Correction attendue: {feedback_data['label']}")
+            print(f"   Confiance originale: {feedback_data['confidence']:.3f}")
 
-            return feedback_df
+            return feedback_data
 
         except Exception as e:
-            print(f"❌ Erreur extraction feedbacks: {e}")
-            return pd.DataFrame()
+            print(f"❌ Erreur récupération feedback: {e}")
+            return None
 
-    def load_dataset_sample(self, dataset_path, sample_size=200):
+    def create_individual_training_dataset(self, feedback_data, dataset_path, attempt_number=1):
         """
-        ÉTAPE 3: Charge un échantillon du dataset principal
+        Crée un dataset d'entraînement avec LE feedback + échantillon de support ADAPTATIF
         """
-        print("\n" + "=" * 60)
-        print("ÉTAPE 3: CHARGEMENT ÉCHANTILLON DATASET PRINCIPAL")
+        print(f"\n📊 CRÉATION DATASET POUR FEEDBACK INDIVIDUEL (Tentative #{attempt_number})")
         print("=" * 60)
+
+        # Configuration adaptée
+        config = self.get_adaptive_config_for_attempt(attempt_number)
 
         try:
-            if not Path(dataset_path).exists():
-                print(f"⚠️ Dataset principal non trouvé: {dataset_path}")
-                return pd.DataFrame()
+            # Dataset avec LE feedback à corriger
+            feedback_df = pd.DataFrame([{
+                'text': feedback_data['text'],
+                'label': feedback_data['label'],
+                'language': feedback_data['language'],
+                'source': 'feedback',
+                'weight': config['feedback_weight']
+            }])
 
-            # Charger le dataset
-            df = pd.read_csv(dataset_path)
-            print(f"📊 Dataset principal: {len(df)} échantillons")
+            print(f"📝 Feedback individuel ajouté (poids: {config['feedback_weight']:.1f})")
 
-            # Échantillonnage stratifié
-            if len(df) > sample_size:
-                # Créer une colonne de stratification
-                df['stratify_col'] = df['label'].astype(str) + '_' + df['language'].astype(str)
+            # Ajouter un échantillon de support ADAPTATIF
+            base_sample_df = pd.DataFrame()
+            if Path(dataset_path).exists():
+                df = pd.read_csv(dataset_path)
 
-                # Échantillonnage stratifié
-                sample_df = df.groupby('stratify_col', group_keys=False).apply(
-                    lambda x: x.sample(min(len(x), sample_size // len(df['stratify_col'].unique()) + 1),
-                                       random_state=42)
-                ).reset_index(drop=True)
+                # Taille d'échantillon adaptée à la tentative
+                sample_size = config['base_sample_size'] + ((attempt_number - 1) * 10)
+                sample_size = min(sample_size, len(df) // 2)  # Max 50% du dataset
 
-                # Si on a encore trop d'échantillons, faire un échantillonnage final
-                if len(sample_df) > sample_size:
-                    sample_df = sample_df.sample(n=sample_size, random_state=42).reset_index(drop=True)
+                if len(df) > sample_size:
+                    # Pour les tentatives avancées, privilégier les exemples similaires
+                    if attempt_number > 3:
+                        target_label = feedback_data['label']
+                        similar_examples = df[df['label'] == target_label]
+                        other_examples = df[df['label'] != target_label]
 
-                print(f"📋 Échantillon sélectionné: {len(sample_df)}")
+                        # 70% d'exemples du bon label, 30% autres
+                        target_sample_size = int(sample_size * 0.7)
+                        other_sample_size = sample_size - target_sample_size
+
+                        balanced_sample = []
+                        if len(similar_examples) >= target_sample_size:
+                            balanced_sample.append(similar_examples.sample(n=target_sample_size, random_state=42))
+                        else:
+                            balanced_sample.append(similar_examples)
+
+                        if len(other_examples) >= other_sample_size:
+                            balanced_sample.append(other_examples.sample(n=other_sample_size, random_state=42))
+                        else:
+                            balanced_sample.append(other_examples)
+
+                        base_sample_df = pd.concat(balanced_sample, ignore_index=True)
+                        print(f"📊 Échantillonnage ciblé pour tentative #{attempt_number}")
+                    else:
+                        # Échantillonnage équilibré standard
+                        balanced_sample = []
+                        for label in df['label'].unique():
+                            label_df = df[df['label'] == label]
+                            label_sample_size = sample_size // len(df['label'].unique())
+
+                            if len(label_df) >= label_sample_size:
+                                label_sample = label_df.sample(n=label_sample_size, random_state=42)
+                            else:
+                                label_sample = label_df
+
+                            balanced_sample.append(label_sample)
+
+                        base_sample_df = pd.concat(balanced_sample, ignore_index=True)
+                else:
+                    base_sample_df = df.copy()
+
+                base_sample_df = base_sample_df[['text', 'label', 'language']].copy()
+                base_sample_df['source'] = 'dataset'
+                base_sample_df['weight'] = config['support_weight']
+
+                print(f"📊 Échantillon de support: {len(base_sample_df)} échantillons")
+
+            # Combiner feedback + support
+            if not base_sample_df.empty:
+                combined_df = pd.concat([feedback_df, base_sample_df], ignore_index=True)
             else:
-                sample_df = df.copy()
-                print(f"📋 Dataset complet utilisé: {len(sample_df)}")
+                combined_df = feedback_df.copy()
 
-            # Afficher la distribution
-            print(f"\n📊 Distribution de l'échantillon:")
-            label_dist = sample_df['label'].value_counts()
-            for label, count in label_dist.items():
-                print(f"   {label}: {count}")
+            print(f"🔗 Dataset final: {len(combined_df)} échantillons")
+            print(f"   Distribution: {combined_df['label'].value_counts().to_dict()}")
 
-            if 'language' in sample_df.columns:
-                lang_dist = sample_df['language'].value_counts()
-                print(f"\n🌍 Distribution des langues:")
-                for lang, count in lang_dist.items():
-                    print(f"   {lang}: {count}")
-
-            return sample_df[['text', 'label', 'language']].copy()
+            return combined_df
 
         except Exception as e:
-            print(f"❌ Erreur chargement dataset: {e}")
+            print(f"❌ Erreur création dataset: {e}")
             return pd.DataFrame()
-
-    def combine_datasets(self, feedback_df, sample_df):
-        """
-        ÉTAPE 4: Combine les feedbacks négatifs avec l'échantillon du dataset
-        """
-        print("\n" + "=" * 60)
-        print("ÉTAPE 4: COMBINAISON DES DATASETS")
-        print("=" * 60)
-
-        if feedback_df.empty and sample_df.empty:
-            print("❌ Aucune donnée disponible pour le fine-tuning")
-            return pd.DataFrame()
-
-        # Préparer les DataFrames
-        datasets_to_combine = []
-
-        if not feedback_df.empty:
-            feedback_clean = feedback_df[['text', 'label', 'language']].copy()
-            feedback_clean['source'] = 'feedback'
-            datasets_to_combine.append(feedback_clean)
-            print(f"📝 Feedbacks: {len(feedback_clean)} échantillons")
-
-        if not sample_df.empty:
-            sample_clean = sample_df[['text', 'label', 'language']].copy()
-            sample_clean['source'] = 'dataset'
-            datasets_to_combine.append(sample_clean)
-            print(f"📊 Dataset principal: {len(sample_clean)} échantillons")
-
-        if not datasets_to_combine:
-            return pd.DataFrame()
-
-        # Combiner
-        combined_df = pd.concat(datasets_to_combine, ignore_index=True)
-        print(f"🔗 Dataset combiné: {len(combined_df)} échantillons")
-
-        # Afficher les statistiques finales
-        print(f"\n📋 Distribution finale:")
-        label_dist = combined_df['label'].value_counts()
-        for label, count in label_dist.items():
-            print(f"   {label}: {count} ({count / len(combined_df) * 100:.1f}%)")
-
-        print(f"\n📊 Sources:")
-        source_dist = combined_df['source'].value_counts()
-        for source, count in source_dist.items():
-            print(f"   {source}: {count}")
-
-        return combined_df
-
     def preprocess_text(self, text, language='en'):
-        """
-        Préprocesse le texte avec la même méthode que le modèle original
-        """
+        """Préprocesse le texte"""
         if pd.isna(text):
             return ""
 
         text = str(text).lower()
-
-        # Remplacements de tokens
         text = re.sub(r'http[s]?://(?:[a-zA-Z]|[0-9]|[$-_@.&+]|[!*\\(\\),]|(?:%[0-9a-fA-F][0-9a-fA-F]))+',
                       ' URL_TOKEN ', text)
         text = re.sub(r'\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}\b', ' EMAIL_TOKEN ', text)
@@ -352,7 +474,6 @@ class FineTuningManager:
         text = re.sub(r'[^\w\s]', ' ', text)
         text = re.sub(r'\s+', ' ', text).strip()
 
-        # Filtrage des mots
         tokens = text.split()
         stop_words_lang = self.stop_words.get(language, self.stop_words['en'])
         filtered_tokens = [token for token in tokens if len(token) > 2 and token not in stop_words_lang]
@@ -360,9 +481,7 @@ class FineTuningManager:
         return ' '.join(filtered_tokens)
 
     def extract_numerical_features(self, texts):
-        """
-        Extrait les features numériques avec la même méthode que le modèle original
-        """
+        """Extrait les features numériques"""
         features = []
 
         for text in texts:
@@ -390,740 +509,802 @@ class FineTuningManager:
 
         return np.array(features)
 
-    # CORRECTION COMPLÈTE À APPLIQUER DANS prepare_fine_tuning_data dans traitement.py
-
-    def prepare_fine_tuning_data(self, combined_df):
-        """
-        ÉTAPE 5: Prépare les données pour le fine-tuning
-        """
-        print("\n" + "=" * 60)
-        print("ÉTAPE 5: PRÉPARATION DES DONNÉES FINE-TUNING")
-        print("=" * 60)
-
-        if combined_df.empty:
-            print("❌ Aucune donnée à préparer")
-            return None, None, None, None, None, None
+    def prepare_training_data(self, combined_df):
+        """Prépare les données pour le re-entraînement"""
+        print(f"\n🔧 PRÉPARATION DONNÉES RE-ENTRAÎNEMENT")
+        print("=" * 50)
 
         try:
-            # CORRECTION 1: Détecter la vraie longueur de séquence depuis le modèle
+            # Paramètres du modèle
             model_input_shape = self.model.inputs[0].shape
             actual_sequence_length = model_input_shape[1]
 
-            # Mettre à jour les métadonnées avec la vraie longueur
-            self.metadata['config']['max_sequence_length'] = actual_sequence_length
-            print(f"🔧 Longueur de séquence corrigée: {actual_sequence_length}")
-
-            # CORRECTION 2: Détecter la taille max du vocabulaire depuis le modèle
-            # La couche embedding nous donne la vraie taille du vocabulaire
             embedding_layer = None
             for layer in self.model.layers:
                 if 'embedding' in layer.name.lower():
                     embedding_layer = layer
                     break
 
-            if embedding_layer is not None:
-                actual_vocab_size = embedding_layer.input_dim
-                print(f"🔧 Taille du vocabulaire détectée: {actual_vocab_size}")
-            else:
-                # Fallback : utiliser 10001 (0 à 10000)
-                actual_vocab_size = 10001
-                print(f"⚠️ Couche embedding non trouvée, utilisation de la taille par défaut: {actual_vocab_size}")
+            actual_vocab_size = embedding_layer.input_dim if embedding_layer else 10001
+            max_vocab_id = actual_vocab_size - 1
 
-            # Prétraitement des textes
-            print("🔧 Prétraitement des textes...")
+            # Prétraitement
             processed_texts = []
             for _, row in combined_df.iterrows():
                 processed_text = self.preprocess_text(row['text'], row.get('language', 'en'))
                 processed_texts.append(processed_text)
 
-            # CORRECTION 3: Création des séquences avec filtrage des tokens invalides
-            print("📝 Création des séquences...")
+            # Séquences
             sequences = self.tokenizer.texts_to_sequences(processed_texts)
-
-            # Filtrer les tokens qui dépassent la taille du vocabulaire
-            max_vocab_id = actual_vocab_size - 1  # Index maximum valide
             filtered_sequences = []
-            total_tokens_removed = 0
-
             for sequence in sequences:
                 filtered_sequence = [token_id for token_id in sequence if token_id <= max_vocab_id]
-                tokens_removed = len(sequence) - len(filtered_sequence)
-                total_tokens_removed += tokens_removed
                 filtered_sequences.append(filtered_sequence)
 
-            print(f"🔧 Tokens invalides supprimés: {total_tokens_removed}")
-            print(f"🔧 Plage valide des tokens: 0 à {max_vocab_id}")
+            X_text = pad_sequences(filtered_sequences, maxlen=actual_sequence_length, padding='post', truncating='post')
 
-            # UTILISER LA LONGUEUR CORRIGÉE ET LES SÉQUENCES FILTRÉES
-            max_seq_length = actual_sequence_length
-            X_text = pad_sequences(filtered_sequences, maxlen=max_seq_length, padding='post', truncating='post')
-
-            # Features numériques (UTILISER le scaler existant)
-            print("🔢 Extraction des features numériques...")
+            # Features numériques
             X_num = self.extract_numerical_features(combined_df['text'])
-            X_num = self.scaler.transform(X_num)  # Transform seulement, pas fit_transform
+            X_num = self.scaler.transform(X_num)
 
-            # Labels (UTILISER le label encoder existant)
-            print("🏷️ Préparation des labels...")
+            # Labels
             y = self.label_encoder.transform(combined_df['label'])
 
-            # Division train/validation
-            print("📋 Division train/validation...")
-            X_text_train, X_text_val, X_num_train, X_num_val, y_train, y_val = train_test_split(
-                X_text, X_num, y,
-                test_size=self.finetune_config['validation_split'],
-                random_state=42,
-                stratify=y
-            )
+            # Poids d'échantillons
+            sample_weights = combined_df.get('weight', pd.Series([1.0] * len(combined_df))).values
+
+            # Division adaptée aux petits datasets
+            if len(combined_df) > 4:  # Assez pour split
+                X_text_train, X_text_val, X_num_train, X_num_val, y_train, y_val, weights_train, weights_val = train_test_split(
+                    X_text, X_num, y, sample_weights,
+                    test_size=self.retrain_config['validation_split'],
+                    random_state=42,
+                    stratify=y if len(np.unique(y)) > 1 else None
+                )
+            else:
+                # Dataset trop petit, utiliser tout pour l'entraînement
+                X_text_train, X_text_val = X_text, X_text
+                X_num_train, X_num_val = X_num, X_num
+                y_train, y_val = y, y
+                weights_train, weights_val = sample_weights, sample_weights
 
             print(f"✅ Données préparées:")
             print(f"   Train: {len(X_text_train)} échantillons")
             print(f"   Validation: {len(X_text_val)} échantillons")
-            print(f"   Séquences: {X_text_train.shape} (longueur: {max_seq_length})")
-            print(f"   Features: {X_num_train.shape}")
-            print(f"   Vocabulaire: 0 à {max_vocab_id}")
-            print(f"   Distribution train: {np.bincount(y_train)}")
-            print(f"   Distribution val: {np.bincount(y_val)}")
 
-            return X_text_train, X_text_val, X_num_train, X_num_val, y_train, y_val
+            return {
+                'X_text_train': X_text_train, 'X_text_val': X_text_val,
+                'X_num_train': X_num_train, 'X_num_val': X_num_val,
+                'y_train': y_train, 'y_val': y_val,
+                'weights_train': weights_train, 'weights_val': weights_val
+            }
 
         except Exception as e:
             print(f"❌ Erreur préparation données: {e}")
-            import traceback
-            traceback.print_exc()
-            return None, None, None, None, None, None
-    def perform_fine_tuning(self, X_text_train, X_text_val, X_num_train, X_num_val, y_train, y_val):
-        """
-        ÉTAPE 6: Effectue le fine-tuning du modèle
-        """
-        print("\n" + "=" * 60)
-        print("ÉTAPE 6: FINE-TUNING DU MODÈLE")
-        print("=" * 60)
+            return None
+
+    # 1. CORRECTION DE create_backup_for_feedback
+    def create_backup_for_feedback(self, feedback_id):
+        """Crée une sauvegarde avant re-entraînement avec conversion de types NumPy"""
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+
+        # Conversion explicite du feedback_id en int Python
+        clean_feedback_id = int(feedback_id)
+
+        backup_dir = self.data_dir / f"backup_feedback_{clean_feedback_id}_{timestamp}"
+
+        print(f"\n💾 SAUVEGARDE AVANT RE-ENTRAÎNEMENT")
+        print(f"   Feedback ID: {clean_feedback_id}")
+        print(f"   Destination: {backup_dir}")
 
         try:
-            # Configurer l'optimiseur avec un learning rate très faible
-            print(f"🎯 Configuration fine-tuning:")
-            for key, value in self.finetune_config.items():
-                print(f"   {key}: {value}")
+            backup_dir.mkdir(parents=True, exist_ok=True)
 
-            new_optimizer = Adam(learning_rate=self.finetune_config['learning_rate'])
-            self.model.compile(
-                optimizer=new_optimizer,
+            artifacts_to_backup = [
+                'best_lstm_model.keras',
+                'tokenizer.pkl',
+                'scaler.pkl',
+                'label_encoder.pkl',
+                'model_metadata.json',
+                'suspicious_words.json'
+            ]
+
+            for artifact in artifacts_to_backup:
+                source = self.model_dir / artifact
+                dest = backup_dir / artifact
+                if source.exists():
+                    shutil.copy2(source, dest)
+
+            # Métadonnées avec conversion de types
+            backup_metadata = {
+                'backup_timestamp': timestamp,
+                'feedback_id': clean_feedback_id,
+                'backup_reason': f'before_individual_retraining_{clean_feedback_id}'
+            }
+
+            # 🔧 CORRECTION CRITIQUE: Nettoyer self.metadata avant sérialisation
+            if self.metadata:
+                try:
+                    backup_metadata['original_model_metadata'] = convert_numpy_types(self.metadata)
+                except Exception as e:
+                    print(f"⚠️ Erreur conversion métadonnées: {e}")
+                    backup_metadata['original_model_metadata'] = {}
+
+            # Sauvegarder avec conversion par défaut en string pour les types non supportés
+            with open(backup_dir / 'backup_metadata.json', 'w') as f:
+                json.dump(backup_metadata, f, indent=2, default=str)
+
+            print(f"✅ Sauvegarde créée: {backup_dir}")
+            return backup_dir
+
+        except Exception as e:
+            print(f"❌ Erreur sauvegarde: {e}")
+            # Créer au moins le dossier pour continuer
+            try:
+                backup_dir.mkdir(parents=True, exist_ok=True)
+                return backup_dir
+            except:
+                return None
+
+    def perform_individual_retraining(self, training_data, feedback_data, attempt_number=1):
+        """
+        RE-ENTRAÎNE le modèle pour corriger LE feedback spécifique avec configuration adaptative
+        """
+        print(f"\n🎯 RE-ENTRAÎNEMENT ADAPTATIF (Tentative #{attempt_number})")
+        print("=" * 60)
+        print(f"🎯 OBJECTIF: Corriger '{feedback_data['original_prediction']}' → '{feedback_data['label']}'")
+
+        # Configuration adaptée
+        config = self.get_adaptive_config_for_attempt(attempt_number)
+
+        try:
+            # Créer une copie du modèle
+            model_retrained = tf.keras.models.clone_model(self.model)
+            model_retrained.set_weights(self.model.get_weights())
+
+            # Optimiseur adaptatif
+            optimizer = Adam(
+                learning_rate=config['learning_rate'],
+                clipnorm=config['max_gradient_norm']
+            )
+            model_retrained.compile(
+                optimizer=optimizer,
                 loss='binary_crossentropy',
-                metrics=['accuracy', tf.keras.metrics.Precision(name='precision'),
-                         tf.keras.metrics.Recall(name='recall')]
+                metrics=['accuracy']
             )
 
-            # Callbacks pour le fine-tuning
+            # Callbacks adaptatifs
             callbacks = [
                 EarlyStopping(
-                    patience=self.finetune_config['patience'],
+                    patience=config['patience'],
                     restore_best_weights=True,
-                    monitor='val_loss'
+                    monitor='loss',
+                    min_delta=0.0001
                 ),
                 ReduceLROnPlateau(
                     factor=0.5,
-                    patience=2,
-                    min_lr=1e-8,
-                    monitor='val_loss'
+                    patience=max(2, config['patience'] // 2),
+                    min_lr=config['learning_rate_min'],
+                    verbose=1
                 )
             ]
 
-            # Calcul des poids de classe pour gérer le déséquilibre
-            class_weights = compute_class_weight(
-                'balanced',
-                classes=np.unique(y_train),
-                y=y_train
-            )
-            class_weight_dict = dict(enumerate(class_weights))
-            print(f"⚖️ Poids de classe: {class_weight_dict}")
+            # Extraire les données
+            X_text_train = training_data['X_text_train']
+            X_text_val = training_data['X_text_val']
+            X_num_train = training_data['X_num_train']
+            X_num_val = training_data['X_num_val']
+            y_train = training_data['y_train']
+            y_val = training_data['y_val']
+            weights_train = training_data['weights_train']
 
-            # Fine-tuning
-            print(f"\n🚀 Début du fine-tuning...")
-            history = self.model.fit(
+            print(f"\n🚀 Début du re-entraînement adaptatif...")
+
+            # Re-entraînement ciblé
+            history = model_retrained.fit(
                 [X_text_train, X_num_train], y_train,
                 validation_data=([X_text_val, X_num_val], y_val),
-                batch_size=self.finetune_config['batch_size'],
-                epochs=self.finetune_config['epochs'],
-                class_weight=class_weight_dict,
+                batch_size=config['batch_size'],
+                epochs=config['epochs'],
+                sample_weight=weights_train,
                 callbacks=callbacks,
                 verbose=1
             )
 
-            print("✅ Fine-tuning terminé!")
-            return history
+            print(f"✅ Re-entraînement tentative #{attempt_number} terminé")
+
+            return model_retrained, history
 
         except Exception as e:
-            print(f"❌ Erreur fine-tuning: {e}")
-            return None
+            print(f"❌ Erreur re-entraînement tentative #{attempt_number}: {e}")
+            import traceback
+            traceback.print_exc()
+            return None, None
 
-    def evaluate_finetuned_model(self, X_text_val, X_num_val, y_val):
+    def validate_feedback_correction(self, retrained_model, feedback_data, attempt_number=1):
         """
-        ÉTAPE 7: Évalue le modèle fine-tuné
+        Valide que LE feedback spécifique est maintenant corrigé avec critères adaptatifs
         """
-        print("\n" + "=" * 60)
-        print("ÉTAPE 7: ÉVALUATION DU MODÈLE FINE-TUNÉ")
+        print(f"\n🔍 VALIDATION DE LA CORRECTION (Tentative #{attempt_number})")
         print("=" * 60)
 
         try:
-            # Prédictions
-            y_pred_proba = self.model.predict([X_text_val, X_num_val], verbose=0)
-            y_pred = (y_pred_proba > 0.5).astype(int)
+            # AJOUTER CETTE PARTIE MANQUANTE - Préparation des données
+            # Préparer le texte du feedback pour test
+            processed_text = self.preprocess_text(feedback_data['text'], feedback_data.get('language', 'en'))
 
-            # Métriques
-            accuracy = accuracy_score(y_val, y_pred)
-            precision = precision_score(y_val, y_pred)
-            recall = recall_score(y_val, y_pred)
-            f1 = f1_score(y_val, y_pred)
-
-            metrics = {
-                'accuracy': accuracy,
-                'precision': precision,
-                'recall': recall,
-                'f1': f1
-            }
-
-            print(f"📊 Métriques du modèle fine-tuné:")
-            for metric, value in metrics.items():
-                print(f"   {metric.capitalize()}: {value:.4f}")
-
-            # Rapport détaillé
-            print(f"\n📋 Rapport de classification:")
-            report = classification_report(
-                y_val, y_pred,
-                target_names=self.label_encoder.classes_,
-                digits=4
-            )
-            print(report)
-
-            return metrics
-
-        except Exception as e:
-            print(f"❌ Erreur évaluation: {e}")
-            return {}
-
-    def save_finetuned_model(self):
-        """
-        ÉTAPE 8: Sauvegarde le modèle fine-tuné
-        """
-        print("\n" + "=" * 60)
-        print("ÉTAPE 8: SAUVEGARDE DU MODÈLE FINE-TUNÉ")
-        print("=" * 60)
-
-        try:
-            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-
-            # Créer le dossier de sauvegarde
-            save_dir = self.data_dir / f"finetuned_model_{timestamp}"
-            save_dir.mkdir(exist_ok=True)
-
-            # Sauvegarder le modèle
-            model_path = save_dir / "best_lstm_model.keras"
-            self.model.save(str(model_path))
-            print(f"✅ Modèle sauvegardé: {model_path}")
-
-            # Copier les artefacts inchangés
-            import shutil
-
-            artifacts_to_copy = [
-                ('tokenizer.pkl', self.tokenizer_path),
-                ('scaler.pkl', self.scaler_path),
-                ('label_encoder.pkl', self.label_encoder_path),
-                ('suspicious_words.json', self.suspicious_words_path)
-            ]
-
-            for filename, source_path in artifacts_to_copy:
-                if source_path.exists():
-                    dest_path = save_dir / filename
-                    shutil.copy2(source_path, dest_path)
-                    print(f"✅ {filename} copié")
-
-            # Mettre à jour les métadonnées
-            updated_metadata = self.metadata.copy()
-            updated_metadata.update({
-                'finetune_timestamp': timestamp,
-                'finetune_config': self.finetune_config,
-                'model_type': 'LSTM_Hybrid_FR_EN_Finetuned',
-                'original_model': str(self.model_path),
-                'finetuned_model': str(model_path)
-            })
-
-            metadata_path = save_dir / "model_metadata.json"
-            with open(metadata_path, 'w') as f:
-                json.dump(updated_metadata, f, indent=2)
-            print(f"✅ Métadonnées mises à jour: {metadata_path}")
-
-            # Instructions pour remplacer le modèle
-            print(f"\n📋 INSTRUCTIONS POUR UTILISER LE MODÈLE FINE-TUNÉ:")
-            print(f"   1. Arrêter l'API Docker")
-            print(f"   2. Remplacer les fichiers dans ./model/ par ceux de {save_dir}")
-            print(f"   3. Redémarrer l'API Docker")
-            print(f"\n💡 Ou utiliser le script de remplacement automatique")
-
-            return {
-                'save_dir': save_dir,
-                'model_path': model_path,
-                'metadata_path': metadata_path,
-                'timestamp': timestamp
-            }
-
-        except Exception as e:
-            print(f"❌ Erreur sauvegarde: {e}")
-            return None
-
-    def mark_feedbacks_as_processed(self, feedback_df):
-        """
-        ÉTAPE 9: Marque les feedbacks comme traités
-        """
-        print("\n" + "=" * 60)
-        print("ÉTAPE 9: MARQUAGE DES FEEDBACKS COMME TRAITÉS")
-        print("=" * 60)
-
-        if feedback_df.empty:
-            print("ℹ️ Aucun feedback à marquer")
-            return True
-
-        try:
-            # Charger le fichier CSV complet
-            df = pd.read_csv(self.feedback_csv_path)
-
-            # Marquer les feedbacks utilisés comme traités
-            feedback_ids = feedback_df['feedback_id'].tolist() if 'feedback_id' in feedback_df.columns else []
-
-            if feedback_ids:
-                df.loc[feedback_ids, 'processed'] = True
-                processed_count = len(feedback_ids)
-            else:
-                # Si pas d'IDs spécifiques, marquer tous les feedbacks négatifs non traités
-                mask = (df['user_satisfaction'] == 'no') & (df['processed'] == False)
-                df.loc[mask, 'processed'] = True
-                processed_count = mask.sum()
-
-            # Ajouter une colonne de traitement si elle n'existe pas
-            df['processed_at'] = df.apply(
-                lambda row: datetime.now().isoformat() if row['processed'] else None,
-                axis=1
-            )
-
-            # Sauvegarder
-            df.to_csv(self.feedback_csv_path, index=False)
-            print(f"✅ {processed_count} feedbacks marqués comme traités")
-
-            return True
-
-        except Exception as e:
-            print(f"❌ Erreur marquage feedbacks: {e}")
-            return False
-
-    def run_complete_finetuning(self, dataset_path="./data/full_merged_dataset_fr_en_spam.csv"):
-        """
-        FONCTION PRINCIPALE: Exécute le processus complet de fine-tuning
-        """
-        print("\n" + "🎯" * 30)
-        print("PROCESSUS COMPLET DE FINE-TUNING")
-        print("🎯" * 30)
-
-        # Étape 1: Charger les artefacts
-        if not self.load_model_artifacts():
-            print("❌ Échec du chargement des artefacts")
-            return False
-
-        # Étape 2: Extraire les feedbacks négatifs
-        feedback_df = self.extract_negative_feedbacks()
-        if feedback_df.empty:
-            print("ℹ️ Aucun feedback négatif à traiter")
-            return False
-
-        print(f"📝 {len(feedback_df)} feedbacks négatifs trouvés")
-
-        # Étape 3: Charger échantillon du dataset principal
-        sample_df = self.load_dataset_sample(dataset_path, self.finetune_config['sample_size'])
-
-        # Étape 4: Combiner les datasets
-        combined_df = self.combine_datasets(feedback_df, sample_df)
-        if combined_df.empty:
-            print("❌ Aucune donnée disponible pour le fine-tuning")
-            return False
-
-        # Étape 5: Préparer les données
-        data_results = self.prepare_fine_tuning_data(combined_df)
-        if data_results[0] is None:
-            print("❌ Échec de la préparation des données")
-            return False
-
-        X_text_train, X_text_val, X_num_train, X_num_val, y_train, y_val = data_results
-
-        # Étape 6: Fine-tuning
-        history = self.perform_fine_tuning(X_text_train, X_text_val, X_num_train, X_num_val, y_train, y_val)
-        if history is None:
-            print("❌ Échec du fine-tuning")
-            return False
-
-        # Étape 7: Évaluation
-        metrics = self.evaluate_finetuned_model(X_text_val, X_num_val, y_val)
-
-        # Étape 8: Sauvegarde
-        save_result = self.save_finetuned_model()
-        if save_result is None:
-            print("❌ Échec de la sauvegarde")
-            return False
-
-        # Étape 9: Marquer les feedbacks comme traités
-        self.mark_feedbacks_as_processed(feedback_df)
-
-        # Résumé final
-        print("\n" + "🎉" * 30)
-        print("FINE-TUNING TERMINÉ AVEC SUCCÈS!")
-        print("🎉" * 30)
-        print(f"📊 Données utilisées: {len(combined_df)} échantillons")
-        print(f"📝 Feedbacks traités: {len(feedback_df)}")
-        print(f"📈 Modèle sauvegardé: {save_result['save_dir']}")
-        print(f"🎯 Métriques finales:")
-        for metric, value in metrics.items():
-            print(f"   {metric}: {value:.4f}")
-
-        return True
-
-
-    def evaluate_on_full_dataset(self, model_to_evaluate, dataset_path, model_name=""):
-        """
-        Évalue un modèle sur l'ENSEMBLE du dataset pour avoir une vraie mesure de performance
-        """
-        print(f"\n🧪 ÉVALUATION COMPLÈTE SUR TOUT LE DATASET - {model_name}")
-        print("=" * 70)
-
-        try:
-            # Charger TOUT le dataset (pas d'échantillonnage)
-            if not Path(dataset_path).exists():
-                print(f"❌ Dataset non trouvé: {dataset_path}")
-                return None
-
-            print(f"📂 Chargement du dataset complet...")
-            df = pd.read_csv(dataset_path)
-            print(f"📊 Dataset complet: {len(df)} échantillons")
-
-            # Afficher la distribution
-            label_dist = df['label'].value_counts()
-            print(f"📋 Distribution:")
-            for label, count in label_dist.items():
-                print(f"   {label}: {count} ({count / len(df) * 100:.1f}%)")
-
-            # Préparation des données (TOUT le dataset)
-            print(f"🔧 Préparation des données...")
-
-            # Prétraitement
-            processed_texts = []
-            for _, row in df.iterrows():
-                processed_text = self.preprocess_text(row['text'], row.get('language', 'en'))
-                processed_texts.append(processed_text)
-
-            # Séquences avec filtrage
-            sequences = self.tokenizer.texts_to_sequences(processed_texts)
-
-            # Détecter les paramètres du modèle
-            model_input_shape = model_to_evaluate.inputs[0].shape
+            # Paramètres du modèle
+            model_input_shape = retrained_model.inputs[0].shape
             actual_sequence_length = model_input_shape[1]
 
             embedding_layer = None
-            for layer in model_to_evaluate.layers:
+            for layer in retrained_model.layers:
                 if 'embedding' in layer.name.lower():
                     embedding_layer = layer
                     break
             actual_vocab_size = embedding_layer.input_dim if embedding_layer else 10001
             max_vocab_id = actual_vocab_size - 1
 
-            # Filtrer les séquences
-            filtered_sequences = []
-            for sequence in sequences:
-                filtered_sequence = [token_id for token_id in sequence if token_id <= max_vocab_id]
-                filtered_sequences.append(filtered_sequence)
+            # Créer séquence
+            sequence = self.tokenizer.texts_to_sequences([processed_text])
+            if sequence[0]:
+                sequence[0] = [token_id for token_id in sequence[0] if token_id <= max_vocab_id]
 
-            # Padding
-            X_text = pad_sequences(filtered_sequences, maxlen=actual_sequence_length, padding='post', truncating='post')
+            X_text = pad_sequences(sequence, maxlen=actual_sequence_length, padding='post', truncating='post')
 
             # Features numériques
-            X_num = self.extract_numerical_features(df['text'])
+            X_num = self.extract_numerical_features([feedback_data['text']])
             X_num = self.scaler.transform(X_num)
 
-            # Labels
-            y_true = self.label_encoder.transform(df['label'])
+            # Test avec le modèle original
+            original_pred_proba = self.model.predict([X_text, X_num], verbose=0)[0][0]
+            original_pred_class_int = int(original_pred_proba > 0.5)
+            original_pred_class = self.label_encoder.inverse_transform([original_pred_class_int])[0]
 
-            print(f"✅ Données préparées: {X_text.shape[0]} échantillons")
+            # Test avec le modèle re-entraîné
+            new_pred_proba = retrained_model.predict([X_text, X_num], verbose=0)[0][0]
+            new_pred_class_int = int(new_pred_proba > 0.5)
+            new_pred_class = self.label_encoder.inverse_transform([new_pred_class_int])[0]
+            # FIN DE LA PARTIE À AJOUTER
 
-            # Prédiction sur TOUT le dataset
-            print(f"🎯 Prédiction sur l'ensemble du dataset...")
-            y_pred_proba = model_to_evaluate.predict([X_text, X_num], batch_size=128, verbose=1)
-            y_pred = (y_pred_proba > 0.5).astype(int)
+            # Calculs de confiance et amélioration
+            confidence_score = abs(new_pred_proba - 0.5) * 2
+            original_confidence = abs(original_pred_proba - 0.5) * 2
+            confidence_improvement = confidence_score - original_confidence
 
-            # Calcul des métriques complètes
-            from sklearn.metrics import accuracy_score, precision_score, recall_score, f1_score, roc_auc_score, \
-                confusion_matrix
+            # Critères adaptatifs selon la tentative
+            min_confidence = self.deployment_criteria['min_confidence']
+            if attempt_number > 5 and self.deployment_criteria['allow_confidence_relaxation']:
+                min_confidence = self.deployment_criteria['min_confidence_relaxed']
+                print(f"🔧 Critères assouplis après {attempt_number} tentatives")
 
-            metrics = {
-                'accuracy': accuracy_score(y_true, y_pred),
-                'precision': precision_score(y_true, y_pred, average='weighted'),
-                'recall': recall_score(y_true, y_pred, average='weighted'),
-                'f1': f1_score(y_true, y_pred, average='weighted'),
-                'auc': roc_auc_score(y_true, y_pred_proba),
-                'total_samples': len(y_true)
+            expected_label = feedback_data['label']
+            is_corrected = (new_pred_class == expected_label)
+            confidence_sufficient = confidence_score >= min_confidence
+            shows_improvement = confidence_improvement >= self.deployment_criteria['learning_progress_threshold']
+
+            print(f"📊 RÉSULTATS DE LA VALIDATION (Tentative #{attempt_number}):")
+            print(f"   Texte testé: {feedback_data['text'][:100]}...")
+            print(f"   Label attendu: {expected_label}")
+            print(f"   Prédiction originale: {original_pred_class} (prob: {original_pred_proba:.3f})")
+            print(f"   Nouvelle prédiction: {new_pred_class} (prob: {new_pred_proba:.3f})")
+            print(f"   Confiance: {confidence_score:.3f} (min requis: {min_confidence:.3f})")
+            print(f"   Amélioration: {confidence_improvement:+.3f}")
+            print(f"   Correction réussie: {'✅' if is_corrected else '❌'}")
+            print(f"   Confiance suffisante: {'✅' if confidence_sufficient else '❌'}")
+
+            validation_result = {
+                'feedback_id': feedback_data['id'],
+                'attempt_number': attempt_number,
+                'expected_label': expected_label,
+                'original_prediction': original_pred_class,
+                'original_probability': float(original_pred_proba),
+                'original_confidence': float(original_confidence),
+                'new_prediction': new_pred_class,
+                'new_probability': float(new_pred_proba),
+                'confidence_score': float(confidence_score),
+                'confidence_improvement': float(confidence_improvement),
+                'is_corrected': is_corrected,
+                'confidence_sufficient': confidence_sufficient,
+                'shows_improvement': shows_improvement,
+                'validation_passed': is_corrected and confidence_sufficient,
+                'criteria_used': {
+                    'min_confidence': min_confidence,
+                    'relaxed_criteria': attempt_number > 5
+                }
             }
 
-            # Matrice de confusion
-            cm = confusion_matrix(y_true, y_pred)
+            # Tracking du meilleur résultat
+            if (self.best_result_so_far is None or
+                    confidence_score > self.best_result_so_far.get('confidence_score', 0)):
+                self.best_result_so_far = validation_result.copy()
+                print(f"🌟 NOUVEAU MEILLEUR RÉSULTAT enregistré!")
 
-            print(f"\n📊 RÉSULTATS COMPLETS - {model_name}")
-            print("=" * 50)
-            print(f"📈 Accuracy:  {metrics['accuracy']:.4f}")
-            print(f"📈 Precision: {metrics['precision']:.4f}")
-            print(f"📈 Recall:    {metrics['recall']:.4f}")
-            print(f"📈 F1-Score:  {metrics['f1']:.4f}")
-            print(f"📈 AUC:       {metrics['auc']:.4f}")
-            print(f"📊 Échantillons: {metrics['total_samples']}")
-
-            print(f"\n🔍 Matrice de confusion:")
-            print(f"   Vrais Négatifs: {cm[0, 0]}  |  Faux Positifs: {cm[0, 1]}")
-            print(f"   Faux Négatifs:  {cm[1, 0]}  |  Vrais Positifs: {cm[1, 1]}")
-
-            return metrics
-
-        except Exception as e:
-            print(f"❌ Erreur évaluation complète: {e}")
-            import traceback
-            traceback.print_exc()
-            return None
-
-
-    def compare_models_and_auto_deploy(self, finetuned_model_dir, dataset_path):
-        """
-        Compare le modèle original vs fine-tuné sur TOUT le dataset et remplace automatiquement si meilleur
-        """
-        print(f"\n🏆 COMPARAISON MODÈLE ORIGINAL VS FINE-TUNÉ")
-        print("=" * 80)
-
-        try:
-            # 1. Évaluer le modèle ORIGINAL
-            print(f"\n1️⃣ ÉVALUATION DU MODÈLE ORIGINAL")
-            original_metrics = self.evaluate_on_full_dataset(self.model, dataset_path, "MODÈLE ORIGINAL")
-
-            if original_metrics is None:
-                print("❌ Impossible d'évaluer le modèle original")
-                return False
-
-            # 2. Charger et évaluer le modèle FINE-TUNÉ
-            print(f"\n2️⃣ ÉVALUATION DU MODÈLE FINE-TUNÉ")
-            finetuned_model_path = finetuned_model_dir / "best_lstm_model.keras"
-
-            if not finetuned_model_path.exists():
-                print(f"❌ Modèle fine-tuné non trouvé: {finetuned_model_path}")
-                return False
-
-            finetuned_model = load_model(str(finetuned_model_path))
-            finetuned_metrics = self.evaluate_on_full_dataset(finetuned_model, dataset_path, "MODÈLE FINE-TUNÉ")
-
-            if finetuned_metrics is None:
-                print("❌ Impossible d'évaluer le modèle fine-tuné")
-                return False
-
-            # 3. COMPARAISON DÉTAILLÉE
-            print(f"\n3️⃣ COMPARAISON DÉTAILLÉE")
-            print("=" * 50)
-
-            metrics_to_compare = ['accuracy', 'precision', 'recall', 'f1', 'auc']
-            improvements = {}
-
-            print(f"{'Métrique':<12} {'Original':<10} {'Fine-tuné':<10} {'Amélioration':<12}")
-            print("-" * 50)
-
-            for metric in metrics_to_compare:
-                original_val = original_metrics[metric]
-                finetuned_val = finetuned_metrics[metric]
-                improvement = finetuned_val - original_val
-                improvement_pct = (improvement / original_val) * 100 if original_val > 0 else 0
-
-                improvements[metric] = improvement
-
-                status = "🟢" if improvement > 0 else "🔴" if improvement < 0 else "🟡"
-                print(
-                    f"{metric.capitalize():<12} {original_val:<10.4f} {finetuned_val:<10.4f} {status} {improvement_pct:+6.2f}%")
-
-            # 4. DÉCISION AUTOMATIQUE
-            print(f"\n4️⃣ DÉCISION AUTOMATIQUE")
-            print("=" * 30)
-
-            # Critères de décision (le modèle doit être meilleur sur les métriques importantes)
-            key_metrics = ['f1', 'accuracy']  # Métriques principales
-            is_better = all(improvements[metric] >= 0 for metric in key_metrics)  # Au moins égal
-            significant_improvement = any(
-                improvements[metric] > 0.01 for metric in key_metrics)  # Amélioration significative
-
-            print(f"🔍 Analyse:")
-            print(f"   Toutes les métriques clés >= original: {'✅' if is_better else '❌'}")
-            print(f"   Amélioration significative (>1%): {'✅' if significant_improvement else '❌'}")
-
-            if is_better and significant_improvement:
-                print(f"\n🎉 DÉCISION: REMPLACER LE MODÈLE")
-                print("   Le modèle fine-tuné est significativement meilleur!")
-
-                # 5. REMPLACEMENT AUTOMATIQUE
-                return self.auto_deploy_finetuned_model(finetuned_model_dir)
-
-            elif is_better:
-                print(f"\n⚠️ DÉCISION: GARDER L'ORIGINAL")
-                print("   Le modèle fine-tuné n'apporte pas d'amélioration significative")
-                return False
-
+            if validation_result['validation_passed']:
+                print(f"\n🎉 VALIDATION RÉUSSIE!")
+                print(f"   Le feedback a été corrigé avec confiance suffisante")
+                self.consecutive_failures = 0
             else:
-                print(f"\n❌ DÉCISION: GARDER L'ORIGINAL")
-                print("   Le modèle fine-tuné est moins performant!")
-                return False
+                print(f"\n⚠️ VALIDATION ÉCHOUÉE pour tentative #{attempt_number}")
+                if not is_corrected:
+                    print(f"   Le modèle n'a pas appris la correction")
+                if not confidence_sufficient:
+                    print(f"   Confiance insuffisante ({confidence_score:.3f} < {min_confidence:.3f})")
+                if shows_improvement:
+                    print(f"   ✅ Mais amélioration détectée (+{confidence_improvement:.3f})")
+
+            return validation_result
 
         except Exception as e:
-            print(f"❌ Erreur comparaison: {e}")
-            return False
-
-
-    def auto_deploy_finetuned_model(self, finetuned_model_dir):
-        """
-        Remplace automatiquement le modèle en production par la version fine-tunée
-        """
-        print(f"\n🚀 DÉPLOIEMENT AUTOMATIQUE")
-        print("=" * 40)
-
+            print(f"❌ Erreur validation tentative #{attempt_number}: {e}")
+            return {
+                'feedback_id': feedback_data['id'],
+                'attempt_number': attempt_number,
+                'validation_passed': False,
+                'error': str(e)
+            }
+    def trigger_api_reload(self):
+        """Déclenche le rechargement du modèle dans l'API via un appel HTTP"""
         try:
-            import shutil
-            from datetime import datetime
+            print(f"\n🔄 DÉCLENCHEMENT DU RECHARGEMENT AUTOMATIQUE...")
 
-            # 1. Créer une sauvegarde du modèle actuel
-            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-            backup_dir = Path(f"./model_backup_before_finetune_{timestamp}")
-
-            print(f"💾 Sauvegarde du modèle actuel...")
-            shutil.copytree(self.model_dir, backup_dir)
-            print(f"✅ Sauvegarde créée: {backup_dir}")
-
-            # 2. Remplacer les fichiers
-            model_files = [
-                "best_lstm_model.keras",
-                "model_metadata.json"
+            api_urls = [
+                "http://localhost:8000",
+                "http://127.0.0.1:8000",
+                "http://fastapi:8000"
             ]
 
-            print(f"🔄 Remplacement des fichiers...")
-            for file in model_files:
-                source = finetuned_model_dir / file
-                dest = self.model_dir / file
+            for api_url in api_urls:
+                try:
+                    print(f"   Tentative: {api_url}/reload-model")
 
-                if source.exists():
-                    shutil.copy2(source, dest)
-                    print(f"✅ {file} remplacé")
-                else:
-                    print(f"⚠️ {file} non trouvé dans le modèle fine-tuné")
+                    import subprocess
+                    import json
 
-            # 3. Mettre à jour les métadonnées avec info de déploiement
-            metadata_path = self.model_dir / "model_metadata.json"
-            if metadata_path.exists():
-                with open(metadata_path, 'r') as f:
-                    metadata = json.load(f)
+                    curl_command = [
+                        'curl', '-s', '-X', 'POST',
+                        f'{api_url}/reload-model',
+                        '-H', 'Content-Type: application/json',
+                        '--max-time', '10'
+                    ]
 
-                metadata.update({
-                    'deployed_at': datetime.now().isoformat(),
-                    'deployment_method': 'automatic_after_finetuning',
-                    'backup_location': str(backup_dir),
-                    'replaced_model': 'original_production_model'
-                })
+                    result = subprocess.run(curl_command, capture_output=True, text=True, timeout=15)
 
-                with open(metadata_path, 'w') as f:
-                    json.dump(metadata, f, indent=2)
-                print(f"✅ Métadonnées de déploiement mises à jour")
+                    if result.returncode == 0:
+                        try:
+                            response_data = json.loads(result.stdout)
+                            if response_data.get('status') == 'success':
+                                print(f"✅ RECHARGEMENT RÉUSSI via {api_url}!")
+                                print(f"   Message: {response_data.get('message', 'OK')}")
+                                print(f"   Version: {response_data.get('model_version', 'unknown')}")
+                                return True
+                        except json.JSONDecodeError:
+                            print(f"   ⚠️ Réponse non-JSON: {result.stdout[:100]}")
+                    else:
+                        print(f"   ❌ Erreur curl (code {result.returncode}): {result.stderr}")
 
-            print(f"\n🎉 DÉPLOIEMENT RÉUSSI!")
-            print("=" * 25)
-            print(f"✅ Modèle fine-tuné maintenant en production")
-            print(f"💾 Ancien modèle sauvegardé dans: {backup_dir}")
-            print(f"🔄 Redémarrez l'API pour utiliser le nouveau modèle:")
-            print(f"   docker-compose restart fastapi")
+                except subprocess.TimeoutExpired:
+                    print(f"   ❌ Timeout sur {api_url}")
+                    continue
+                except Exception as e:
+                    print(f"   ❌ Erreur: {e}")
+                    continue
+
+            print(f"⚠️ Rechargement automatique échoué sur toutes les URLs")
+            print(f"💡 Le modèle a été déployé mais nécessite un rechargement manuel")
+            return False
+
+        except Exception as e:
+            print(f"❌ Erreur rechargement automatique: {e}")
+            return False
+
+    def deploy_retrained_model(self, retrained_model, feedback_data, backup_dir, validation_result):
+        """Déploie immédiatement le modèle re-entraîné ET déclenche le rechargement de l'API"""
+        print(f"\n🚀 DÉPLOIEMENT IMMÉDIAT DU MODÈLE RE-ENTRAÎNÉ")
+        print("=" * 50)
+
+        try:
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+
+            # Sauvegarder temporairement le nouveau modèle
+            temp_model_path = self.data_dir / f"retrained_model_feedback_{feedback_data['id']}_{timestamp}.keras"
+            retrained_model.save(str(temp_model_path))
+
+            # Remplacer le modèle de production
+            production_model_path = self.model_dir / "best_lstm_model.keras"
+            shutil.copy2(temp_model_path, production_model_path)
+
+            # 🔧 CORRECTION CRITIQUE: Gestion sûre des métadonnées
+            if self.metadata:
+                updated_metadata = convert_numpy_types(self.metadata.copy())
+            else:
+                updated_metadata = {}
+
+            # 🔧 CORRECTION: Conversion sûre de model_version
+            current_version = updated_metadata.get('model_version', 1)
+            if isinstance(current_version, str):
+                try:
+                    current_version = int(current_version)
+                except (ValueError, TypeError):
+                    current_version = 1
+
+            new_version = current_version + 1
+
+            # Nettoyer TOUS les types avant mise à jour
+            clean_validation_result = convert_numpy_types(validation_result)
+            clean_retraining_config = convert_numpy_types(self.retrain_config)
+
+            # Mettre à jour avec des types Python natifs
+            updated_metadata.update({
+                'last_individual_retraining': timestamp,
+                'last_feedback_processed': int(feedback_data['id']),
+                'retraining_config': clean_retraining_config,
+                'model_version': new_version,  # Déjà un int Python
+                'backup_location': str(backup_dir),
+                'deployment_method': 'individual_feedback_retraining',
+                'total_individual_retrainings': int(self.total_retrainings + 1),
+                'successful_deployments': int(self.successful_deployments + 1),
+                'validation_result': clean_validation_result,
+                'deployment_timestamp': timestamp,
+                'auto_reload_trigger': True
+            })
+
+            # Nettoyer encore une fois les métadonnées finales
+            final_clean_metadata = convert_numpy_types(updated_metadata)
+
+            # Sauvegarder les métadonnées nettoyées
+            with open(self.model_dir / "model_metadata.json", 'w') as f:
+                json.dump(final_clean_metadata, f, indent=2, default=str)
+
+            # Nettoyer le fichier temporaire
+            temp_model_path.unlink()
+
+            # Mettre à jour les compteurs
+            self.total_retrainings += 1
+            self.successful_deployments += 1
+
+            # Mettre à jour self.metadata avec la version nettoyée
+            self.metadata = final_clean_metadata
+
+            # Recharger le modèle en mémoire
+            self.model = load_model(str(production_model_path))
+
+            print(f"✅ DÉPLOIEMENT RÉUSSI!")
+            print(f"   Version du modèle: {new_version}")
+            print(f"   Feedback traité: #{feedback_data['id']}")
+            print(f"   Re-entraînements totaux: {self.total_retrainings}")
+            print(f"   Déploiements réussis: {self.successful_deployments}")
+            print(f"   Sauvegarde: {backup_dir}")
+
+            # Déclencher le rechargement automatique de l'API
+            self.trigger_api_reload()
 
             return True
 
         except Exception as e:
             print(f"❌ Erreur déploiement: {e}")
+            import traceback
+            traceback.print_exc()
+            return False
+    def log_retraining_attempt(self, feedback_data, validation_result, deployed, backup_dir):
+        """Enregistre la tentative de re-entraînement"""
+        try:
+            # Nettoyer tous les types NumPy
+            clean_feedback_data = convert_numpy_types({
+                'text': feedback_data['text'][:200],
+                'original_prediction': feedback_data['original_prediction'],
+                'expected_correction': feedback_data['label'],
+                'original_confidence': float(feedback_data['confidence'])
+            })
+
+            clean_validation_result = convert_numpy_types(validation_result)
+
+            log_entry = {
+                'timestamp': datetime.now().isoformat(),
+                'feedback_id': int(feedback_data['id']),
+                'feedback_details': clean_feedback_data,
+                'validation_result': clean_validation_result,
+                'deployed': bool(deployed),
+                'backup_location': str(backup_dir),
+                'total_retrainings': int(self.total_retrainings),
+                'consecutive_failures': int(self.consecutive_failures)
+            }
+
+            # Charger le log existant
+            retraining_log = []
+            if self.retraining_log_path.exists():
+                try:
+                    with open(self.retraining_log_path, 'r') as f:
+                        retraining_log = json.load(f)
+                except:
+                    retraining_log = []
+
+            # Ajouter la nouvelle entrée
+            retraining_log.append(log_entry)
+
+            # Limiter à 50 entrées
+            if len(retraining_log) > 50:
+                retraining_log = retraining_log[-50:]
+
+            # Sauvegarder
+            self.data_dir.mkdir(exist_ok=True)
+            with open(self.retraining_log_path, 'w') as f:
+                json.dump(retraining_log, f, indent=2)
+
+            print(f"📝 Tentative de re-entraînement enregistrée")
+
+        except Exception as e:
+            print(f"⚠️ Erreur enregistrement log: {e}")
+            import traceback
+            traceback.print_exc()
+
+    def mark_feedback_as_processed(self, feedback_id, deployed=True, validation_result=None):
+        """Marque LE feedback comme traité"""
+        print(f"\n📝 MARQUAGE DU FEEDBACK #{feedback_id} COMME TRAITÉ")
+        print("=" * 50)
+
+        try:
+            df = pd.read_csv(self.feedback_csv_path)
+
+            # Marquer le feedback spécifique
+            df.loc[feedback_id, 'processed'] = True
+            df.loc[feedback_id, 'processed_at'] = datetime.now().isoformat()
+            df.loc[feedback_id, 'deployed'] = bool(deployed)
+            df.loc[feedback_id, 'retraining_method'] = 'individual_feedback'
+
+            if validation_result:
+                # Convertir les types NumPy
+                df.loc[feedback_id, 'correction_validated'] = bool(validation_result.get('validation_passed', False))
+                df.loc[feedback_id, 'new_prediction'] = str(validation_result.get('new_prediction', ''))
+                df.loc[feedback_id, 'confidence_score'] = float(validation_result.get('confidence_score', 0.0))
+
+            # Sauvegarder
+            df.to_csv(self.feedback_csv_path, index=False)
+
+            status = "et déployé" if deployed else "mais non déployé"
+            print(f"✅ Feedback #{feedback_id} marqué comme traité {status}")
+            return True
+
+        except Exception as e:
+            print(f"❌ Erreur marquage feedback: {e}")
+            import traceback
+            traceback.print_exc()
             return False
 
-
-    # MODIFIER LA FONCTION run_complete_finetuning
-
-    def run_complete_finetuning(self, dataset_path="./data/full_merged_dataset_fr_en_spam.csv"):
+    def process_single_feedback(self, dataset_path="./data/full_merged_dataset_fr_en_spam.csv"):
         """
-        FONCTION PRINCIPALE: Exécute le processus complet de fine-tuning avec évaluation et déploiement automatique
+        FONCTION PRINCIPALE MODIFIÉE: Traite UN feedback avec RE-ENTRAÎNEMENT CONTINU jusqu'à réussite
         """
-        print("\n" + "🎯" * 30)
-        print("PROCESSUS COMPLET DE FINE-TUNING + ÉVALUATION + DÉPLOIEMENT")
-        print("🎯" * 30)
+        print("\n" + "🔄" * 50)
+        print("TRAITEMENT FEEDBACK AVEC RE-ENTRAÎNEMENT CONTINU")
+        print("🔄" * 50)
 
-        # Étapes 1-8 identiques (chargement, fine-tuning, sauvegarde)
+        start_time = datetime.now()
+
+        # Étape 1: Charger les artefacts
         if not self.load_model_artifacts():
+            print("❌ Échec du chargement des artefacts")
             return False
 
-        feedback_df = self.extract_negative_feedbacks()
-        if feedback_df.empty:
-            print("ℹ️ Aucun feedback négatif à traiter")
+        # Étape 2: Récupérer le prochain feedback
+        feedback_data = self.get_next_unprocessed_feedback()
+        if feedback_data is None:
+            print("ℹ️ Aucun feedback à traiter")
             return False
 
-        sample_df = self.load_dataset_sample(dataset_path, self.finetune_config['sample_size'])
-        combined_df = self.combine_datasets(feedback_df, sample_df)
-        if combined_df.empty:
+        print(f"🎯 Traitement du feedback #{feedback_data['id']}")
+        print(f"📊 Prédiction erronée: {feedback_data['original_prediction']}")
+        print(f"✅ Correction attendue: {feedback_data['label']}")
+
+        # Étape 3: Créer une sauvegarde
+        backup_dir = self.create_backup_for_feedback(feedback_data['id'])
+        if backup_dir is None:
+            print("❌ Impossible de créer la sauvegarde - Arrêt")
             return False
 
-        data_results = self.prepare_fine_tuning_data(combined_df)
-        if data_results[0] is None:
-            return False
+        # Initialisation pour la boucle
+        self.current_attempt = 0
+        self.best_result_so_far = None
+        success = False
+        final_model = None
+        final_validation_result = None
 
-        X_text_train, X_text_val, X_num_train, X_num_val, y_train, y_val = data_results
+        # 🔄 BOUCLE DE RE-ENTRAÎNEMENT CONTINU
+        while self.current_attempt < self.deployment_criteria['max_attempts_per_feedback']:
+            self.current_attempt += 1
 
-        history = self.perform_fine_tuning(X_text_train, X_text_val, X_num_train, X_num_val, y_train, y_val)
-        if history is None:
-            return False
+            print(
+                f"\n{'🎯' * 20} TENTATIVE {self.current_attempt}/{self.deployment_criteria['max_attempts_per_feedback']} {'🎯' * 20}")
 
-        metrics = self.evaluate_finetuned_model(X_text_val, X_num_val, y_val)
-        save_result = self.save_finetuned_model()
-        if save_result is None:
-            return False
+            # Étape 4: Créer le dataset d'entraînement adaptatif
+            training_dataset = self.create_individual_training_dataset(
+                feedback_data, dataset_path, self.current_attempt
+            )
+            if training_dataset.empty:
+                print(f"❌ Impossible de créer le dataset pour tentative {self.current_attempt}")
+                continue
 
-        # ✨ NOUVELLE ÉTAPE 9: ÉVALUATION COMPLÈTE ET DÉPLOIEMENT AUTOMATIQUE
-        print(f"\n" + "🏆" * 30)
-        print("ÉTAPE 9: ÉVALUATION COMPLÈTE ET DÉPLOIEMENT AUTOMATIQUE")
-        print("🏆" * 30)
+            # Étape 5: Préparer les données
+            training_data = self.prepare_training_data(training_dataset)
+            if training_data is None:
+                print(f"❌ Échec de la préparation des données pour tentative {self.current_attempt}")
+                continue
 
-        deployment_success = self.compare_models_and_auto_deploy(save_result['save_dir'], dataset_path)
+            # Étape 6: Re-entraînement adaptatif
+            retrained_model, history = self.perform_individual_retraining(
+                training_data, feedback_data, self.current_attempt
+            )
+            if retrained_model is None:
+                print(f"❌ Échec du re-entraînement pour tentative {self.current_attempt}")
+                continue
 
-        # Marquer les feedbacks comme traités
-        self.mark_feedbacks_as_processed(feedback_df)
+            # Étape 7: Validation de la correction
+            validation_result = self.validate_feedback_correction(
+                retrained_model, feedback_data, self.current_attempt
+            )
+
+            # Étape 8: Vérifier le succès
+            if validation_result['validation_passed']:
+                print(f"\n🎉 SUCCÈS À LA TENTATIVE {self.current_attempt}!")
+                print(f"✅ Le feedback a été corrigé avec succès")
+                success = True
+                final_model = retrained_model
+                final_validation_result = validation_result
+                break
+            else:
+                print(f"\n⚠️ TENTATIVE {self.current_attempt} ÉCHOUÉE")
+                if validation_result.get('shows_improvement', False):
+                    print(f"📈 Mais amélioration détectée, on continue...")
+                else:
+                    print(f"❌ Pas d'amélioration, adaptation des paramètres...")
+
+                # Pause entre tentatives
+                if self.current_attempt < self.deployment_criteria['max_attempts_per_feedback']:
+                    print(f"⏳ Pause de 2 secondes avant prochaine tentative...")
+                    time.sleep(2)
+
+        # Étape 9: Décision finale
+        deployment_success = False
+        if success:
+            print(f"\n🎉 FEEDBACK CORRIGÉ AVEC SUCCÈS!")
+            deployment_success = self.deploy_retrained_model(
+                final_model, feedback_data, backup_dir, final_validation_result
+            )
+        else:
+            print(f"\n❌ ÉCHEC APRÈS {self.current_attempt} TENTATIVES")
+            if self.best_result_so_far and self.best_result_so_far.get('shows_improvement', False):
+                print(f"🤔 Meilleur résultat obtenu à la tentative #{self.best_result_so_far['attempt_number']}")
+                print(f"📊 Confiance: {self.best_result_so_far['confidence_score']:.3f}")
+                # Optionnel: déployer le meilleur modèle même imparfait
+
+            self.consecutive_failures += 1
+
+        # Étape 10: Marquer comme traité
+        self.mark_feedback_as_processed(feedback_data['id'], deployed=deployment_success,
+                                        validation_result=final_validation_result or self.best_result_so_far)
 
         # Résumé final
-        print("\n" + "🎉" * 30)
-        print("FINE-TUNING TERMINÉ!")
-        print("🎉" * 30)
-        print(f"📊 Données utilisées: {len(combined_df)} échantillons pour fine-tuning")
-        print(f"📈 Évaluation: Sur TOUT le dataset ({dataset_path})")
-        print(f"🚀 Déploiement automatique: {'✅ RÉUSSI' if deployment_success else '❌ Pas nécessaire'}")
+        end_time = datetime.now()
+        duration = end_time - start_time
 
-        if deployment_success:
-            print(f"🎯 RÉSULTAT: Nouveau modèle déployé automatiquement!")
-            print(f"🔄 Redémarrez l'API pour utiliser le nouveau modèle")
+        print(f"\n🎉 RÉSUMÉ DU TRAITEMENT CONTINU")
+        print("=" * 50)
+        print(f"⏱️ Durée: {duration}")
+        print(f"🎯 Feedback traité: #{feedback_data['id']}")
+        print(f"🔄 Tentatives utilisées: {self.current_attempt}")
+        print(f"🔧 Prédiction originale: {feedback_data['original_prediction']}")
+        print(f"✅ Correction attendue: {feedback_data['label']}")
+
+        if success:
+            print(f"\n🚀 RÉSULTAT: MODÈLE RE-ENTRAÎNÉ ET DÉPLOYÉ!")
+            print(f"   Feedback corrigé à la tentative #{self.current_attempt}")
+            print(f"   Confiance finale: {final_validation_result['confidence_score']:.3f}")
         else:
-            print(f"🎯 RÉSULTAT: Modèle original conservé (meilleur performance)")
+            print(f"\n🛑 RÉSULTAT: Modèle original conservé")
+            print(f"💡 Le re-entraînement n'a pas réussi à corriger ce feedback")
+            if self.best_result_so_far:
+                print(f"📊 Meilleure confiance atteinte: {self.best_result_so_far['confidence_score']:.3f}")
 
-        return True
+        return deployment_success
+
+    def mark_feedback_as_processed(self, feedback_id, deployed=True, validation_result=None):
+        """Marque LE feedback comme traité avec info sur les tentatives"""
+        print(f"\n📝 MARQUAGE DU FEEDBACK #{feedback_id} COMME TRAITÉ")
+        print("=" * 50)
+
+        try:
+            df = pd.read_csv(self.feedback_csv_path)
+
+            # Marquer le feedback spécifique
+            df.loc[feedback_id, 'processed'] = True
+            df.loc[feedback_id, 'processed_at'] = datetime.now().isoformat()
+            df.loc[feedback_id, 'deployed'] = bool(deployed)
+            df.loc[feedback_id, 'retraining_method'] = 'continuous_individual_feedback'
+            df.loc[feedback_id, 'attempts_used'] = int(self.current_attempt)  # NOUVEAU
+
+            if validation_result:
+                df.loc[feedback_id, 'correction_validated'] = bool(validation_result.get('validation_passed', False))
+                df.loc[feedback_id, 'new_prediction'] = str(validation_result.get('new_prediction', ''))
+                df.loc[feedback_id, 'final_confidence'] = float(validation_result.get('confidence_score', 0.0))
+                df.loc[feedback_id, 'confidence_improvement'] = float(
+                    validation_result.get('confidence_improvement', 0.0))
+
+            # Sauvegarder
+            df.to_csv(self.feedback_csv_path, index=False)
+
+            status = "et déployé" if deployed else "mais non déployé"
+            print(f"✅ Feedback #{feedback_id} marqué comme traité {status}")
+            print(f"📊 Tentatives utilisées: {self.current_attempt}")
+            return True
+
+        except Exception as e:
+            print(f"❌ Erreur marquage feedback: {e}")
+            return False
+    def run_continuous_individual_processing(self, dataset_path="./data/test_dataset.csv", max_iterations=None):
+        """Traite en continu CHAQUE feedback individuellement"""
+        print("\n" + "🔄" * 50)
+        print("TRAITEMENT CONTINU PAR FEEDBACK INDIVIDUEL")
+        print("CHAQUE FEEDBACK = UN RE-ENTRAÎNEMENT + UN DÉPLOIEMENT POTENTIEL")
+        print("🔄" * 50)
+
+        processed_count = 0
+        deployed_count = 0
+        iteration = 0
+
+        while True:
+            iteration += 1
+            print(f"\n{'=' * 20} ITÉRATION {iteration} {'=' * 20}")
+
+            if max_iterations and iteration > max_iterations:
+                print(f"🛑 Limite d'itérations atteinte ({max_iterations})")
+                break
+
+            # Vérifier les échecs consécutifs
+            if self.consecutive_failures >= self.deployment_criteria['max_consecutive_failures']:
+                print(f"🚨 ARRÊT: Trop d'échecs consécutifs ({self.consecutive_failures})")
+                break
+
+            # Traiter le prochain feedback
+            success = self.process_single_feedback(dataset_path)
+
+            if success is True:
+                processed_count += 1
+                deployed_count += 1
+                print(f"✅ Feedback traité et modèle déployé!")
+            elif success is False and self.get_next_unprocessed_feedback() is not None:
+                processed_count += 1
+                print(f"⚠️ Feedback traité mais modèle non déployé")
+            else:
+                print(f"ℹ️ Aucun feedback disponible - Arrêt du traitement")
+                break
+
+            print(f"\n📊 Bilan à ce stade:")
+            print(f"   Feedbacks traités: {processed_count}")
+            print(f"   Modèles déployés: {deployed_count}")
+            print(
+                f"   Taux de succès: {deployed_count / processed_count * 100:.1f}%" if processed_count > 0 else "   Taux de succès: 0%")
+            print(f"   Échecs consécutifs: {self.consecutive_failures}")
+
+        print(f"\n🎉 TRAITEMENT CONTINU TERMINÉ")
+        print(f"📊 Statistiques finales:")
+        print(f"   Total feedbacks traités: {processed_count}")
+        print(f"   Total modèles déployés: {deployed_count}")
+        print(
+            f"   Taux de succès: {deployed_count / processed_count * 100:.1f}%" if processed_count > 0 else "   Taux de succès: 0%")
+        print(f"   Re-entraînements totaux: {self.total_retrainings}")
+
+        return processed_count, deployed_count
+
 
 def main():
-    """
-    Fonction principale pour exécuter le fine-tuning
-    """
-    print("🚀 DÉMARRAGE DU FINE-TUNING MANAGER")
-    print("=" * 50)
+    """Fonction principale pour le re-entraînement par feedback individuel"""
+    print("🚀 RE-ENTRAÎNEMENT PAR FEEDBACK INDIVIDUEL")
+    print("=" * 60)
+    print("🎯 PHILOSOPHIE: Chaque feedback négatif = Un re-entraînement")
 
     # Initialiser le gestionnaire
-    manager = FineTuningManager(
-        model_dir="./model",
+    manager = IndividualFeedbackRetrainingManager(
+        model_dir="./model/model_prod",
         data_dir="./data"
     )
 
@@ -1143,167 +1324,193 @@ def main():
         print("❌ Fichiers manquants:")
         for f in missing_files:
             print(f"   - {f}")
-        print("\n💡 Assurez-vous d'avoir entraîné le modèle principal d'abord")
         return False
 
     if not manager.feedback_csv_path.exists():
         print(f"❌ Fichier de feedbacks manquant: {manager.feedback_csv_path}")
-        print("💡 Aucun feedback à traiter pour le moment")
         return False
 
     print("✅ Tous les prérequis sont satisfaits")
 
-    # Exécuter le fine-tuning complet
-    success = manager.run_complete_finetuning()
-
-    if success:
-        print("\n🎉 Fine-tuning réussi!")
-        print("💡 Vous pouvez maintenant remplacer les fichiers du modèle dans l'API")
-    else:
-        print("\n❌ Fine-tuning échoué")
-        print("💡 Vérifiez les logs pour plus de détails")
-
+    # Mode automatique : traite automatiquement UN feedback
+    print("\n🎯 MODE AUTOMATIQUE : Traitement d'un feedback individuel")
+    success = manager.process_single_feedback()
     return success
 
 
-def create_replacement_script(source_dir, target_dir="./model"):
-    """
-    Fonction utilitaire pour créer un script de remplacement automatique
-    """
-    script_content = f"""#!/bin/bash
-# Script de remplacement automatique du modèle fine-tuné
+class FeedbackRetrainingMonitor:
+    """Moniteur pour le re-entraînement par feedback individuel"""
 
-echo "🔄 Remplacement du modèle par la version fine-tunée..."
+    def __init__(self, retraining_log_path):
+        self.retraining_log_path = Path(retraining_log_path)
 
-# Sauvegarder l'ancien modèle
-BACKUP_DIR="./model_backup_$(date +%Y%m%d_%H%M%S)"
-echo "💾 Sauvegarde de l'ancien modèle dans $BACKUP_DIR"
-cp -r {target_dir} $BACKUP_DIR
+    def analyze_retraining_performance(self):
+        """Analyse les performances du re-entraînement"""
+        if not self.retraining_log_path.exists():
+            print("❌ Aucun log de re-entraînement disponible")
+            return None
 
-# Remplacer par le nouveau modèle
-echo "📋 Copie du nouveau modèle depuis {source_dir}"
-cp -r {source_dir}/* {target_dir}/
+        try:
+            with open(self.retraining_log_path, 'r') as f:
+                retraining_log = json.load(f)
 
-echo "✅ Remplacement terminé!"
-echo "💡 Redémarrez l'API Docker pour utiliser le nouveau modèle"
-echo "💡 En cas de problème, restaurez depuis: $BACKUP_DIR"
-"""
+            if not retraining_log:
+                print("❌ Log de re-entraînement vide")
+                return None
 
-    script_path = Path(source_dir) / "replace_model.sh"
-    with open(script_path, 'w') as f:
-        f.write(script_content)
+            print("\n📊 ANALYSE DES RE-ENTRAÎNEMENTS INDIVIDUELS")
+            print("=" * 60)
 
-    # Rendre exécutable
-    import os
-    os.chmod(script_path, 0o755)
+            total_attempts = len(retraining_log)
+            successful_deployments = len([entry for entry in retraining_log if entry['deployed']])
+            success_rate = successful_deployments / total_attempts if total_attempts > 0 else 0
 
-    print(f"📝 Script de remplacement créé: {script_path}")
-    return script_path
+            print(f"📈 Tentatives totales: {total_attempts}")
+            print(f"✅ Déploiements réussis: {successful_deployments}")
+            print(f"📊 Taux de succès: {success_rate:.1%}")
+
+            # Analyse des échecs
+            failed_attempts = [entry for entry in retraining_log if not entry['deployed']]
+            if failed_attempts:
+                print(f"❌ Échecs: {len(failed_attempts)}")
+
+                # Raisons d'échec
+                correction_failures = len([entry for entry in failed_attempts
+                                           if not entry['validation_result'].get('is_corrected', False)])
+                confidence_failures = len([entry for entry in failed_attempts
+                                           if entry['validation_result'].get('is_corrected', False)
+                                           and not entry['validation_result'].get('confidence_sufficient', False)])
+
+                print(f"   Échecs de correction: {correction_failures}")
+                print(f"   Échecs de confiance: {confidence_failures}")
+
+            # Tendance récente
+            recent_attempts = retraining_log[-10:] if len(retraining_log) >= 10 else retraining_log
+            recent_success_rate = len([entry for entry in recent_attempts if entry['deployed']]) / len(recent_attempts)
+
+            print(f"📈 Tendance récente (10 derniers): {recent_success_rate:.1%}")
+
+            # Patterns de feedback
+            feedback_types = {}
+            for entry in retraining_log:
+                original_pred = entry['feedback_details']['original_prediction']
+                expected_correction = entry['feedback_details']['expected_correction']
+                pattern = f"{original_pred} → {expected_correction}"
+                feedback_types[pattern] = feedback_types.get(pattern, 0) + 1
+
+            print(f"\n🔍 Patterns de correction les plus fréquents:")
+            for pattern, count in sorted(feedback_types.items(), key=lambda x: x[1], reverse=True)[:5]:
+                print(f"   {pattern}: {count} fois")
+
+            return {
+                'total_attempts': total_attempts,
+                'successful_deployments': successful_deployments,
+                'success_rate': success_rate,
+                'recent_success_rate': recent_success_rate,
+                'feedback_patterns': feedback_types
+            }
+
+        except Exception as e:
+            print(f"❌ Erreur analyse: {e}")
+            return None
 
 
-# Classes utilitaires pour la gestion des feedbacks
-class FeedbackAnalyzer:
-    """
-    Analyse les patterns dans les feedbacks pour améliorer le modèle
-    """
+def restore_from_backup(backup_dir, model_dir="./model/model_prod"):
+    """Fonction utilitaire pour restaurer un modèle depuis une sauvegarde"""
+    backup_path = Path(backup_dir)
+    model_path = Path(model_dir)
 
-    def __init__(self, feedback_csv_path):
-        self.feedback_csv_path = Path(feedback_csv_path)
+    if not backup_path.exists():
+        print(f"❌ Sauvegarde non trouvée: {backup_path}")
+        return False
 
-    def analyze_feedback_patterns(self):
-        """
-        Analyse les patterns des feedbacks négatifs
-        """
-        if not self.feedback_csv_path.exists():
-            print("❌ Fichier de feedbacks non trouvé")
-            return {}
+    try:
+        print(f"🔄 Restauration depuis: {backup_path}")
 
-        df = pd.read_csv(self.feedback_csv_path)
+        # Sauvegarder l'état actuel
+        current_backup = model_path.parent / f"current_backup_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
+        shutil.copytree(model_path, current_backup)
+        print(f"💾 État actuel sauvegardé: {current_backup}")
 
-        # Séparer les feedbacks positifs et négatifs
-        positive_feedbacks = df[df['user_satisfaction'] == 'yes']
-        negative_feedbacks = df[df['user_satisfaction'] == 'no']
+        # Restaurer depuis la sauvegarde
+        for item in backup_path.iterdir():
+            if item.is_file() and item.name != 'backup_metadata.json':
+                dest = model_path / item.name
+                shutil.copy2(item, dest)
+                print(f"✅ {item.name} restauré")
 
-        analysis = {
-            'total_feedbacks': len(df),
-            'positive_count': len(positive_feedbacks),
-            'negative_count': len(negative_feedbacks),
-            'negative_ratio': len(negative_feedbacks) / len(df) if len(df) > 0 else 0,
-            'patterns': {}
-        }
+        print(f"🎉 Restauration terminée avec succès!")
+        return True
 
-        if len(negative_feedbacks) > 0:
-            # Analyser les erreurs par type de prédiction
-            prediction_errors = negative_feedbacks['predicted_class'].value_counts()
-            analysis['patterns']['prediction_errors'] = prediction_errors.to_dict()
-
-            # Analyser par langue
-            if 'language_detected' in negative_feedbacks.columns:
-                language_errors = negative_feedbacks['language_detected'].value_counts()
-                analysis['patterns']['language_errors'] = language_errors.to_dict()
-
-            # Analyser par niveau de confiance
-            if 'predicted_probability' in negative_feedbacks.columns:
-                neg_probs = negative_feedbacks['predicted_probability']
-                analysis['patterns']['avg_confidence_errors'] = float(neg_probs.mean())
-                analysis['patterns']['confidence_distribution'] = {
-                    'low_confidence_errors': len(neg_probs[neg_probs < 0.6]),
-                    'medium_confidence_errors': len(neg_probs[(neg_probs >= 0.6) & (neg_probs < 0.8)]),
-                    'high_confidence_errors': len(neg_probs[neg_probs >= 0.8])
-                }
-
-        return analysis
-
-    def print_analysis(self):
-        """
-        Affiche l'analyse des feedbacks
-        """
-        analysis = self.analyze_feedback_patterns()
-
-        print("\n📊 ANALYSE DES FEEDBACKS")
-        print("=" * 40)
-        print(f"Total des feedbacks: {analysis['total_feedbacks']}")
-        print(f"Feedbacks positifs: {analysis['positive_count']}")
-        print(f"Feedbacks négatifs: {analysis['negative_count']}")
-        print(f"Taux d'erreur: {analysis['negative_ratio']:.2%}")
-
-        if analysis['patterns']:
-            print(f"\n🔍 Patterns d'erreurs:")
-
-            if 'prediction_errors' in analysis['patterns']:
-                print(f"   Erreurs par prédiction:")
-                for pred, count in analysis['patterns']['prediction_errors'].items():
-                    print(f"     {pred}: {count}")
-
-            if 'language_errors' in analysis['patterns']:
-                print(f"   Erreurs par langue:")
-                for lang, count in analysis['patterns']['language_errors'].items():
-                    print(f"     {lang}: {count}")
-
-            if 'confidence_distribution' in analysis['patterns']:
-                conf_dist = analysis['patterns']['confidence_distribution']
-                print(f"   Distribution des erreurs par confiance:")
-                print(f"     Faible confiance (<60%): {conf_dist['low_confidence_errors']}")
-                print(f"     Confiance moyenne (60-80%): {conf_dist['medium_confidence_errors']}")
-                print(f"     Haute confiance (>80%): {conf_dist['high_confidence_errors']}")
+    except Exception as e:
+        print(f"❌ Erreur lors de la restauration: {e}")
+        return False
 
 
 if __name__ == "__main__":
     import sys
 
     if len(sys.argv) > 1:
-        if sys.argv[1] == "analyze":
-            # Mode analyse des feedbacks
-            analyzer = FeedbackAnalyzer("./data/user_feedbacks.csv")
-            analyzer.print_analysis()
-        elif sys.argv[1] == "help":
-            print("📋 UTILISATION DU FINE-TUNING MANAGER")
-            print("=" * 40)
-            print("python traitement.py              # Exécuter le fine-tuning")
-            print("python traitement.py analyze      # Analyser les feedbacks")
-            print("python traitement.py help         # Afficher cette aide")
+        command = sys.argv[1].lower()
+
+        if command == "auto":
+            # Mode automatique - traite un feedback
+            manager = IndividualFeedbackRetrainingManager()
+            success = manager.process_single_feedback()
+            sys.exit(0 if success else 1)
+
+        elif command == "continuous":
+            # Mode continu - traite tous les feedbacks individuellement
+            manager = IndividualFeedbackRetrainingManager()
+            try:
+                processed, deployed = manager.run_continuous_individual_processing()
+                print(f"✅ Traitement terminé: {processed} traités, {deployed} déployés")
+                sys.exit(0)
+            except KeyboardInterrupt:
+                print("\n👋 Arrêté par l'utilisateur")
+                sys.exit(0)
+
+        elif command == "monitor":
+            # Mode monitoring
+            monitor = FeedbackRetrainingMonitor("./data/individual_retraining_log.json")
+            monitor.analyze_retraining_performance()
+            sys.exit(0)
+
+        elif command == "restore":
+            # Mode restauration
+            if len(sys.argv) > 2:
+                backup_dir = sys.argv[2]
+                restore_from_backup(backup_dir)
+            else:
+                print("❌ Usage: python traitement.py restore <backup_directory>")
+            sys.exit(0)
+
+        elif command == "help":
+            print("📋 UTILISATION DU RE-ENTRAÎNEMENT INDIVIDUEL:")
+            print("=" * 60)
+            print("python traitement.py                    # Mode automatique (traite 1 feedback)")
+            print("python traitement.py auto               # Traiter un feedback")
+            print("python traitement.py continuous         # Traiter tous individuellement")
+            print("python traitement.py monitor            # Monitoring des performances")
+            print("python traitement.py restore <backup>   # Restaurer depuis sauvegarde")
+            print("python traitement.py help               # Afficher cette aide")
+            print("\n🎯 Le re-entraînement individuel effectue:")
+            print("   • Prend le prochain feedback négatif non traité")
+            print("   • Re-entraîne le modèle spécifiquement pour ce feedback")
+            print("   • Valide que la correction fonctionne")
+            print("   • Déploie immédiatement si la validation réussit")
+            print("   • Déclenche automatiquement le rechargement de l'API")
+            print("\n⚖️ Avantages:")
+            print("   • Correction immédiate des erreurs")
+            print("   • Apprentissage ciblé sur chaque problème")
+            print("   • Déploiement rapide des améliorations")
+            print("   • Adaptation continue du modèle")
+            print("   • Rechargement automatique sans redémarrage")
+            print("\n🎯 PHILOSOPHIE:")
+            print("   Chaque feedback négatif = Une opportunité d'amélioration immédiate")
+
         else:
-            print("❌ Argument non reconnu. Utilisez 'help' pour voir les options")
+            print("❌ Commande non reconnue. Utilisez 'help' pour voir les options")
     else:
-        # Mode fine-tuning principal
+        # Mode automatique par défaut
         main()

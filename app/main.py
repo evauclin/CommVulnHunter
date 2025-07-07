@@ -24,6 +24,10 @@ from pathlib import Path
 import pandas as pd
 import subprocess
 import threading
+# Ajouter ces lignes après vos imports existants
+from fastapi import Request
+from fastapi.responses import JSONResponse
+import time
 
 
 
@@ -33,6 +37,104 @@ app = FastAPI(
     description="Une API pour classifier des textes en détectant automatiquement la langue.",
     version="3.0.1"
 )
+
+
+# REMPLACER LE MIDDLEWARE DANS main.py
+
+@app.middleware("http")
+async def auto_reload_middleware(request: Request, call_next):
+    """
+    Middleware qui vérifie et recharge le modèle automatiquement
+    """
+    # Vérifier les mises à jour pour TOUS les endpoints (pas seulement predict)
+    if request.url.path in ["/predict", "/predict/batch", "/health", "/model-status"]:
+        # Vérification avec limitation de fréquence (max 1 fois par 30 secondes)
+        current_time = time.time()
+        if not hasattr(auto_reload_middleware, '_last_check'):
+            auto_reload_middleware._last_check = 0
+
+        if current_time - auto_reload_middleware._last_check > 30:  # 30 secondes au lieu de 60
+            try:
+                # 🆕 NOUVELLE: Vérifier aussi le fichier signal
+                signal_file = Path("./data/reload_signal.txt")
+                if signal_file.exists():
+                    print("🔔 Signal de rechargement détecté!")
+                    try:
+                        with open(signal_file, 'r') as f:
+                            signal_data = json.load(f)
+                        print(f"   Timestamp signal: {signal_data.get('timestamp', 'unknown')}")
+                        print(f"   Trigger: {signal_data.get('trigger', 'unknown')}")
+
+                        # Supprimer le fichier signal
+                        signal_file.unlink()
+                        print("   Fichier signal supprimé")
+
+                        # Forcer le rechargement
+                        if reload_model_artifacts():
+                            print("✅ Rechargement via signal réussi!")
+
+                    except Exception as e:
+                        print(f"⚠️ Erreur traitement signal: {e}")
+                        # Supprimer le fichier même en cas d'erreur
+                        try:
+                            signal_file.unlink()
+                        except:
+                            pass
+
+                # Vérification normale par version
+                auto_reload_if_updated()
+
+            except Exception as e:
+                print(f"⚠️ Erreur auto-reload: {e}")
+            auto_reload_middleware._last_check = current_time
+
+    response = await call_next(request)
+    return response
+
+
+# 🆕 NOUVELLE FONCTION: Vérification détaillée des mises à jour
+def check_for_model_updates():
+    """
+    Vérifie si le modèle a été mis à jour sur le disque (version améliorée)
+    """
+    try:
+        metadata_file = Path("model/model_prod/model_metadata.json")
+        if not metadata_file.exists():
+            return False
+
+        # Lire les métadonnées actuelles
+        with open(metadata_file, "r") as f:
+            current_metadata = json.load(f)
+
+        # Comparer avec les métadonnées en mémoire
+        if not hasattr(check_for_model_updates, '_last_version'):
+            check_for_model_updates._last_version = current_metadata.get('model_version', 1)
+            check_for_model_updates._last_timestamp = current_metadata.get('deployment_timestamp', '')
+            return False
+
+        current_version = current_metadata.get('model_version', 1)
+        current_timestamp = current_metadata.get('deployment_timestamp', '')
+
+        # Vérifier par version ET par timestamp
+        version_changed = current_version > check_for_model_updates._last_version
+        timestamp_changed = current_timestamp != check_for_model_updates._last_timestamp
+
+        if version_changed or timestamp_changed:
+            print(f"🔍 NOUVEAU MODÈLE DÉTECTÉ!")
+            print(f"   Version: {check_for_model_updates._last_version} → {current_version}")
+            if timestamp_changed:
+                print(f"   Timestamp: {check_for_model_updates._last_timestamp} → {current_timestamp}")
+            print(f"   Méthode de déploiement: {current_metadata.get('deployment_method', 'unknown')}")
+
+            check_for_model_updates._last_version = current_version
+            check_for_model_updates._last_timestamp = current_timestamp
+            return True
+
+        return False
+
+    except Exception as e:
+        print(f"⚠️ Erreur vérification mise à jour: {e}")
+        return False
 
 app.add_middleware(
     CORSMiddleware,
@@ -54,7 +156,7 @@ STOP_WORDS = {}
 AUTO_FINETUNING_ENABLED = True
 IS_FINETUNING_RUNNING = False
 FINETUNING_LOCK = threading.Lock()
-NEGATIVE_FEEDBACK_THRESHOLD = 5
+NEGATIVE_FEEDBACK_THRESHOLD = 1
 tf.config.set_visible_devices([], 'GPU')
 
 FEEDBACK_CSV_PATH = Path("./data/user_feedbacks.csv")
@@ -62,38 +164,52 @@ FEEDBACK_CSV_PATH = Path("./data/user_feedbacks.csv")
 
 # --- Chargement des Artefacts du Modèle ---
 def load_model_artifacts():
-    """Charge tous les artefacts du modèle avec la correction de la longueur de séquence"""
     global model, tokenizer, scaler, label_encoder, MAX_SEQUENCE_LENGTH, SUSPICIOUS_WORDS_SET, STOP_WORDS
 
     try:
         print("🚀 Démarrage de l'API et chargement des artefacts...")
 
-        # ÉTAPE 1: Charger les métadonnées en premier pour obtenir la bonne longueur
-        metadata_file = Path("model/model_metadata.json")
+        # ÉTAPE 1: Charger le modèle EN PREMIER
+        model_path = Path("model/model_prod/best_lstm_model.keras")
+        if not model_path.exists():
+            raise FileNotFoundError(f"Modèle non trouvé: {model_path}")
+
+        model = load_model(str(model_path))
+        print("✅ Modèle LSTM chargé")
+
+        # ÉTAPE 2: CORRIGER MAX_SEQUENCE_LENGTH avec la vraie valeur du modèle
+        model_input_shape = model.inputs[0].shape
+        actual_sequence_length = model_input_shape[1]
+
+        if actual_sequence_length is not None:
+            # 🎯 MISE À JOUR CRITIQUE de la variable globale
+            MAX_SEQUENCE_LENGTH = actual_sequence_length
+            print(f"🔧 MAX_SEQUENCE_LENGTH corrigé: {MAX_SEQUENCE_LENGTH}")
+        else:
+            print(f"⚠️ Modèle à longueur variable, conservation de MAX_SEQUENCE_LENGTH = {MAX_SEQUENCE_LENGTH}")
+
+        # ÉTAPE 3: Vérifier/corriger les métadonnées
+        metadata_file = Path("model/model_prod/model_metadata.json")
         if metadata_file.exists():
             try:
                 with open(metadata_file, "r") as f:
                     metadata = json.load(f)
                 config = metadata.get('config', {})
-                MAX_SEQUENCE_LENGTH = config.get('max_sequence_length', 566)
-                print(f"✅ Métadonnées chargées: max_sequence_length = {MAX_SEQUENCE_LENGTH}")
+                metadata_length = config.get('max_sequence_length', MAX_SEQUENCE_LENGTH)
 
-                # Afficher la configuration complète du modèle
-                print(f"📋 Configuration du modèle:")
-                print(f"  max_vocab_size: {config.get('max_vocab_size', 'Non défini')}")
-                print(f"  max_sequence_length: {MAX_SEQUENCE_LENGTH}")
-                print(f"  embedding_dim: {config.get('embedding_dim', 'Non défini')}")
-                print(f"  lstm_units: {config.get('lstm_units', 'Non défini')}")
+                if metadata_length != MAX_SEQUENCE_LENGTH:
+                    print(f"⚠️ Correction métadonnées: {metadata_length} → {MAX_SEQUENCE_LENGTH}")
+                    config['max_sequence_length'] = MAX_SEQUENCE_LENGTH
+                    metadata['config'] = config
+                    with open(metadata_file, "w") as f:
+                        json.dump(metadata, f, indent=2)
 
+                print(f"✅ Métadonnées alignées: max_sequence_length = {MAX_SEQUENCE_LENGTH}")
             except Exception as e:
-                print(f"⚠️ Erreur chargement métadonnées: {e}")
-                print(f"⚠️ Utilisation de la valeur par défaut: MAX_SEQUENCE_LENGTH = {MAX_SEQUENCE_LENGTH}")
-        else:
-            print(f"⚠️ Fichier model_metadata.json non trouvé")
-            print(f"⚠️ Utilisation de la valeur par défaut: MAX_SEQUENCE_LENGTH = {MAX_SEQUENCE_LENGTH}")
+                print(f"⚠️ Erreur métadonnées: {e}")
 
         # ÉTAPE 2: Chargement du modèle
-        model_path = Path("model/best_lstm_model.keras")
+        model_path = Path("model/model_prod/best_lstm_model.keras")
         if not model_path.exists():
             raise FileNotFoundError(f"Modèle non trouvé: {model_path}")
 
@@ -116,7 +232,7 @@ def load_model_artifacts():
                     MAX_SEQUENCE_LENGTH = expected_seq_length
 
         # ÉTAPE 4: Chargement du tokenizer
-        tokenizer_path = Path("model/tokenizer.pkl")
+        tokenizer_path = Path("model/model_prod/tokenizer.pkl")
         if not tokenizer_path.exists():
             raise FileNotFoundError(f"Tokenizer non trouvé: {tokenizer_path}")
 
@@ -125,7 +241,7 @@ def load_model_artifacts():
         print(f"✅ Tokenizer chargé (vocab: {len(tokenizer.word_index)} mots)")
 
         # ÉTAPE 5: Chargement du scaler
-        scaler_path = Path("model/scaler.pkl")
+        scaler_path = Path("model/model_prod/scaler.pkl")
         if not scaler_path.exists():
             raise FileNotFoundError(f"Scaler non trouvé: {scaler_path}")
 
@@ -134,7 +250,7 @@ def load_model_artifacts():
         print("✅ Scaler chargé")
 
         # ÉTAPE 6: Chargement du label encoder
-        label_encoder_path = Path("model/label_encoder.pkl")
+        label_encoder_path = Path("model/model_prod/label_encoder.pkl")
         if not label_encoder_path.exists():
             raise FileNotFoundError(f"Label encoder non trouvé: {label_encoder_path}")
 
@@ -143,7 +259,7 @@ def load_model_artifacts():
         print(f"✅ Label encoder chargé (classes: {label_encoder.classes_})")
 
         # ÉTAPE 7: Charger les mots suspects
-        suspicious_words_file = Path("model/suspicious_words.json")
+        suspicious_words_file = Path("model/model_prod/suspicious_words.json")
         if suspicious_words_file.exists():
             try:
                 with open(suspicious_words_file, 'r') as f:
@@ -311,65 +427,63 @@ def extract_numerical_features(text: str):
 
 # --- Logique de prédiction principale ---
 def perform_prediction(text: str):
-    """Fonction cœur qui détecte la langue et effectue une prédiction avec la bonne longueur de séquence."""
+    """Fonction corrigée qui utilise la VRAIE longueur du modèle"""
     if not model:
         raise HTTPException(status_code=503, detail="Modèle non chargé")
 
     try:
-        # Détection automatique de la langue
+        # 🔧 DÉTECTION DYNAMIQUE de la longueur du modèle
+        model_input_shape = model.inputs[0].shape
+        actual_max_length = model_input_shape[1]
+
+        # Si le modèle a une longueur variable (None), utiliser la valeur par défaut
+        if actual_max_length is None:
+            actual_max_length = MAX_SEQUENCE_LENGTH
+
+        print(
+            f"📏 Longueur utilisée: {actual_max_length} (modèle: {model_input_shape[1]}, config: {MAX_SEQUENCE_LENGTH})")
+
+        # Détection de langue
         try:
             detected_lang = detect(text[:1000])
             lang = detected_lang if detected_lang in ['fr', 'en'] else 'en'
         except Exception:
-            lang = 'en'  # Fallback sur l'anglais
+            lang = 'en'
 
-        print(f"🌍 Langue détectée: {lang}")
-
-        # Prétraitement du texte
+        # Prétraitement
         processed_text = preprocess_text(text, lang)
-        print(f"📝 Texte prétraité: {processed_text[:100]}...")
-
-        # Création des séquences
         sequence = tokenizer.texts_to_sequences([processed_text])
-        # Filtrer les tokens qui dépassent la taille du vocabulaire du modèle
-        if sequence[0]:  # Si la séquence n'est pas vide
-            max_vocab_id = 10000  # indices valides: 0 à 10000
-            sequence[0] = [token_id for token_id in sequence[0] if token_id <= max_vocab_id]
-            print(
-                f"🔧 Tokens filtrés: {len([t for t in tokenizer.texts_to_sequences([processed_text])[0] if t > max_vocab_id])} tokens supprimés")
-        print(f"🔢 Séquence créée: longueur = {len(sequence[0]) if sequence[0] else 0}")
 
-        # Utiliser la bonne longueur de séquence
+        # Filtrage des tokens
+        if sequence[0]:
+            max_vocab_id = 10000
+            sequence[0] = [token_id for token_id in sequence[0] if token_id <= max_vocab_id]
+
+        # 🎯 UTILISER LA LONGUEUR DÉTECTÉE DYNAMIQUEMENT
         padded_sequence = pad_sequences(
             sequence,
-            maxlen=MAX_SEQUENCE_LENGTH,
+            maxlen=actual_max_length,  # ✅ CORRECTION ICI
             padding='post',
             truncating='post'
         )
-        print(f"📏 Séquence paddée: shape = {padded_sequence.shape}")
+
+        print(f"📊 Séquence créée: {padded_sequence.shape}")
 
         # Features numériques
         numerical_features = extract_numerical_features(text)
         scaled_features = scaler.transform([numerical_features])
-        print(f"🔢 Features numériques: shape = {scaled_features.shape}")
 
         # Vérification finale des dimensions
-        expected_text_shape = (1, MAX_SEQUENCE_LENGTH)
-        expected_num_shape = (1, 10)  # Nombre de features numériques
-
+        expected_text_shape = (1, actual_max_length)
         if padded_sequence.shape != expected_text_shape:
             raise ValueError(f"Dimension texte incorrecte: {padded_sequence.shape} != {expected_text_shape}")
-        if scaled_features.shape != expected_num_shape:
-            raise ValueError(f"Dimension features incorrecte: {scaled_features.shape} != {expected_num_shape}")
 
-        print(f"✅ Dimensions validées, prédiction en cours...")
-
-        # Prédiction du modèle
+        # Prédiction
         prediction_proba = model.predict([padded_sequence, scaled_features], verbose=0)[0][0]
         prediction_int = int(prediction_proba > 0.5)
         predicted_class = label_encoder.inverse_transform([prediction_int])[0]
 
-        # Calcul de la confiance
+        # Calcul de confiance
         confidence_score = abs(prediction_proba - 0.5) * 2
         if confidence_score > 0.8:
             confidence = "HIGH"
@@ -378,30 +492,24 @@ def perform_prediction(text: str):
         else:
             confidence = "LOW"
 
-        print(f"✅ Prédiction réussie: {predicted_class} (prob: {prediction_proba:.4f}, conf: {confidence})")
-
         return {
             "prediction": predicted_class,
             "probability": float(prediction_proba),
             "confidence": confidence,
             "language_detected": lang,
-            "sequence_length_used": MAX_SEQUENCE_LENGTH,
+            "sequence_length_used": actual_max_length,  # ✅ Retourner la vraie longueur
             "debug_info": {
                 "processed_text_length": len(processed_text),
                 "original_sequence_length": len(sequence[0]) if sequence[0] else 0,
-                "padded_sequence_shape": list(padded_sequence.shape),
-                "features_shape": list(scaled_features.shape)
+                "model_expected_length": model_input_shape[1],
+                "config_max_length": MAX_SEQUENCE_LENGTH,
+                "actual_used_length": actual_max_length
             }
         }
 
     except Exception as e:
         print(f"❌ Erreur dans perform_prediction: {e}")
-        print(f"❌ Type d'erreur: {type(e).__name__}")
-        import traceback
-        print(f"❌ Traceback complet:")
-        traceback.print_exc()
         raise HTTPException(status_code=500, detail=f"Erreur de prédiction: {str(e)}")
-
 
 # --- Fonctions de Gestion des Feedbacks ---
 def count_negative_feedbacks() -> int:
@@ -424,7 +532,6 @@ def count_negative_feedbacks() -> int:
     except Exception as e:
         print(f"❌ Erreur lors du comptage des feedbacks négatifs: {e}")
         return 0
-
 
 def save_feedback_to_csv(feedback_data):
     """Sauvegarde le feedback dans un fichier CSV"""
@@ -468,7 +575,7 @@ def check_finetuning_trigger():
         negative_count = count_negative_feedbacks()
 
         # Seuil pour déclencher le fine-tuning (5 feedbacks négatifs)
-        NEGATIVE_FEEDBACK_THRESHOLD = 5
+        NEGATIVE_FEEDBACK_THRESHOLD = 1
 
         if negative_count >= NEGATIVE_FEEDBACK_THRESHOLD:
             print(f"🚨 Seuil de fine-tuning atteint: {negative_count}/{NEGATIVE_FEEDBACK_THRESHOLD} feedbacks négatifs")
@@ -605,6 +712,96 @@ def check_and_trigger_finetuning():
     except Exception as e:
         print(f"❌ Erreur vérification fine-tuning: {e}")
         return False
+
+
+def reload_model_artifacts():
+    """
+    Recharge le modèle et tous les artefacts depuis le disque
+    """
+    global model, tokenizer, scaler, label_encoder, MAX_SEQUENCE_LENGTH, SUSPICIOUS_WORDS_SET, STOP_WORDS
+
+    print("🔄 RECHARGEMENT DU MODÈLE EN COURS...")
+    print("=" * 50)
+
+    try:
+        # Sauvegarder l'ancien modèle au cas où
+        old_model = model
+
+        # Recharger tous les artefacts
+        success = load_model_artifacts()
+
+        if success:
+            print("✅ MODÈLE RECHARGÉ AVEC SUCCÈS!")
+            print(f"   Nouvelle longueur de séquence: {MAX_SEQUENCE_LENGTH}")
+            print(f"   Vocabulaire: {len(tokenizer.word_index)} mots")
+
+            # Test rapide du nouveau modèle
+            try:
+                test_text = "Test de validation du nouveau modèle"
+                test_result = perform_prediction(test_text)
+                print(f"   Test de validation réussi: {test_result['prediction']}")
+
+                return True
+            except Exception as e:
+                print(f"❌ Test de validation échoué: {e}")
+                # Restaurer l'ancien modèle si possible
+                if old_model is not None:
+                    model = old_model
+                    print("🔄 Ancien modèle restauré")
+                return False
+        else:
+            print("❌ Échec du rechargement")
+            return False
+
+    except Exception as e:
+        print(f"❌ Erreur critique lors du rechargement: {e}")
+        return False
+
+
+def check_for_model_updates():
+    """
+    Vérifie si le modèle a été mis à jour sur le disque
+    """
+    try:
+        metadata_file = Path("model/model_prod/model_metadata.json")
+        if not metadata_file.exists():
+            return False
+
+        # Lire les métadonnées actuelles
+        with open(metadata_file, "r") as f:
+            current_metadata = json.load(f)
+
+        # Comparer avec les métadonnées en mémoire
+        if not hasattr(check_for_model_updates, '_last_version'):
+            check_for_model_updates._last_version = current_metadata.get('model_version', 1)
+            return False
+
+        current_version = current_metadata.get('model_version', 1)
+
+        if current_version > check_for_model_updates._last_version:
+            print(f"🔍 NOUVEAU MODÈLE DÉTECTÉ!")
+            print(f"   Version précédente: {check_for_model_updates._last_version}")
+            print(f"   Nouvelle version: {current_version}")
+
+            check_for_model_updates._last_version = current_version
+            return True
+
+        return False
+
+    except Exception as e:
+        print(f"⚠️ Erreur vérification mise à jour: {e}")
+        return False
+
+
+# Fonction pour déclencher le rechargement automatique
+def auto_reload_if_updated():
+    """
+    Vérifie et recharge automatiquement le modèle s'il a été mis à jour
+    """
+    if check_for_model_updates():
+        print("🚀 RECHARGEMENT AUTOMATIQUE DU MODÈLE...")
+        return reload_model_artifacts()
+    return False
 
 # --- Endpoints de l'API ---
 @app.get("/", summary="Message de bienvenue")
@@ -786,7 +983,7 @@ def get_feedback_stats():
                                        (df['processed'] == False)
                                        ])
 
-        finetuning_ready = negative_unprocessed >= 5
+        finetuning_ready = negative_unprocessed >= 1
 
         return {
             "total_feedbacks": total,
@@ -857,7 +1054,7 @@ def trigger_finetuning():
     try:
         negative_count = count_negative_feedbacks()
 
-        if negative_count >= 5:
+        if negative_count >= 1:
             return {
                 "status": "ready",
                 "message": "Fine-tuning peut être déclenché",
@@ -870,12 +1067,97 @@ def trigger_finetuning():
                 "status": "not_ready",
                 "message": f"Pas assez de feedbacks négatifs ({negative_count}/5)",
                 "negative_feedbacks": negative_count,
-                "needed": 5 - negative_count
+                "needed": 1 - negative_count
             }
 
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Erreur: {e}")
 
+
+@app.api_route("/reload-model", methods=["GET", "POST"], summary="Recharger le modèle depuis le disque")
+async def reload_model_endpoint():
+    """
+    Force le rechargement du modèle depuis le disque
+    """
+    try:
+        print("🔄 RECHARGEMENT MANUEL DU MODÈLE DEMANDÉ...")
+
+        success = reload_model_artifacts()
+
+        if success:
+            # CORRECTION: Récupérer les métadonnées correctement
+            try:
+                metadata_file = Path("model/model_prod/model_metadata.json")
+                if metadata_file.exists():
+                    with open(metadata_file, "r") as f:
+                        current_metadata = json.load(f)
+                else:
+                    current_metadata = {}
+            except:
+                current_metadata = {}
+
+            return {
+                "status": "success",
+                "message": "Modèle rechargé avec succès",
+                "model_version": current_metadata.get('model_version', 'unknown'),
+                "max_sequence_length": MAX_SEQUENCE_LENGTH,
+                "vocab_size": len(tokenizer.word_index) if tokenizer else 0,
+                "timestamp": datetime.now().isoformat()
+            }
+        else:
+            raise HTTPException(
+                status_code=500,
+                detail="Échec du rechargement du modèle"
+            )
+
+    except Exception as e:
+        print(f"❌ Erreur rechargement manuel: {e}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Erreur rechargement: {str(e)}"
+        )
+
+
+# CORRECTION 2: Améliorer l'endpoint /model-status
+
+@app.get("/model-status", summary="Statut détaillé du modèle")
+def get_model_status():
+    """
+    Retourne des informations détaillées sur le modèle actuel
+    """
+    try:
+        metadata_file = Path("model/model_prod/model_metadata.json")
+        current_metadata = {}
+
+        if metadata_file.exists():
+            with open(metadata_file, "r") as f:
+                current_metadata = json.load(f)
+
+        model_file_path = Path("model/model_prod/best_lstm_model.keras")
+
+        return {
+            "model_loaded": model is not None,
+            "model_version": current_metadata.get('model_version', 'unknown'),
+            "last_retraining": current_metadata.get('last_individual_retraining', 'never'),
+            "last_feedback_processed": current_metadata.get('last_feedback_processed', 'none'),
+            "total_retrainings": current_metadata.get('total_individual_retrainings', 0),
+            "max_sequence_length": MAX_SEQUENCE_LENGTH,
+            "vocab_size": len(tokenizer.word_index) if tokenizer else 0,
+            "suspicious_words_count": len(SUSPICIOUS_WORDS_SET),
+            "deployment_method": current_metadata.get('deployment_method', 'initial_load'),
+            "model_file_exists": model_file_path.exists(),
+            "model_file_modified": datetime.fromtimestamp(
+                model_file_path.stat().st_mtime
+            ).isoformat() if model_file_path.exists() else None,
+            "check_timestamp": datetime.now().isoformat()
+        }
+
+    except Exception as e:
+        return {
+            "error": str(e),
+            "model_loaded": model is not None,
+            "check_timestamp": datetime.now().isoformat()
+        }
 
 # --- Charger les artefacts au démarrage ---
 print("🚀 Initialisation de l'API de détection de phishing...")
