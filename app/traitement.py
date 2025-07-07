@@ -115,11 +115,12 @@ class IndividualFeedbackRetrainingManager:
         self.retrain_config = {
             'learning_rate': 0.001,  # Très faible pour stabilité
             'epochs': 10,  # Peu d'époques pour éviter overfitting
-            'batch_size': 10,  # Un seul feedback
+            'batch_size': 5,  # Un seul feedback
             'patience': 3,  # Patience réduite
             'base_sample_size': 50,  # Échantillon de support
             'validation_split': 0.3,  # Plus de validation
             # Pondération intelligente
+
             'feedback_weight': 6.0,  # Prioritaire mais pas excessif
             'support_weight': 1.0,  # Poids normal
 
