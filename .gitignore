@@ -17,7 +17,7 @@ __pycache__/
 app/data/dataset_fr_en.csv
 app/data/full_merged_dataset_fr_en_spam.csv
 app/data/*.csv
-model/prod/prod/*.keras
+app/model/model_prod/*.keras
 model/prod/*.pkl
 data/user_feedbacks.csv
 logs/
@@ -27,3 +27,4 @@ logs/
 !app/data/dataset_sample.csv
 !app/data/.gitkeep
 !model/prod/.gitkeep
+
