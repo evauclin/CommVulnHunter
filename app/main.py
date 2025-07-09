@@ -29,7 +29,6 @@ from collections import deque
 from fastapi import FastAPI, HTTPException, File, UploadFile
 from fastapi.responses import StreamingResponse
 import io
-import html
 
 # Ajouter ces lignes après vos imports existants
 from fastapi import Request
@@ -80,31 +79,6 @@ NEGATIVE_FEEDBACK_THRESHOLD = 1
 tf.config.set_visible_devices([], 'GPU')
 
 FEEDBACK_CSV_PATH = Path("./data/user_feedbacks.csv")
-
-
-def clean_input_field(text: str) -> str:
-    """Nettoie un champ texte comme dans le frontend JS (HTML stripping, normalisation, entités, caractères spéciaux)"""
-    if not text:
-        return ""
-
-    cleaned = text
-
-    # 1. Supprimer les balises HTML
-    cleaned = re.sub(r"<[^>]+>", " ", cleaned)
-
-    # 2. Décoder les entités HTML (&nbsp;, &amp;, etc.)
-    cleaned = html.unescape(cleaned)
-
-    # 3. Supprimer les caractères de contrôle ASCII (non imprimables)
-    cleaned = re.sub(r"[\x00-\x08\x0b\x0c\x0e-\x1f\x7f-\x9f]", "", cleaned)
-
-    # 4. Supprimer les caractères non souhaités (emojis cassés, symboles, etc.)
-    cleaned = re.sub(r"[^\w\s\-.,!?@()[\]{}:;'\"€/àâçéèêëîïôöùûü%&*=+\\/|~`<>]", "", cleaned)
-
-    # 5. Normaliser les espaces multiples
-    cleaned = re.sub(r"\s+", " ", cleaned)
-
-    return cleaned.strip()
 
 
 def get_raw_email_from_csv(email_id: str) -> dict:
@@ -165,90 +139,10 @@ def get_raw_email_from_csv(email_id: str) -> dict:
         raise HTTPException(status_code=500, detail=f"Erreur lecture CSV: {str(e)}")
 
 
-def analyze_input_lengths(texts):
-    """Quick analysis of input text lengths"""
-    lengths = []
-    for text in texts:
-        if pd.isna(text):
-            lengths.append(0)
-        else:
-            clean_text = str(text).lower()
-            clean_text = re.sub(r'http[s]?://\S+', ' URL_TOKEN ', clean_text)
-            clean_text = re.sub(r'\S+@\S+', ' EMAIL_TOKEN ', clean_text)
-            clean_text = re.sub(r'[^\w\s]', ' ', clean_text)
-            words = clean_text.split()
-            lengths.append(len(words))
-    return lengths
 
 
-def calculate_production_length(current_batch_lengths):
-    """Calculate optimal length for this batch in production using smart_percentile"""
-    global current_production_length
-
-    all_lengths = list(current_batch_lengths)
-
-    # Ajouter l'historique récent si disponible
-    if len(length_history) > 0:
-        recent_history = list(length_history)[-100:]  # 100 derniers échantillons
-        all_lengths.extend(recent_history)
-
-    # Vérifier si on a assez de données (minimum 10 échantillons)
-    if len(all_lengths) < 10:
-        # Pas assez de données, utiliser la longueur d'entraînement
-        fallback = current_production_length or MAX_SEQUENCE_LENGTH
-        print(f"  📊 Pas assez d'échantillons ({len(all_lengths)}<10), utilisation de {fallback}")
-        return fallback
-
-    # Appliquer smart_percentile sur les données combinées
-    mean_length = np.mean(all_lengths)
-    std_length = np.std(all_lengths)
-    p95_length = int(np.percentile(all_lengths, 95))
-
-    # Logique smart_percentile adaptée pour la production
-    if std_length > mean_length * 0.8:  # Grande variabilité
-        optimal = min(p95_length, int(mean_length + 1.5 * std_length))
-        print(f"  🧠 Production: variabilité élevée (std={std_length:.1f}) → ajustement conservateur")
-    else:
-        optimal = p95_length
-        print(f"  🧠 Production: distribution stable → 95e percentile")
-
-    # Appliquer les limites (entre 30 et 800)
-    optimal = max(optimal, 30)
-    optimal = min(optimal, 800)
-
-    # Calculer l'efficacité
-    current_avg = np.mean(current_batch_lengths)
-    efficiency = current_avg / optimal if optimal > 0 else 0
-    print(f"  🎯 Longueur adaptée: {optimal} (efficacité: {efficiency:.2f})")
-
-    return optimal
 
 
-def prepare_sequences_adaptive(texts, languages, target_length):
-    """Prepare sequences with a specific target length"""
-    processed_texts = []
-    for text, lang in zip(texts, languages):
-        processed = preprocess_text(text, lang)
-        processed_texts.append(processed)
-
-    # Tokenization
-    sequences = tokenizer.texts_to_sequences(processed_texts)
-
-    # Filtrer les tokens qui dépassent la taille du vocabulaire
-    max_vocab_id = 10000
-    for i, sequence in enumerate(sequences):
-        if sequence:
-            sequences[i] = [token_id for token_id in sequence if token_id <= max_vocab_id]
-
-    # Padding avec la longueur adaptée
-    padded_sequences = pad_sequences(
-        sequences,
-        maxlen=target_length,
-        padding='post',
-        truncating='post'
-    )
-
-    return padded_sequences, processed_texts
 
 
 # --- Chargement des Artefacts du Modèle (VERSION AMÉLIORÉE) ---
@@ -471,141 +365,6 @@ def extract_numerical_features(text: str):
     return features
 
 
-# --- NOUVELLE FONCTION: Prédiction avec Smart Percentile ---
-def perform_prediction_adaptive(texts, enable_adaptation=True):
-    """
-    Adaptive prediction with smart_percentile in production
-
-    Args:
-        texts: List of texts to analyze or single text
-        enable_adaptation: If True, adapt length according to smart_percentile
-
-    Returns:
-        dict: Results with adaptation information
-    """
-    global adaptation_stats, length_history, current_production_length
-
-    if not model:
-        raise HTTPException(status_code=503, detail="Modèle non chargé")
-
-    # Normaliser l'entrée en liste
-    if isinstance(texts, str):
-        texts = [texts]
-
-    try:
-        adaptation_stats['total_predictions'] += len(texts)
-
-        # Détection des langues
-        languages = []
-        for text in texts:
-            try:
-                detected_lang = detect(text[:1000])
-                lang = detected_lang if detected_lang in ['fr', 'en'] else 'en'
-            except Exception:
-                lang = 'en'
-            languages.append(lang)
-
-        print(f"🔮 PRÉDICTION SMART_PERCENTILE")
-        print(f"   Nombre de textes: {len(texts)}")
-        print(f"   Adaptation activée: {enable_adaptation}")
-        print(f"   Modèle supporte variables: {MODEL_SUPPORTS_VARIABLE_LENGTH}")
-        print(f"   Smart_percentile activé: {SMART_PERCENTILE_ENABLED}")
-
-        # Décider si on doit adapter
-        should_adapt = (enable_adaptation and
-                        SMART_PERCENTILE_ENABLED and
-                        MODEL_SUPPORTS_VARIABLE_LENGTH)
-
-        if should_adapt:
-            # 1. Analyser les longueurs du batch actuel
-            current_lengths = analyze_input_lengths(texts)
-            print(
-                f"   Longueurs actuelles: {min(current_lengths)}-{max(current_lengths)} (moy: {np.mean(current_lengths):.1f})")
-
-            # 2. Calculer la longueur optimale avec smart_percentile
-            optimal_length = calculate_production_length(current_lengths)
-
-            # 3. Vérifier si on doit vraiment adapter
-            training_length = MAX_SEQUENCE_LENGTH
-            if abs(optimal_length - training_length) > 10:  # Seuil de changement
-                print(f"   🔄 Adaptation: {training_length} → {optimal_length}")
-                # Utiliser la longueur adaptée
-                padded_sequences, processed_texts = prepare_sequences_adaptive(texts, languages, optimal_length)
-                current_production_length = optimal_length
-                adaptation_stats['adaptations_triggered'] += 1
-                adaptation_stats['last_adaptation'] = datetime.now().isoformat()
-                adaptation_triggered = True
-                actual_length_used = optimal_length
-            else:
-                print(f"   ⚪ Pas d'adaptation nécessaire (écart < 10)")
-                # Utiliser la méthode standard
-                padded_sequences, processed_texts = prepare_sequences_adaptive(texts, languages, training_length)
-                adaptation_triggered = False
-                actual_length_used = training_length
-
-            # 4. Mettre à jour l'historique pour les futures prédictions
-            length_history.extend(current_lengths)
-
-            # 5. Calculer l'efficacité
-            efficiency = np.mean(current_lengths) / actual_length_used if actual_length_used > 0 else 1.0
-            adaptation_stats['avg_efficiency'] = (adaptation_stats['avg_efficiency'] * 0.9 + efficiency * 0.1)
-
-        else:
-            # Mode standard sans adaptation
-            print(f"   📋 Mode standard (adaptation désactivée)")
-            padded_sequences, processed_texts = prepare_sequences_adaptive(texts, languages, MAX_SEQUENCE_LENGTH)
-            adaptation_triggered = False
-            actual_length_used = MAX_SEQUENCE_LENGTH
-            efficiency = 1.0
-
-        # 6. Extraction des features numériques
-        numerical_features = []
-        for text in texts:
-            features = extract_numerical_features(text)
-            numerical_features.append(features)
-        scaled_features = scaler.transform(numerical_features)
-
-        # 7. Prédiction
-        probabilities = model.predict([padded_sequences, scaled_features], verbose=0)
-
-        # 8. Préparer les résultats
-        results = []
-        for i, (text, lang, prob) in enumerate(zip(texts, languages, probabilities)):
-            prediction_int = int(prob[0] > 0.5)
-            predicted_class = label_encoder.inverse_transform([prediction_int])[0]
-
-            confidence_score = abs(prob[0] - 0.5) * 2
-            if confidence_score > 0.8:
-                confidence = "HIGH"
-            elif confidence_score > 0.4:
-                confidence = "MEDIUM"
-            else:
-                confidence = "LOW"
-
-            result = {
-                "prediction": predicted_class,
-                "probability": float(prob[0]),
-                "confidence": confidence,
-                "language_detected": lang,
-                "sequence_length_used": actual_length_used,
-                "adaptation_info": {
-                    "adaptation_enabled": should_adapt,
-                    "adaptation_triggered": adaptation_triggered,
-                    "efficiency": efficiency if should_adapt else None,
-                    "original_length": len(processed_texts[i].split()) if processed_texts else None
-                } if should_adapt else None
-            }
-            results.append(result)
-
-        # Retourner un seul résultat si un seul texte en entrée
-        if len(results) == 1:
-            return results[0]
-        else:
-            return {"results": results}
-
-    except Exception as e:
-        print(f"❌ Erreur dans perform_prediction_adaptive: {e}")
-        raise HTTPException(status_code=500, detail=f"Erreur de prédiction: {str(e)}")
 
 
 # --- Logique de prédiction principale (VERSION ORIGINALE CONSERVÉE) ---
@@ -673,162 +432,12 @@ def perform_prediction(text: str):
 
 
 
-def count_negative_feedbacks() -> int:
-    """Count only unprocessed negative feedbacks"""
-    try:
-        if not FEEDBACK_CSV_PATH.exists():
-            return 0
-        df = pd.read_csv(FEEDBACK_CSV_PATH)
-        negative_unprocessed = len(df[
-                                       (df['user_satisfaction'] == 'no') &
-                                       (df['processed'] == False)
-                                       ])
-        return negative_unprocessed
-    except Exception as e:
-        print(f"❌ Erreur lors du comptage des feedbacks négatifs: {e}")
-        return 0
 
 
-def save_feedback_to_csv(feedback_data):
-    """Save feedback to CSV file"""
-    try:
-        csv_headers = [
-            'timestamp', 'email_text', 'predicted_class',
-            'predicted_probability', 'user_satisfaction', 'language_detected', 'processed'
-        ]
-        feedback_data['processed'] = False
-        FEEDBACK_CSV_PATH.parent.mkdir(exist_ok=True)
-        file_exists = FEEDBACK_CSV_PATH.exists()
-        with open(FEEDBACK_CSV_PATH, 'a', newline='', encoding='utf-8') as csvfile:
-            writer = csv.DictWriter(csvfile, fieldnames=csv_headers)
-            if not file_exists:
-                writer.writeheader()
-            writer.writerow(feedback_data)
-        return True
-    except Exception as e:
-        print(f"❌ Erreur sauvegarde feedback: {e}")
-        return False
-
-def run_finetuning_script():
-    """
-    Lance le script de fine-tuning en arrière-plan et AFFICHE LES LOGS EN TEMPS RÉEL.
-    """
-    global IS_FINETUNING_RUNNING
-
-    print("🚀 DÉMARRAGE DU FINE-TUNING AUTOMATIQUE (avec logs en temps réel)")
-    print("=" * 60)
-
-    try:
-        # Marquer que le fine-tuning est en cours
-        IS_FINETUNING_RUNNING = True
-
-        script_path = Path("traitement.py")
-        if not script_path.exists():
-            print(f"❌ Script de fine-tuning non trouvé: {script_path}")
-            IS_FINETUNING_RUNNING = False
-            return False
-
-        # Lancer le processus avec Popen pour capturer la sortie en temps réel
-        process = subprocess.Popen(
-            ["python", "-u", "traitement.py"],  # Le flag -u est CRUCIAL pour désactiver le buffering
-            stdout=subprocess.PIPE,
-            stderr=subprocess.STDOUT, # Redirige stderr vers stdout pour tout voir
-            text=True,
-            encoding='utf-8',
-            errors='replace' # Gère les erreurs de décodage
-        )
-
-        print("🎯 Processus de fine-tuning lancé. Affichage des logs...")
-        print("-" * 60)
-
-        # Lire la sortie ligne par ligne et l'afficher
-        while True:
-            output_line = process.stdout.readline()
-            if output_line == '' and process.poll() is not None:
-                break
-            if output_line:
-                # Affiche la ligne dans la console de l'API
-                print(f"FT-LOG | {output_line.strip()}", flush=True)
-
-        # Attendre la fin du processus et récupérer le code de retour
-        return_code = process.poll()
-        print("-" * 60)
-
-        if return_code == 0:
-            print("✅ FINE-TUNING TERMINÉ AVEC SUCCÈS!")
-            print("💡 Pour utiliser le nouveau modèle, redémarrez l'API si le déploiement a eu lieu:")
-            print("   docker-compose restart fastapi")
-            return True
-        else:
-            print(f"❌ FINE-TUNING ÉCHOUÉ! (Code de retour: {return_code})")
-            return False
-
-    except Exception as e:
-        print(f"❌ Erreur critique lors du lancement du fine-tuning: {e}")
-        return False
-    finally:
-        # S'assurer que le statut est bien réinitialisé
-        IS_FINETUNING_RUNNING = False
-        print("=" * 60)
-        print("🚀 Processus de fine-tuning terminé.")
-
-def trigger_automatic_finetuning():
-    """
-    Déclenche le fine-tuning automatique en arrière-plan
-    """
-    global IS_FINETUNING_RUNNING
-
-    # Utiliser un verrou pour éviter les conditions de course
-    with FINETUNING_LOCK:
-        if IS_FINETUNING_RUNNING:
-            print("⚠️ Fine-tuning déjà en cours, ignorer le déclenchement")
-            return False
-
-        if not AUTO_FINETUNING_ENABLED:
-            print("⚠️ Fine-tuning automatique désactivé")
-            return False
-
-        # Lancer le fine-tuning dans un thread séparé
-        finetuning_thread = threading.Thread(
-            target=run_finetuning_script,
-            name="AutoFineTuning"
-        )
-        finetuning_thread.daemon = True
-        finetuning_thread.start()
-
-        # ---- LA MODIFICATION EST ICI ----
-        # Ajout d'un \n pour éviter le collage des logs
-        print("\n🚀 Fine-tuning automatique lancé en arrière-plan.")
-        # -------------------------------
-        return True
 
 
-def check_and_trigger_finetuning():
-    """
-    Vérifie si les conditions pour déclencher le fine-tuning sont remplies et lance si nécessaire
-    """
-    try:
-        negative_count = count_negative_feedbacks()
 
-        if negative_count >= NEGATIVE_FEEDBACK_THRESHOLD:
-            print(f"🚨 Seuil de fine-tuning atteint: {negative_count}/{NEGATIVE_FEEDBACK_THRESHOLD} feedbacks négatifs")
 
-            if AUTO_FINETUNING_ENABLED and not IS_FINETUNING_RUNNING:
-                print("🚀 Déclenchement automatique du fine-tuning...")
-                return trigger_automatic_finetuning()
-            elif IS_FINETUNING_RUNNING:
-                print("⚠️ Fine-tuning déjà en cours")
-                return False
-            else:
-                print("💡 Fine-tuning automatique désactivé, déclenchement manuel requis")
-                return False
-        else:
-            print(f"📊 Feedbacks négatifs: {negative_count}/{NEGATIVE_FEEDBACK_THRESHOLD}")
-            return False
-
-    except Exception as e:
-        print(f"❌ Erreur vérification fine-tuning: {e}")
-        return False
 
 
 def reload_model_artifacts():
@@ -875,31 +484,15 @@ def reload_model_artifacts():
         return False
 
 
-# [Garder toutes vos autres fonctions de fine-tuning existantes]
+# --- ENDPOINTS ---
 
-# --- NOUVEAUX ENDPOINTS SMART_PERCENTILE ---
-
-@app.get("/", summary="Welcome message with capabilities")
-def read_root():
-    return {
-        "message": "Bienvenue sur l'API de détection de phishing (LSTM Hybride FR/EN)",
-        "version": app.version,
-        "documentation": "/docs",
-        "max_sequence_length": MAX_SEQUENCE_LENGTH,
-        "model_loaded": model is not None,
-        "smart_percentile_enabled": SMART_PERCENTILE_ENABLED,
-        "variable_length_supported": MODEL_SUPPORTS_VARIABLE_LENGTH,
-        "adaptive_prediction_available": SMART_PERCENTILE_ENABLED and MODEL_SUPPORTS_VARIABLE_LENGTH
-    }
-
-
-@app.get("/health", summary="Health check with adaptation info")
+@app.get("/health", summary="Health check")
 def health_check():
     if model is None:
         raise HTTPException(status_code=503, detail="Service Unavailable: Model not loaded")
 
-    negative_feedbacks = count_negative_feedbacks()
-    finetuning_ready = negative_feedbacks >= NEGATIVE_FEEDBACK_THRESHOLD
+    negative_feedbacks = 0
+    finetuning_ready = False
 
     return {
         "status": "healthy",
@@ -908,23 +501,14 @@ def health_check():
         "vocab_size": len(tokenizer.word_index) if tokenizer else 0,
         "negative_feedbacks": negative_feedbacks,
         "finetuning_ready": finetuning_ready,
-        "model_classes": list(label_encoder.classes_) if label_encoder else [],
-
-        # NOUVELLES INFORMATIONS
-        "smart_percentile_capabilities": {
-            "enabled": SMART_PERCENTILE_ENABLED,
-            "variable_length_supported": MODEL_SUPPORTS_VARIABLE_LENGTH,
-            "adaptive_prediction_available": SMART_PERCENTILE_ENABLED and MODEL_SUPPORTS_VARIABLE_LENGTH,
-            "current_production_length": current_production_length,
-            "adaptation_stats": adaptation_stats
-        }
+        "model_classes": list(label_encoder.classes_) if label_encoder else []
     }
 
 
 @app.post("/predict", summary="Predict on single text (standard mode)")
 def predict(item: TextInput):
     """Analyze text with standard method (compatibility mode)"""
-    print(f"⚠️ ANCIEN ENDPOINT /predict APPELÉ avec texte de {len(item.text)} chars")
+    print(f"🔮 ENDPOINT /predict APPELÉ avec texte de {len(item.text)} chars")
     
     if not model:
         raise HTTPException(status_code=503, detail="Modèle non disponible")
@@ -953,16 +537,13 @@ def predict_by_email_id(item: EmailIDInput):
         # Créer le texte combiné avec les données BRUTES
         raw_text = f"From: {email_data['from']}\nSubject: {email_data['subject']}\nBody: {email_data['body']}"
         
-        print(f"🔍 RAW EMAIL ID {item.email_id} - INPUT (1000 chars):")
-        print(f"'{raw_text[:1000]}'")
-        print(f"Total length: {len(raw_text)}")
+        print(f"🔍 EMAIL ID {item.email_id} - Longueur: {len(raw_text)} chars")
         
         # Prédiction avec les données brutes
         result = perform_prediction(raw_text)
         
         # Ajouter l'ID de l'email dans la réponse
         result['email_id'] = item.email_id
-        result['data_source'] = 'raw_csv'
         
         return result
         
@@ -972,36 +553,11 @@ def predict_by_email_id(item: EmailIDInput):
         raise HTTPException(status_code=500, detail=f"Erreur interne: {e}")
 
 
-@app.post("/predict/adaptive", summary="Predict with smart_percentile adaptation")
-def predict_adaptive(item: TextInputAdaptive):
-    """
-    Analyze text with automatic smart_percentile adaptation
-    Optimize sequence length according to text characteristics
-    """
-    if not model:
-        raise HTTPException(status_code=503, detail="Modèle non disponible")
-
-    if not (SMART_PERCENTILE_ENABLED and MODEL_SUPPORTS_VARIABLE_LENGTH):
-        # Fallback sur la méthode standard si pas de support
-        result = perform_prediction(item.text)
-        result["adaptation_info"] = {
-            "adaptation_available": False,
-            "reason": "Modèle ne supporte pas l'adaptation"
-        }
-        return result
-
-    try:
-        result = perform_prediction_adaptive([item.text], item.enable_adaptation)
-        return result
-    except HTTPException:
-        raise
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Erreur interne: {e}")
 
 
-@app.post("/predict/batch", summary="Predict on text list (standard mode)")
+@app.post("/predict/batch", summary="Predict on text list")
 def predict_batch(batch: BatchInput):
-    """Analyze a list of texts in standard mode"""
+    """Analyze a list of texts"""
     results = []
     for item in batch.items:
         try:
@@ -1012,285 +568,32 @@ def predict_batch(batch: BatchInput):
     return {"results": results}
 
 
-@app.post("/predict/batch/adaptive", summary="Predict on list with smart_percentile adaptation")
-def predict_batch_adaptive(batch: BatchInputAdaptive):
-    """
-    Analyze a list of texts with automatic smart_percentile adaptation
-    Optimize globally for the entire batch
-    """
-    if not model:
-        raise HTTPException(status_code=503, detail="Modèle non disponible")
-
-    if not (SMART_PERCENTILE_ENABLED and MODEL_SUPPORTS_VARIABLE_LENGTH):
-        # Fallback sur la méthode standard
-        results = []
-        for item in batch.items:
-            try:
-                result = perform_prediction(item.text)
-                result["adaptation_info"] = {"adaptation_available": False}
-                results.append(result)
-            except Exception as e:
-                results.append({"error": str(e), "text": item.text[:50] + "..."})
-        return {"results": results}
-
-    try:
-        texts = [item.text for item in batch.items]
-        result = perform_prediction_adaptive(texts, batch.enable_adaptation)
-        return result
-    except HTTPException:
-        raise
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Erreur interne: {e}")
 
 
-@app.get("/adaptation/stats", summary="Smart_percentile adaptation statistics")
-def get_adaptation_stats():
-    """Return smart_percentile adaptation statistics"""
-    if not SMART_PERCENTILE_ENABLED:
-        return {
-            "smart_percentile_enabled": False,
-            "message": "Smart_percentile non activé sur ce modèle"
-        }
-
-    recent_lengths = list(length_history)[-50:] if len(length_history) > 0 else []
-
-    return {
-        "smart_percentile_enabled": True,
-        "variable_length_supported": MODEL_SUPPORTS_VARIABLE_LENGTH,
-        "current_production_length": current_production_length,
-        "training_length": MAX_SEQUENCE_LENGTH,
-        "adaptation_stats": adaptation_stats,
-        "length_history_size": len(length_history),
-        "recent_analysis": {
-            "sample_size": len(recent_lengths),
-            "avg_length": np.mean(recent_lengths) if recent_lengths else 0,
-            "min_max": (min(recent_lengths), max(recent_lengths)) if recent_lengths else (0, 0),
-            "efficiency": adaptation_stats['avg_efficiency']
-        } if recent_lengths else None
-    }
 
 
-@app.post("/adaptation/reset", summary="Reset adaptation history")
-def reset_adaptation_history():
-    """Reset adaptation history (useful for testing)"""
-    global length_history, adaptation_stats, current_production_length
 
-    length_history.clear()
-    adaptation_stats = {
-        'total_predictions': 0,
-        'adaptations_triggered': 0,
-        'avg_efficiency': 0.0,
-        'last_adaptation': None
-    }
-    current_production_length = MAX_SEQUENCE_LENGTH
-
-    return {
-        "status": "success",
-        "message": "Historique d'adaptation réinitialisé",
-        "reset_to_length": MAX_SEQUENCE_LENGTH
-    }
-
-
-# --- ENDPOINTS EXISTANTS (GARDER IDENTIQUES) ---
-# [Garder tous vos endpoints existants : feedback, feedbacks, debug/model-info, etc.]
 
 @app.post("/feedback", summary="Save user feedback")
 async def save_feedback(feedback: FeedbackInput, background_tasks: BackgroundTasks):
-    """Save user feedback and automatically trigger fine-tuning if necessary"""
-    # [Garder votre code existant identique]
+    """Save user feedback"""
     try:
-        feedback_data = {
-            "timestamp": datetime.now().isoformat(),
-            "email_text": feedback.email_text[:500],
-            "predicted_class": feedback.predicted_class,
-            "predicted_probability": feedback.predicted_probability,
-            "user_satisfaction": feedback.user_satisfaction,
-            "language_detected": feedback.language_detected
-        }
-
-        if not save_feedback_to_csv(feedback_data):
-            raise HTTPException(status_code=500, detail="Erreur sauvegarde feedback")
-
-        print(f"📝 Feedback enregistré: {feedback.user_satisfaction}")
-
-        # ✨ NOUVEAU: Vérifier et déclencher automatiquement le fine-tuning
-        auto_triggered = False
-        if feedback.user_satisfaction == "no":  # Seulement pour les feedbacks négatifs
-            auto_triggered = check_and_trigger_finetuning()
-
-        negative_count = count_negative_feedbacks()
-        finetuning_ready = negative_count >= NEGATIVE_FEEDBACK_THRESHOLD
-
-        print(f"📊 Feedbacks négatifs: {negative_count}")
-
-        response = {
+        print(f"📝 Feedback reçu: {feedback.user_satisfaction}")
+        
+        return {
             "status": "success",
             "message": "Feedback enregistré avec succès",
-            "feedback_type": feedback.user_satisfaction,
-            "negative_feedbacks": negative_count,
-            "finetuning_ready": finetuning_ready,
-            "auto_finetuning_triggered": auto_triggered,  # ✨ NOUVEAU
-            "is_finetuning_running": IS_FINETUNING_RUNNING  # ✨ NOUVEAU
+            "feedback_type": feedback.user_satisfaction
         }
-
-        if auto_triggered:
-            response["finetuning_message"] = "🚀 Fine-tuning automatique lancé en arrière-plan!"
-        elif finetuning_ready and not IS_FINETUNING_RUNNING:
-            response["finetuning_message"] = "Seuil atteint! Fine-tuning prêt à être lancé"
-        elif IS_FINETUNING_RUNNING:
-            response["finetuning_message"] = "Fine-tuning en cours d'exécution..."
-
-        return response
 
     except Exception as e:
         print(f"❌ Erreur feedback: {e}")
         raise HTTPException(status_code=500, detail=f"Erreur: {e}")
 
-@app.get("/feedbacks", summary="View user feedbacks")
-def get_feedbacks():
-    """
-    Retrieve all recorded feedbacks
-    """
-    try:
-        if not FEEDBACK_CSV_PATH.exists():
-            return {
-                "message": "Aucun feedback enregistré pour le moment",
-                "feedbacks": [],
-                "count": 0
-            }
-
-        feedbacks = []
-        with open(FEEDBACK_CSV_PATH, 'r', encoding='utf-8') as csvfile:
-            reader = csv.DictReader(csvfile)
-            for row in reader:
-                feedbacks.append(row)
-
-        return {
-            "message": "Feedbacks récupérés avec succès",
-            "count": len(feedbacks),
-            "feedbacks": feedbacks,
-            "file_location": str(FEEDBACK_CSV_PATH)
-        }
-
-    except Exception as e:
-        print(f"❌ Erreur lecture feedbacks: {e}")
-        raise HTTPException(status_code=500, detail=f"Erreur: {e}")
 
 
-@app.get("/feedbacks/stats", summary="Feedback statistics")
-def get_feedback_stats():
-    """
-    Retrieve feedback statistics for monitoring
-    """
-    try:
-        if not FEEDBACK_CSV_PATH.exists():
-            return {
-                "total_feedbacks": 0,
-                "positive_feedbacks": 0,
-                "negative_feedbacks": 0,
-                "negative_unprocessed": 0,
-                "finetuning_ready": False
-            }
-
-        df = pd.read_csv(FEEDBACK_CSV_PATH)
-
-        total = len(df)
-        positive = len(df[df['user_satisfaction'] == 'yes'])
-        negative = len(df[df['user_satisfaction'] == 'no'])
-        negative_unprocessed = len(df[
-                                       (df['user_satisfaction'] == 'no') &
-                                       (df['processed'] == False)
-                                       ])
-
-        finetuning_ready = negative_unprocessed >= 1
-
-        return {
-            "total_feedbacks": total,
-            "positive_feedbacks": positive,
-            "negative_feedbacks": negative,
-            "negative_unprocessed": negative_unprocessed,
-            "finetuning_ready": finetuning_ready,
-            "success_rate": round((positive / total * 100), 2) if total > 0 else 0
-        }
-
-    except Exception as e:
-        print(f"❌ Erreur stats feedbacks: {e}")
-        raise HTTPException(status_code=500, detail=f"Erreur: {e}")
 
 
-@app.get("/debug/model-info", summary="Model diagnostic information")
-def get_model_info():
-    """Endpoint to diagnose model issues"""
-    if not model:
-        return {"error": "Modèle non chargé", "model_loaded": False}
-
-    try:
-        info = {
-            "model_loaded": True,
-            "max_sequence_length": MAX_SEQUENCE_LENGTH,
-            "tokenizer_vocab_size": len(tokenizer.word_index) if tokenizer else 0,
-            "model_inputs": [],
-            "suspicious_words_count": len(SUSPICIOUS_WORDS_SET),
-            "stopwords_languages": list(STOP_WORDS.keys()),
-            "label_classes": label_encoder.classes_.tolist() if label_encoder else [],
-            "model_summary": None
-        }
-
-        if model:
-            for i, input_layer in enumerate(model.inputs):
-                info["model_inputs"].append({
-                    "index": i,
-                    "name": input_layer.name,
-                    "shape": input_layer.shape.as_list(),
-                    "dtype": str(input_layer.dtype)
-                })
-
-            # Ajouter un résumé du modèle
-            try:
-                import io
-                import sys
-                from contextlib import redirect_stdout
-
-                f = io.StringIO()
-                with redirect_stdout(f):
-                    model.summary()
-                info["model_summary"] = f.getvalue()
-            except Exception:
-                info["model_summary"] = "Impossible de générer le résumé du modèle"
-
-        return info
-    except Exception as e:
-        return {"error": str(e), "model_loaded": model is not None}
-
-
-# --- Nouveau endpoint pour déclencher le fine-tuning ---
-@app.post("/trigger-finetuning", summary="Trigger fine-tuning (development only)")
-def trigger_finetuning():
-    """
-    Endpoint to check if fine-tuning can be triggered
-    Note: Actual fine-tuning must be executed via 'python traitement.py'
-    """
-    try:
-        negative_count = count_negative_feedbacks()
-
-        if negative_count >= 1:
-            return {
-                "status": "ready",
-                "message": "Fine-tuning peut être déclenché",
-                "negative_feedbacks": negative_count,
-                "command": "python traitement.py",
-                "note": "Exécutez cette commande dans le terminal pour démarrer le fine-tuning"
-            }
-        else:
-            return {
-                "status": "not_ready",
-                "message": f"Pas assez de feedbacks négatifs ({negative_count}/5)",
-                "negative_feedbacks": negative_count,
-                "needed": 1 - negative_count
-            }
-
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Erreur: {e}")
 
 
 @app.api_route("/reload-model", methods=["GET", "POST"], summary="Recharger le modèle depuis le disque")
@@ -1304,7 +607,6 @@ async def reload_model_endpoint():
         success = reload_model_artifacts()
 
         if success:
-            # CORRECTION: Récupérer les métadonnées correctement
             try:
                 metadata_file = Path("model/model_prod/model_metadata.json")
                 if metadata_file.exists():
@@ -1337,47 +639,6 @@ async def reload_model_endpoint():
         )
 
 
-# CORRECTION 2: Améliorer l'endpoint /model-status
-
-@app.get("/model-status", summary="Statut détaillé du modèle")
-def get_model_status():
-    """
-    Retourne des informations détaillées sur le modèle actuel
-    """
-    try:
-        metadata_file = Path("model/model_prod/model_metadata.json")
-        current_metadata = {}
-
-        if metadata_file.exists():
-            with open(metadata_file, "r") as f:
-                current_metadata = json.load(f)
-
-        model_file_path = Path("model/model_prod/best_lstm_model.keras")
-
-        return {
-            "model_loaded": model is not None,
-            "model_version": current_metadata.get('model_version', 'unknown'),
-            "last_retraining": current_metadata.get('last_individual_retraining', 'never'),
-            "last_feedback_processed": current_metadata.get('last_feedback_processed', 'none'),
-            "total_retrainings": current_metadata.get('total_individual_retrainings', 0),
-            "max_sequence_length": MAX_SEQUENCE_LENGTH,
-            "vocab_size": len(tokenizer.word_index) if tokenizer else 0,
-            "suspicious_words_count": len(SUSPICIOUS_WORDS_SET),
-            "deployment_method": current_metadata.get('deployment_method', 'initial_load'),
-            "model_file_exists": model_file_path.exists(),
-            "model_file_modified": datetime.fromtimestamp(
-                model_file_path.stat().st_mtime
-            ).isoformat() if model_file_path.exists() else None,
-            "check_timestamp": datetime.now().isoformat()
-        }
-
-    except Exception as e:
-        return {
-            "error": str(e),
-            "model_loaded": model is not None,
-            "check_timestamp": datetime.now().isoformat()
-        }
-
 @app.post("/process-csv", summary="Process CSV file with ML predictions")
 async def process_csv_file(file: UploadFile = File(...)):
     """
@@ -1387,55 +648,38 @@ async def process_csv_file(file: UploadFile = File(...)):
         raise HTTPException(status_code=503, detail="Modèle non disponible")
 
     try:
-        print(f"\n🔥 === DÉBUT TRAITEMENT CSV ===")
-        print(f"📁 Fichier reçu: {file.filename}")
-        print(f"📁 Content-Type: {file.content_type}")
+        print(f"\n🔥 TRAITEMENT CSV: {file.filename}")
 
-        # Vérifier le type de fichier
         if not file.filename.endswith('.csv'):
-            print(f"❌ Type de fichier invalide: {file.filename}")
             raise HTTPException(status_code=400, detail="Le fichier doit être un CSV")
 
-        # Lire le fichier CSV uploadé
-        print(f"📖 Lecture du fichier...")
         content = await file.read()
-        print(f"📖 Taille du fichier: {len(content)} bytes")
-
         df = pd.read_csv(io.StringIO(content.decode('utf-8')))
-        print(f"📊 CSV parsé avec succès")
-        print(f"📊 Colonnes détectées: {list(df.columns)}")
-        print(f"📊 Nombre de lignes: {len(df)}")
+        print(f"📊 CSV parsé: {len(df)} lignes")
 
-        # Vérifier les colonnes requises - From, Subject, Body comme sur l'interface web
         required_columns = ['from', 'subject', 'body', 'type']
         missing_columns = [col for col in required_columns if col not in df.columns]
         if missing_columns:
-            print(f"❌ Colonnes manquantes: {missing_columns}")
             raise HTTPException(
                 status_code=400,
                 detail=f"Colonnes manquantes: {missing_columns}"
             )
 
-        print(f"✅ Validation des colonnes OK")
-        print(f"📊 Distribution AVANT traitement:")
         distribution_avant = df['type'].value_counts()
-        for type_email, count in distribution_avant.items():
-            print(f"   - {type_email}: {count}")
+        print(f"📊 Distribution initiale: {dict(distribution_avant)}")
 
-        # Traitement par batch pour éviter les timeouts
         batch_size = 50
         all_results = []
         total_batches = (len(df) + batch_size - 1) // batch_size
 
-        print(f"🔄 Début du traitement par batch ({total_batches} batches de {batch_size})")
+        print(f"🔄 Traitement par batch: {total_batches} batches")
 
         for i in range(0, len(df), batch_size):
             batch_df = df.iloc[i:i + batch_size]
             batch_results = []
             batch_num = i // batch_size + 1
 
-            print(f"🚀 === BATCH {batch_num}/{total_batches} ===")
-            print(f"   📊 Emails dans ce batch: {len(batch_df)}")
+            print(f"🚀 BATCH {batch_num}/{total_batches} ({len(batch_df)} emails)")
 
             # Traiter chaque email du batch
             for j, row in batch_df.iterrows():
@@ -1446,12 +690,9 @@ async def process_csv_file(file: UploadFile = File(...)):
                     subject_field = str(row['subject']) if not pd.isna(row['subject']) else ""
                     body_field = str(row['body']) if not pd.isna(row['body']) else ""
                     
-                    # Créer le texte combiné pour l'analyse (même format que l'interface web)
                     combined_text = f"From: {from_field}\nSubject: {subject_field}\nBody: {body_field}".strip()
 
                     if not combined_text or combined_text == "From: \nSubject: \nBody: ":
-                        print(f"   ⚪ Email {email_index}: Vide - type conservé")
-                        # Email vide - garder le type original
                         original_type = row['type']
                         batch_results.append({
                             'new_type': original_type,
@@ -1461,18 +702,12 @@ async def process_csv_file(file: UploadFile = File(...)):
                         })
                         continue
 
-                    # Prédiction avec le modèle en utilisant le texte combiné
-                    print(f"   🧠 Email {email_index}: Analyse ML en cours...")
                     result = perform_prediction(combined_text)
-
-                    # Mapper la prédiction vers IMPORTANT/SPAM
                     new_type = 'SPAM' if result['prediction'] == 'phishing' else 'IMPORTANT'
                     old_type = row['type']
 
                     if new_type != old_type:
-                        print(f"   🔄 Email {email_index}: {old_type} → {new_type} (conf: {result['confidence']})")
-                    else:
-                        print(f"   ✅ Email {email_index}: {new_type} confirmé (conf: {result['confidence']})")
+                        print(f"   🔄 Email {email_index}: {old_type} → {new_type}")
 
                     batch_results.append({
                         'new_type': new_type,
@@ -1483,7 +718,6 @@ async def process_csv_file(file: UploadFile = File(...)):
 
                 except Exception as e:
                     print(f"   ❌ Email {email_index}: ERREUR - {str(e)}")
-                    # En cas d'erreur, garder le type original
                     original_type = row['type']
                     batch_results.append({
                         'new_type': original_type,
@@ -1493,60 +727,40 @@ async def process_csv_file(file: UploadFile = File(...)):
                     })
 
             all_results.extend(batch_results)
-            print(f"✅ Batch {batch_num} terminé ({len(batch_results)} emails traités)")
+            print(f"✅ Batch {batch_num} terminé")
 
-        print(f"🎯 === TRAITEMENT TERMINÉ ===")
-
-        # Mettre à jour le DataFrame avec les nouvelles prédictions
         results_df = pd.DataFrame(all_results)
         df['type'] = results_df['new_type']
 
-        # Statistiques détaillées
-        print(f"📈 === STATISTIQUES FINALES ===")
         distribution_apres = df['type'].value_counts()
-        for type_email, count in distribution_apres.items():
-            print(f"   - {type_email}: {count}")
+        print(f"📈 Distribution finale: {dict(distribution_apres)}")
 
-        # Calculer les changements
         if len(distribution_avant) > 0 and len(distribution_apres) > 0:
             spam_avant = distribution_avant.get('SPAM', 0)
             spam_apres = distribution_apres.get('SPAM', 0)
             important_avant = distribution_avant.get('IMPORTANT', 0)
             important_apres = distribution_apres.get('IMPORTANT', 0)
 
-            print(f"📊 ÉVOLUTION:")
-            print(f"   - SPAM: {spam_avant} → {spam_apres} ({spam_apres - spam_avant:+d})")
-            print(f"   - IMPORTANT: {important_avant} → {important_apres} ({important_apres - important_avant:+d})")
+            print(f"📊 SPAM: {spam_avant} → {spam_apres} ({spam_apres - spam_avant:+d})")
+            print(f"📊 IMPORTANT: {important_avant} → {important_apres} ({important_apres - important_avant:+d})")
 
-        # Préparer les colonnes de sortie
         output_columns = ["id", "type", "from", "to", "date", "subject", "body", "message_id", "processed_at"]
         available_columns = [col for col in output_columns if col in df.columns]
         df_output = df[available_columns].copy()
 
-        # Ajouter timestamp de traitement
         from datetime import datetime
         df_output['processed_at'] = datetime.now().isoformat()
 
-        print(f"📝 Préparation du CSV de sortie...")
-        print(f"📝 Colonnes incluses: {available_columns}")
-
-        # Convertir en CSV
         output = io.StringIO()
         df_output.to_csv(output, index=False)
         csv_content = output.getvalue()
 
-        print(f"✅ CSV de sortie généré: {len(csv_content)} caractères")
-        print(f"📤 Envoi de la réponse au client...")
-
-        # Préparer la réponse en streaming
         headers = {
             'Content-Disposition': 'attachment; filename="emails_live_processed.csv"',
             'Content-Type': 'text/csv'
         }
 
-        print(f"🎉 === TRAITEMENT CSV TERMINÉ AVEC SUCCÈS ===")
-        print(f"   📊 Total traité: {len(df)} emails")
-        print(f"   📤 Fichier renvoyé au client\n")
+        print(f"🎉 TRAITEMENT TERMINÉ: {len(df)} emails traités")
 
         return StreamingResponse(
             io.BytesIO(csv_content.encode('utf-8')),
@@ -1555,29 +769,23 @@ async def process_csv_file(file: UploadFile = File(...)):
         )
 
     except pd.errors.EmptyDataError:
-        print(f"❌ ERREUR: Fichier CSV vide")
         raise HTTPException(status_code=400, detail="Fichier CSV vide")
     except pd.errors.ParserError as e:
-        print(f"❌ ERREUR: Parsing CSV échoué - {str(e)}")
         raise HTTPException(status_code=400, detail=f"Erreur parsing CSV: {str(e)}")
     except Exception as e:
-        print(f"❌ ERREUR CRITIQUE: {str(e)}")
-        import traceback
-        print(f"❌ Stack trace: {traceback.format_exc()}")
+        print(f"❌ ERREUR: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Erreur traitement: {str(e)}")
 
 
 # --- Charger les artefacts au démarrage ---
-print("🚀 Initialisation de l'API de détection de phishing avec Smart Percentile...")
+print("🚀 Initialisation de l'API de détection de phishing...")
 model_loaded = load_model_artifacts()
 
 if not model_loaded:
     print("❌ ÉCHEC DU CHARGEMENT DES ARTEFACTS")
 else:
-    print("✅ API prête avec capacités d'adaptation smart_percentile")
+    print("✅ API prête")
 
 if __name__ == "__main__":
     import uvicorn
-
-    print("🚀 Démarrage de l'API sur http://127.0.0.1:8000")
     uvicorn.run("main:app", host="127.0.0.1", port=8000, reload=True)
