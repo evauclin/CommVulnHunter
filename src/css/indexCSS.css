@@ -1,0 +1,197 @@
+body {
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    min-height: 100vh;
+    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+}
+
+.email-item {
+    border-left: 4px solid #28a745;
+    transition: all 0.3s ease;
+    cursor: pointer;
+    margin-bottom: 10px;
+    padding: 15px;
+    background: white;
+    border-radius: 8px;
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+}
+
+.email-item.spam {
+    border-left-color: #dc3545;
+}
+
+.email-item:hover {
+    transform: translateX(5px);
+    box-shadow: 0 4px 15px rgba(0, 0, 0, 0.2);
+}
+
+.email-item.active {
+    background-color: #e3f2fd !important;
+    border-color: #2196f3;
+    box-shadow: 0 4px 20px rgba(33, 150, 243, 0.3);
+}
+
+.card {
+    backdrop-filter: blur(10px);
+    background: rgba(255, 255, 255, 0.95);
+    border: none;
+    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.1);
+}
+
+.stats-card {
+    text-align: center;
+    padding: 2rem;
+    color: white;
+    border-radius: 15px;
+    transition: transform 0.3s ease;
+}
+
+.stats-card:hover {
+    transform: translateY(-5px);
+}
+
+.stats-primary {
+    background: linear-gradient(135deg, #4299e1, #3182ce);
+}
+
+.stats-success {
+    background: linear-gradient(135deg, #48bb78, #38a169);
+}
+
+.stats-danger {
+    background: linear-gradient(135deg, #f56565, #e53e3e);
+}
+
+.email-preview {
+    background: #f8f9fa;
+    border: 2px solid #dee2e6;
+    border-radius: 10px;
+    padding: 15px;
+    font-family: 'Courier New', monospace;
+    max-height: 300px;
+    overflow-y: auto;
+    white-space: pre-wrap;
+}
+
+.analyze-section {
+    background: linear-gradient(135deg, #2c3e50, #3498db);
+    border-radius: 15px;
+    padding: 25px;
+    color: white;
+    text-align: center;
+}
+
+.btn-analyze {
+    background: rgba(255, 255, 255, 0.2);
+    border: 2px solid rgba(255, 255, 255, 0.3);
+    color: white;
+    font-weight: 600;
+    padding: 12px 30px;
+    border-radius: 25px;
+    transition: all 0.3s ease;
+}
+
+.btn-analyze:hover {
+    background: rgba(255, 255, 255, 0.3);
+    transform: scale(1.05);
+    color: white;
+}
+
+.btn-analyze:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
+    transform: none;
+}
+
+.source-indicator {
+    background: rgba(255, 255, 255, 0.9);
+    border-radius: 10px;
+    padding: 10px 15px;
+    margin-bottom: 20px;
+    border-left: 4px solid #17a2b8;
+}
+
+.email-type-badge {
+    font-size: 0.7rem;
+    padding: 4px 8px;
+    border-radius: 12px;
+    font-weight: 600;
+    text-transform: uppercase;
+}
+
+#emailList {
+    max-height: 500px;
+    overflow-y: auto;
+    padding: 0 15px;
+}
+
+.search-controls {
+    background: rgba(255, 255, 255, 0.9);
+    border-radius: 15px;
+    padding: 15px;
+    margin-bottom: 20px;
+}
+
+.ml-status {
+    background: rgba(255, 255, 255, 0.1);
+    border-radius: 10px;
+    padding: 10px;
+    margin-bottom: 15px;
+    font-size: 0.85rem;
+}
+
+.ml-status.online {
+    border-left: 4px solid #28a745;
+}
+
+.ml-status.offline {
+    border-left: 4px solid #dc3545;
+}
+
+.filter-buttons .btn {
+    margin: 2px;
+}
+
+::-webkit-scrollbar {
+    width: 8px;
+}
+
+::-webkit-scrollbar-track {
+    background: #f1f1f1;
+    border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb {
+    background: #888;
+    border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+    background: #555;
+}
+
+.loading-spinner {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    height: 100px;
+}
+
+.error-message {
+    background: #f8d7da;
+    color: #721c24;
+    padding: 10px;
+    border-radius: 8px;
+    border: 1px solid #f5c6cb;
+    margin: 10px 0;
+}
+
+.feedback-section {
+    background: rgba(255, 255, 255, 0.1);
+    border-radius: 10px;
+    padding: 15px;
+    margin-top: 15px;
+}
+
+.feedback-message {
+    margin-top: 10px;
+}

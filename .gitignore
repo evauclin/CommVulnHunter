@@ -27,3 +27,4 @@ logs/
 !app/data/dataset_sample.csv
 !app/data/.gitkeep
 !model/.gitkeep
+.env

@@ -1,0 +1,51 @@
+<!DOCTYPE html><html lang="en"><head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Login | CommVulnHunter</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-gray-50 flex items-center justify-center min-h-screen p-6">
+
+<div class="flex max-w-4xl bg-white rounded-3xl shadow-xl overflow-hidden w-full">
+    <!-- Left image section -->
+    <div class="hidden lg:block lg:w-1/2 bg-gradient-to-tr from-blue-600 to-indigo-700 p-10 flex items-center justify-center">
+        <img src="https://images.unsplash.com/photo-1504384308090-c894fdcc538d?auto=format&amp;fit=crop&amp;w=600&amp;q=80" alt="Security Illustration" class="rounded-xl shadow-lg">
+    </div>
+
+    <!-- Right form section -->
+    <div class="w-full lg:w-1/2 p-12">
+        <h2 class="text-3xl font-extrabold text-gray-900 mb-8 text-center">Welcome Back</h2>
+        <form id="loginForm" method="POST" action="/login" onsubmit="return validateForm(event)" class="space-y-6">
+
+            <div>
+                <label for="email" class="block text-sm font-medium text-gray-700 mb-2">Email Address</label>
+                <input id="email" name="email" type="email" required="" autocomplete="username" class="block w-full rounded-md border border-gray-300 px-4 py-3 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500" placeholder="you@example.com">
+            </div>
+
+            <div>
+                <label for="password" class="block text-sm font-medium text-gray-700 mb-2">Password</label>
+                <input id="password" name="password" type="password" required="" autocomplete="current-password" class="block w-full rounded-md border border-gray-300 px-4 py-3 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500" placeholder="••••••••">
+                <p class="mt-1 text-xs text-gray-500">Minimum 8 characters</p>
+                <div class="flex justify-end mt-2">
+                    <a href="forgot-password.html" class="text-sm text-indigo-600 hover:underline">Forgot password?</a>
+                </div>
+            </div>
+
+            <p id="errorMsg" class="text-red-600 text-sm mb-3 hidden"></p>
+
+            <button type="submit" class="w-full bg-indigo-600 text-white font-semibold py-3 rounded-md shadow hover:bg-indigo-700 transition">
+                Log In
+            </button>
+        </form>
+
+        <p class="mt-6 text-center text-gray-600 text-sm">
+            Don't have an account?
+            <a href="registration.html" class="font-semibold text-indigo-600 hover:underline">Create one</a>
+        </p>
+    </div>
+</div>
+
+
+
+
+<script src="login.html.js"></script></body></html>

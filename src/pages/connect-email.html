@@ -1,0 +1,59 @@
+<!DOCTYPE html><html lang="fr"><head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Connectez votre Gmail | Analyseur d'emails</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="min-h-screen bg-gradient-to-tr from-indigo-50 to-cyan-50 flex">
+
+<!-- Left Image / Illustration -->
+<section class="hidden md:flex w-1/2 bg-indigo-700 text-white items-center justify-center p-12 rounded-l-3xl overflow-hidden relative">
+  <img src="https://cdn-icons-png.flaticon.com/512/732/732200.png" alt="Icône Email" class="absolute inset-0 object-contain opacity-20 max-w-xs" style="margin:auto">
+  <div class="relative z-10 max-w-md text-center">
+    <h2 class="text-4xl font-bold mb-4">Connexion sécurisée à Gmail</h2>
+    <p class="text-lg opacity-90">
+      Connectez votre compte Gmail pour utiliser notre outil d'analyse
+    </p>
+  </div>
+</section>
+
+<!-- Right Form -->
+<section class="flex flex-col w-full md:w-1/2 bg-white rounded-r-3xl shadow-lg p-10 md:p-16 justify-center">
+
+  <!-- Logo and Heading (Centered) -->
+  <div class="flex flex-col items-center mb-8 space-y-4">
+    <div class="bg-indigo-600 rounded-full p-3 shadow-md">
+      <img src="https://www.gstatic.com/images/branding/product/2x/gmail_2020q4_48dp.png" alt="Logo Gmail" class="w-8 h-8">
+    </div>
+    <h1 class="text-3xl font-extrabold text-indigo-900 text-center">Connectez votre Gmail</h1>
+  </div>
+
+  <!-- Instructions -->
+  <p class="mb-6 text-gray-700 text-lg leading-relaxed text-center">
+    Autorisez l’accès à votre compte Gmail pour récupérer vos 50 derniers emails. Nous générerons un fichier CSV sécurisé pour votre analyse.
+  </p>
+
+  <!-- Connect Button -->
+  <form method="GET" action="/auth/google" class="mb-6 flex justify-center" id="connectForm">
+    <button type="submit" aria-label="Se connecter avec Gmail" class="flex justify-center items-center space-x-3 bg-gradient-to-r from-indigo-600 to-cyan-500 hover:from-indigo-700 hover:to-cyan-600 text-white font-semibold rounded-lg py-3 px-10 shadow-lg transition duration-300 max-w-xs w-full" id="connectBtn">
+      <img src="https://www.gstatic.com/images/branding/product/2x/gmail_2020q4_48dp.png" alt="Icône Gmail" class="w-6 h-6">
+      <span>Connectez-vous avec Gmail</span>
+      <svg id="spinner" class="animate-spin ml-2 h-5 w-5 text-white hidden" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+        <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+        <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z"></path>
+      </svg>
+    </button>
+  </form>
+
+  <!-- Info Text -->
+  <p class="text-sm text-gray-400 text-center">
+    Nous respectons votre vie privée et n’accédons qu’aux métadonnées de vos emails. Vous pouvez révoquer l’accès à tout moment dans les paramètres de votre compte Google.
+  </p>
+
+</section>
+
+
+
+
+
+<script src="connect-email.html.js"></script></body></html>
