@@ -720,13 +720,17 @@ def save_feedback_to_csv(feedback_data):
         print(f"❌ Erreur sauvegarde feedback: {e}")
         return False
 
+
+# Dans main.py
+
 def run_finetuning_script():
     """
-    Lance le script de fine-tuning en arrière-plan et AFFICHE LES LOGS EN TEMPS RÉEL.
+    Lance le script de fine-tuning en arrière-plan ET RECHARGE LE MODÈLE après succès.
+    Version améliorée avec rechargement direct.
     """
     global IS_FINETUNING_RUNNING
 
-    print("🚀 DÉMARRAGE DU FINE-TUNING AUTOMATIQUE (avec logs en temps réel)")
+    print("🚀 DÉMARRAGE DU FINE-TUNING AUTOMATIQUE (avec rechargement direct)")
     print("=" * 60)
 
     try:
@@ -739,37 +743,45 @@ def run_finetuning_script():
             IS_FINETUNING_RUNNING = False
             return False
 
-        # Lancer le processus avec Popen pour capturer la sortie en temps réel
+        start_time = datetime.now()
+        print(f"🕐 Début du fine-tuning: {start_time.strftime('%H:%M:%S')}")
+
         process = subprocess.Popen(
-            ["python", "-u", "traitement.py"],  # Le flag -u est CRUCIAL pour désactiver le buffering
+            ["python", "-u", "traitement.py"],
             stdout=subprocess.PIPE,
-            stderr=subprocess.STDOUT, # Redirige stderr vers stdout pour tout voir
+            stderr=subprocess.STDOUT,
             text=True,
             encoding='utf-8',
-            errors='replace' # Gère les erreurs de décodage
+            errors='replace'
         )
 
         print("🎯 Processus de fine-tuning lancé. Affichage des logs...")
         print("-" * 60)
 
-        # Lire la sortie ligne par ligne et l'afficher
         while True:
             output_line = process.stdout.readline()
             if output_line == '' and process.poll() is not None:
                 break
             if output_line:
-                # Affiche la ligne dans la console de l'API
                 print(f"FT-LOG | {output_line.strip()}", flush=True)
 
-        # Attendre la fin du processus et récupérer le code de retour
         return_code = process.poll()
+
+        end_time = datetime.now()
+        duration = end_time - start_time
         print("-" * 60)
+        print(f"🕐 Fin du fine-tuning: {end_time.strftime('%H:%M:%S')} (Durée: {duration})")
 
         if return_code == 0:
             print("✅ FINE-TUNING TERMINÉ AVEC SUCCÈS!")
-            print("💡 Pour utiliser le nouveau modèle, redémarrez l'API si le déploiement a eu lieu:")
-            print("   docker-compose restart fastapi")
-            return True
+            # ✅✅✅ SOLUTION : RECHARGEMENT DIRECT ET FIABLE ✅✅✅
+            print("🔄 Rechargement du nouveau modèle dans l'API...")
+            reload_success = reload_model_artifacts()
+            if reload_success:
+                print("🎉 NOUVEAU MODÈLE ACTIF DANS L'API!")
+            else:
+                print("❌ ERREUR CRITIQUE: Le fine-tuning a réussi mais le rechargement a échoué.")
+            return reload_success
         else:
             print(f"❌ FINE-TUNING ÉCHOUÉ! (Code de retour: {return_code})")
             return False
@@ -781,7 +793,22 @@ def run_finetuning_script():
         # S'assurer que le statut est bien réinitialisé
         IS_FINETUNING_RUNNING = False
         print("=" * 60)
-        print("🚀 Processus de fine-tuning terminé.")
+        print(f"🚀 Processus de fine-tuning terminé.")
+
+# ✅ NOUVEAU: Endpoint pour obtenir les logs de fine-tuning
+@app.get("/finetuning/logs", summary="Logs du fine-tuning en cours")
+def get_finetuning_logs():
+    """
+    Retourne les logs du fine-tuning (si disponibles)
+    """
+    # Dans une implémentation plus avancée, on pourrait stocker les logs
+    # dans un fichier et les retourner ici
+    return {
+        "status": "info",
+        "message": "Logs disponibles dans la console de l'API",
+        "is_finetuning_running": IS_FINETUNING_RUNNING,
+        "note": "Pour voir les logs en temps réel, consultez la console où l'API est lancée"
+    }
 
 def trigger_automatic_finetuning():
     """
@@ -904,7 +931,7 @@ def read_root():
     }
 
 
-@app.get("/health", summary="Health check with adaptation info")
+@app.get("/health", summary="Health check with fine-tuning info")
 def health_check():
     if model is None:
         raise HTTPException(status_code=503, detail="Service Unavailable: Model not loaded")
@@ -921,7 +948,12 @@ def health_check():
         "finetuning_ready": finetuning_ready,
         "model_classes": list(label_encoder.classes_) if label_encoder else [],
 
-        # NOUVELLES INFORMATIONS
+        # ✅ NOUVEAU: Informations de fine-tuning
+        "is_finetuning_running": IS_FINETUNING_RUNNING,
+        "auto_finetuning_enabled": AUTO_FINETUNING_ENABLED,
+        "finetuning_threshold": NEGATIVE_FEEDBACK_THRESHOLD,
+
+        # Informations smart_percentile existantes
         "smart_percentile_capabilities": {
             "enabled": SMART_PERCENTILE_ENABLED,
             "variable_length_supported": MODEL_SUPPORTS_VARIABLE_LENGTH,
@@ -930,7 +962,6 @@ def health_check():
             "adaptation_stats": adaptation_stats
         }
     }
-
 
 @app.post("/predict", summary="Predict on single text (standard mode)")
 def predict(item: TextInput):
@@ -1185,11 +1216,12 @@ def get_feedbacks():
         print(f"❌ Erreur lecture feedbacks: {e}")
         raise HTTPException(status_code=500, detail=f"Erreur: {e}")
 
+
 @app.post("/feedback/by-id", summary="Save user feedback using email ID")
 async def save_feedback_by_id(feedback: FeedbackByIdInput, background_tasks: BackgroundTasks):
     """Save user feedback using email ID to get complete email data"""
     try:
-        # 🔧 RÉCUPÉRER LES DONNÉES COMPLÈTES comme pour l'analyse
+        # Récupérer les données complètes comme pour l'analyse
         email_data = get_raw_email_from_csv(feedback.email_id)
 
         # Créer le texte complet (même méthode que l'analyse)
@@ -1210,10 +1242,14 @@ async def save_feedback_by_id(feedback: FeedbackByIdInput, background_tasks: Bac
 
         print(f"📝 Feedback enregistré avec données complètes: {feedback.user_satisfaction}")
 
-        # Déclencher le fine-tuning pour feedbacks négatifs
+        # ✅ AMÉLIORÉ: Déclencher le fine-tuning pour feedbacks négatifs
         auto_triggered = False
+        finetuning_message = ""
+
         if feedback.user_satisfaction == "no":
             auto_triggered = check_and_trigger_finetuning()
+            if auto_triggered:
+                print(f"🚀 Fine-tuning automatique déclenché par feedback négatif")
 
         negative_count = count_negative_feedbacks()
         finetuning_ready = negative_count >= NEGATIVE_FEEDBACK_THRESHOLD
@@ -1224,17 +1260,19 @@ async def save_feedback_by_id(feedback: FeedbackByIdInput, background_tasks: Bac
             "feedback_type": feedback.user_satisfaction,
             "negative_feedbacks": negative_count,
             "finetuning_ready": finetuning_ready,
-            "auto_finetuning_triggered": auto_triggered,
-            "is_finetuning_running": IS_FINETUNING_RUNNING,
-            "data_source": "complete_csv_data"  # 🔧 Nouveau
+            "auto_finetuning_triggered": auto_triggered,  # ✅ IMPORTANT
+            "is_finetuning_running": IS_FINETUNING_RUNNING,  # ✅ IMPORTANT
+            "data_source": "complete_csv_data"
         }
 
+        # ✅ NOUVEAU: Messages plus informatifs
         if auto_triggered:
-            response["finetuning_message"] = "🚀 Fine-tuning automatique lancé avec données complètes!"
+            response["finetuning_message"] = "🧠 IA en cours d'amélioration grâce à votre feedback!"
+            response["estimated_duration"] = "~5-10 minutes"
         elif finetuning_ready and not IS_FINETUNING_RUNNING:
-            response["finetuning_message"] = "Prêt pour fine-tuning avec données complètes"
+            response["finetuning_message"] = "Prêt pour amélioration du modèle"
         elif IS_FINETUNING_RUNNING:
-            response["finetuning_message"] = "Fine-tuning en cours..."
+            response["finetuning_message"] = "IA en cours d'apprentissage..."
 
         return response
 
@@ -1280,6 +1318,32 @@ def get_feedback_stats():
     except Exception as e:
         print(f"❌ Erreur stats feedbacks: {e}")
         raise HTTPException(status_code=500, detail=f"Erreur: {e}")
+
+
+@app.post("/finetuning/stop", summary="Stop fine-tuning (debug only)")
+def stop_finetuning():
+    """
+    Force l'arrêt du fine-tuning (pour debug uniquement)
+    """
+    global IS_FINETUNING_RUNNING
+
+    if not IS_FINETUNING_RUNNING:
+        return {
+            "status": "info",
+            "message": "Aucun fine-tuning en cours",
+            "is_finetuning_running": False
+        }
+
+    # Note: Dans un vrai scénario, il faudrait implémenter
+    # un mécanisme pour arrêter le processus de fine-tuning
+    IS_FINETUNING_RUNNING = False
+
+    return {
+        "status": "success",
+        "message": "Fine-tuning arrêté",
+        "is_finetuning_running": False,
+        "note": "Arrêt forcé pour debug - le processus peut continuer en arrière-plan"
+    }
 
 
 @app.get("/debug/model-info", summary="Model diagnostic information")
@@ -1631,6 +1695,28 @@ async def process_csv_file(file: UploadFile = File(...)):
         raise HTTPException(status_code=500, detail=f"Erreur traitement: {str(e)}")
 
 
+@app.get("/finetuning/status", summary="Statut du fine-tuning en cours")
+def get_finetuning_status():
+    """
+    Retourne le statut actuel du fine-tuning
+    """
+    try:
+        negative_count = count_negative_feedbacks()
+
+        return {
+            "is_finetuning_running": IS_FINETUNING_RUNNING,
+            "auto_finetuning_enabled": AUTO_FINETUNING_ENABLED,
+            "negative_feedbacks_count": negative_count,
+            "finetuning_threshold": NEGATIVE_FEEDBACK_THRESHOLD,
+            "finetuning_ready": negative_count >= NEGATIVE_FEEDBACK_THRESHOLD,
+            "last_check": datetime.now().isoformat()
+        }
+    except Exception as e:
+        return {
+            "error": str(e),
+            "is_finetuning_running": False,
+            "last_check": datetime.now().isoformat()
+        }
 # --- Charger les artefacts au démarrage ---
 print("🚀 Initialisation de l'API de détection de phishing avec Smart Percentile...")
 model_loaded = load_model_artifacts()

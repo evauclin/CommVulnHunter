@@ -1,140 +1,90 @@
 {
-  "total_emails": 73,
+  "total_emails": 68,
   "important_emails": 50,
-  "spam_emails": 23,
-  "generated_at": "2025-06-01T23:27:35.279394",
+  "spam_emails": 18,
+  "generated_at": "2025-07-10T19:12:47.452042",
   "domains": {
-    "email.alphorm.com": {
-      "total": 2,
-      "spam": 0,
-      "important": 2
-    },
-    "notifs.leetchi.com": {
-      "total": 1,
-      "spam": 0,
-      "important": 1
-    },
-    "vivatechnology.com": {
-      "total": 3,
-      "spam": 0,
-      "important": 3
-    },
-    "marketing.ryanairemail.com": {
-      "total": 1,
-      "spam": 0,
-      "important": 1
-    },
-    "k.aroma-zone.com": {
-      "total": 1,
-      "spam": 0,
-      "important": 1
-    },
     "accounts.google.com": {
       "total": 1,
       "spam": 0,
       "important": 1
     },
-    "csdausterlitz.fr": {
+    "service-mail.zalando.fr": {
       "total": 1,
       "spam": 0,
       "important": 1
     },
-    "location-etudiant.fr": {
-      "total": 5,
+    "email.snapchat.com": {
+      "total": 1,
       "spam": 0,
-      "important": 5
+      "important": 1
+    },
+    "academia-mail.com": {
+      "total": 3,
+      "spam": 0,
+      "important": 3
+    },
+    "dremio.com": {
+      "total": 2,
+      "spam": 0,
+      "important": 2
+    },
+    "campaigns.rxfrance.fr": {
+      "total": 1,
+      "spam": 0,
+      "important": 1
+    },
+    "mp1.tripadvisor.com": {
+      "total": 2,
+      "spam": 0,
+      "important": 2
+    },
+    "location-etudiant.fr": {
+      "total": 4,
+      "spam": 0,
+      "important": 4
+    },
+    "insideapple.apple.com": {
+      "total": 1,
+      "spam": 0,
+      "important": 1
+    },
+    "email.apple.com": {
+      "total": 1,
+      "spam": 0,
+      "important": 1
+    },
+    "k.aroma-zone.com": {
+      "total": 2,
+      "spam": 0,
+      "important": 2
+    },
+    "InsideApple.Apple.com": {
+      "total": 1,
+      "spam": 0,
+      "important": 1
+    },
+    "mail.sncf-connect.com": {
+      "total": 1,
+      "spam": 0,
+      "important": 1
     },
     "comms.vueling.com": {
       "total": 2,
       "spam": 0,
       "important": 2
     },
-    "mail.adobe.com": {
-      "total": 1,
-      "spam": 0,
-      "important": 1
-    },
-    "yahoo.com": {
-      "total": 4,
-      "spam": 0,
-      "important": 4
-    },
-    "travel.mail.flixbus.com": {
-      "total": 1,
-      "spam": 0,
-      "important": 1
-    },
-    "google.com": {
-      "total": 7,
-      "spam": 0,
-      "important": 7
-    },
-    "ter.sncf-voyageurs.com": {
-      "total": 1,
-      "spam": 0,
-      "important": 1
-    },
-    "info.digitalocean.com": {
-      "total": 1,
-      "spam": 0,
-      "important": 1
-    },
-    "meteojob.com": {
-      "total": 2,
-      "spam": 0,
-      "important": 2
-    },
-    "email.microsoft.com": {
-      "total": 1,
-      "spam": 0,
-      "important": 1
-    },
-    "dremio.com": {
-      "total": 2,
-      "spam": 1,
-      "important": 1
-    },
-    "email.apple.com": {
+    "info.parisladefense-arena.com": {
       "total": 3,
       "spam": 0,
       "important": 3
     },
-    "noreply55.jobs2web.com": {
-      "total": 1,
+    "ter.sncf-voyageurs.com": {
+      "total": 3,
       "spam": 0,
-      "important": 1
+      "important": 3
     },
-    "datascientest.com": {
-      "total": 1,
-      "spam": 0,
-      "important": 1
-    },
-    "photo-me.eu": {
-      "total": 1,
-      "spam": 0,
-      "important": 1
-    },
-    "mkt.getyourguide.com": {
-      "total": 1,
-      "spam": 0,
-      "important": 1
-    },
-    "welovedevs.com": {
-      "total": 1,
-      "spam": 0,
-      "important": 1
-    },
-    "news.fitnesspark.fr": {
-      "total": 2,
-      "spam": 0,
-      "important": 2
-    },
-    "chess.com": {
-      "total": 1,
-      "spam": 0,
-      "important": 1
-    },
-    "academia-mail.com": {
+    "google.com": {
       "total": 1,
       "spam": 0,
       "important": 1
@@ -144,116 +94,156 @@
       "spam": 0,
       "important": 1
     },
-    "lefive.fr": {
+    "learn.mail.monday.com": {
       "total": 1,
       "spam": 0,
       "important": 1
     },
-    "RUJQT.fr": {
+    "emails.hellowork.com": {
+      "total": 3,
+      "spam": 0,
+      "important": 3
+    },
+    "news.intermarche.com": {
+      "total": 1,
+      "spam": 0,
+      "important": 1
+    },
+    "youtube.com": {
+      "total": 1,
+      "spam": 0,
+      "important": 1
+    },
+    "email.mango": {
+      "total": 1,
+      "spam": 0,
+      "important": 1
+    },
+    "meteojob.com": {
+      "total": 3,
+      "spam": 0,
+      "important": 3
+    },
+    "mail.adobe.com": {
+      "total": 1,
+      "spam": 0,
+      "important": 1
+    },
+    "myworkday.com": {
+      "total": 1,
+      "spam": 0,
+      "important": 1
+    },
+    "offre.letudiant.fr": {
+      "total": 1,
+      "spam": 0,
+      "important": 1
+    },
+    "marketing.ryanairemail.com": {
+      "total": 1,
+      "spam": 0,
+      "important": 1
+    },
+    "service.decathlon.com": {
+      "total": 1,
+      "spam": 0,
+      "important": 1
+    },
+    "cse-axago.com": {
+      "total": 1,
+      "spam": 0,
+      "important": 1
+    },
+    "info.digitalocean.com": {
+      "total": 1,
+      "spam": 0,
+      "important": 1
+    },
+    "conduite.ornikar.com": {
+      "total": 1,
+      "spam": 0,
+      "important": 1
+    },
+    "news.doctolib.com": {
+      "total": 1,
+      "spam": 0,
+      "important": 1
+    },
+    "iqNOnGV.iqNOnGV.iqNOnGV.fr": {
       "total": 1,
       "spam": 1,
       "important": 0
     },
-    "KrtJxPdrKrtJxPdr.fr": {
+    "DIV20Bh.DIV20Bh.DIV20Bh.fr": {
       "total": 1,
       "spam": 1,
       "important": 0
     },
-    "ZSfZsSRSK.us": {
+    "privaterelay.appleid.com": {
       "total": 1,
       "spam": 1,
       "important": 0
     },
-    "OSwuvFYk.fr": {
+    "LvkBJEMKI.us": {
       "total": 1,
       "spam": 1,
       "important": 0
     },
-    "qlik.com": {
-      "total": 2,
-      "spam": 2,
-      "important": 0
-    },
-    "RNZwafia.us": {
+    "kvEajcmC.us": {
       "total": 1,
       "spam": 1,
       "important": 0
     },
-    "6zKCCbZ.6zKCCbZ.6zKCCbZ.fr": {
+    "mGrIv.fr": {
       "total": 1,
       "spam": 1,
       "important": 0
     },
-    "tiVMP.fr": {
-      "total": 1,
-      "spam": 1,
-      "important": 0
-    },
-    "ZgFYCkBBm.us": {
-      "total": 1,
-      "spam": 1,
-      "important": 0
-    },
-    "DWdG8Il.DWdG8Il.DWdG8Il.fr": {
-      "total": 1,
-      "spam": 1,
-      "important": 0
-    },
-    "WVyqomSe.us": {
+    "GkjeGHsqa.us": {
       "total": 1,
       "spam": 1,
       "important": 0
     },
     "hello.redis.io": {
+      "total": 2,
+      "spam": 2,
+      "important": 0
+    },
+    "G4dSDoBKG4dSDoBK.fr": {
       "total": 1,
       "spam": 1,
       "important": 0
     },
-    "OMsCSaFj.us": {
+    "qlik.com": {
+      "total": 3,
+      "spam": 3,
+      "important": 0
+    },
+    "SUVlsUos.us": {
       "total": 1,
       "spam": 1,
       "important": 0
     },
-    "dfx2hbra.fr": {
+    "news.aslairlines.fr": {
       "total": 1,
       "spam": 1,
       "important": 0
     },
-    "9zliLMhO.fr": {
+    "GJhu1Df.GJhu1Df.GJhu1Df.fr": {
       "total": 1,
       "spam": 1,
       "important": 0
     },
-    "VUpMq.fr": {
+    "86NBc3tC86NBc3tC.fr": {
       "total": 1,
       "spam": 1,
       "important": 0
     },
-    "wwdZheCoL.us": {
-      "total": 1,
-      "spam": 1,
-      "important": 0
-    },
-    "VSQEU.fr": {
-      "total": 1,
-      "spam": 1,
-      "important": 0
-    },
-    "vLkmhcJ.vLkmhcJ.vLkmhcJ.fr": {
-      "total": 1,
-      "spam": 1,
-      "important": 0
-    },
-    "uBDEl.fr": {
-      "total": 1,
-      "spam": 1,
-      "important": 0
-    },
-    "1EXj92L.1EXj92L.1EXj92L.fr": {
+    "gekxLzIB.us": {
       "total": 1,
       "spam": 1,
       "important": 0
     }
   },
-  "success_rate": 68.49
+  "success_rate": 73.53
 }
