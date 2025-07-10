@@ -280,29 +280,29 @@
             try {
                 // Afficher un indicateur de chargement
                 emailLoader.updateSourceIndicator('🔄 Rafraîchissement en cours via API ML...', 'info');
-                
+
                 // Désactiver le bouton pendant le traitement
                 const refreshBtn = document.querySelector('button[onclick="refreshEmails()"]');
                 if (refreshBtn) {
                     refreshBtn.disabled = true;
                     refreshBtn.innerHTML = '<i class="bi bi-arrow-clockwise spin"></i> Traitement...';
                 }
-                
+
                 console.log('🔄 Chargement du CSV existant pour retraitement...');
-                
+
                 // Lire le fichier CSV existant
                 const csvResponse = await fetch('./emails_live.csv');
                 if (!csvResponse.ok) {
                     throw new Error('Impossible de charger le fichier CSV existant');
                 }
-                
+
                 const csvBlob = await csvResponse.blob();
                 console.log('✅ CSV existant chargé, envoi vers l\'API pour retraitement...');
-                
+
                 // Préparer le fichier pour l'API process-csv
                 const formData = new FormData();
                 formData.append('file', csvBlob, 'emails_live.csv');
-                
+
                 // Appeler l'API de traitement CSV
                 const response = await fetch(`${mlApiUrl}/process-csv`, {
                     method: 'POST',
@@ -310,44 +310,44 @@
                     body: formData,
                     signal: AbortSignal.timeout(180000) // 3 minutes timeout
                 });
-                
+
                 if (!response.ok) {
                     const errorText = await response.text();
                     throw new Error(`API Error ${response.status}: ${errorText}`);
                 }
-                
+
                 // Récupérer le CSV traité
                 const processedCsvBlob = await response.blob();
                 console.log('✅ CSV retraité reçu de l\'API');
-                
+
                 // Convertir le blob en texte pour vérification
                 const processedCsvText = await processedCsvBlob.text();
                 console.log(`📊 CSV traité: ${processedCsvText.split('\n').length - 1} emails`);
-                
+
                 // Charger les emails depuis le CSV traité
                 const csvFile = new File([processedCsvBlob], 'emails_live_processed.csv', { type: 'text/csv' });
                 const textContent = await csvFile.text();
-                
+
                 // Parser le CSV et charger dans emailLoader
                 emailLoader.emails = emailLoader.parseCSV(textContent);
                 emailLoader.currentSource = 'csv_live';
-                
+
                 console.log(`✅ ${emailLoader.emails.length} emails rechargés depuis le CSV traité`);
-                
+
                 // Mettre à jour l'affichage
                 const container = document.getElementById('emailList');
                 emailLoader.displayEmails(container);
                 emailLoader.updateStatsDisplay();
                 emailLoader.updateSourceIndicator(`✅ Rafraîchissement terminé: ${emailLoader.emails.length} emails retraités par l'IA`, 'success');
-                
+
                 // Sélectionner le premier email si disponible
                 if (emailLoader.emails.length > 0) {
                     selectEmail(0);
                 }
-                
+
             } catch (error) {
                 console.error('❌ Erreur rafraîchissement:', error);
-                
+
                 let errorMessage = 'Erreur lors du rafraîchissement';
                 if (error.name === 'AbortError') {
                     errorMessage = 'Timeout - le traitement prend trop de temps';
@@ -356,13 +356,13 @@
                 } else {
                     errorMessage = `Erreur: ${error.message}`;
                 }
-                
+
                 emailLoader.updateSourceIndicator(`❌ ${errorMessage}`, 'danger');
-                
+
                 // Fallback: recharger les emails locaux
                 console.log('🔄 Fallback: rechargement local des emails...');
                 emailLoader.currentSource === 'csv_live' ? loadLiveEmails() : loadDemoEmails();
-                
+
             } finally {
                 // Réactiver le bouton
                 const refreshBtn = document.querySelector('button[onclick="refreshEmails()"]');
@@ -504,7 +504,7 @@
 
             const resultDiv = document.getElementById('analysisResult');
             const analyzeBtn = document.getElementById('analyzeBtn');
-            
+
             // Vérifier qu'un email est sélectionné
             if (!currentEmailData || !currentEmailData.id) {
                 showAnalysisError('Veuillez sélectionner un email complet.');
@@ -589,18 +589,20 @@
             }
 
             try {
+                // 🔧 UTILISER LE NOUVEL ENDPOINT /feedback/by-id
                 const feedbackData = {
-                    email_text: currentEmailData.fullText.substring(0, 500),
+                    email_id: currentEmailData.id,
                     predicted_class: currentAnalysisResult.prediction,
                     predicted_probability: currentAnalysisResult.probability,
                     user_satisfaction: satisfaction,
                     language_detected: currentAnalysisResult.language_detected
                 };
 
-                console.log('📤 Envoi du feedback:', feedbackData);
-                showFeedbackMessage('Envoi du feedback...', 'info');
+                console.log('📤 Envoi du feedback par ID:', feedbackData);
+                showFeedbackMessage('Envoi du feedback avec données complètes...', 'info');
 
-                const response = await fetch(`${mlApiUrl}/feedback`, {
+                // 🔧 APPELER LE NOUVEL ENDPOINT
+                const response = await fetch(`${mlApiUrl}/feedback/by-id`, {
                     method: 'POST',
                     mode: 'cors',
                     headers: { 'Content-Type': 'application/json' },
@@ -614,8 +616,9 @@
                 }
 
                 const result = await response.json();
-                console.log('✅ Feedback envoyé:', result);
-                showFeedbackMessage('✅ Merci pour votre feedback !', 'success');
+                console.log('✅ Feedback envoyé avec données complètes:', result);
+
+                showFeedbackMessage('✅ Merci ! Feedback enregistré avec données complètes', 'success');
 
                 // Désactiver les boutons après envoi
                 document.querySelectorAll('input[name="satisfaction"]').forEach(input => {
@@ -632,9 +635,7 @@
                     input.checked = false;
                 });
             }
-        }
-
-        function showFeedbackMessage(message, type = 'info') {
+        }        function showFeedbackMessage(message, type = 'info') {
             const analysisResult = document.getElementById('analysisResult');
             if (!analysisResult) return;
 

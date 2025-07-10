@@ -429,6 +429,17 @@ class FeedbackInput(BaseModel):
     language_detected: str
 
 
+class FeedbackByIdInput(BaseModel):
+    email_id: str
+    predicted_class: str
+    predicted_probability: float
+    user_satisfaction: str
+    language_detected: str
+
+
+
+
+
 # --- Fonctions de Prétraitement (IDENTIQUES) ---
 def preprocess_text(text: str, language: str):
     """Specialized and multilingual text preprocessing."""
@@ -1091,8 +1102,6 @@ def reset_adaptation_history():
     }
 
 
-# --- ENDPOINTS EXISTANTS (GARDER IDENTIQUES) ---
-# [Garder tous vos endpoints existants : feedback, feedbacks, debug/model-info, etc.]
 
 @app.post("/feedback", summary="Save user feedback")
 async def save_feedback(feedback: FeedbackInput, background_tasks: BackgroundTasks):
@@ -1101,7 +1110,7 @@ async def save_feedback(feedback: FeedbackInput, background_tasks: BackgroundTas
     try:
         feedback_data = {
             "timestamp": datetime.now().isoformat(),
-            "email_text": feedback.email_text[:500],
+            "email_text": feedback.email_text[:1000],
             "predicted_class": feedback.predicted_class,
             "predicted_probability": feedback.predicted_probability,
             "user_satisfaction": feedback.user_satisfaction,
@@ -1176,7 +1185,62 @@ def get_feedbacks():
         print(f"❌ Erreur lecture feedbacks: {e}")
         raise HTTPException(status_code=500, detail=f"Erreur: {e}")
 
+@app.post("/feedback/by-id", summary="Save user feedback using email ID")
+async def save_feedback_by_id(feedback: FeedbackByIdInput, background_tasks: BackgroundTasks):
+    """Save user feedback using email ID to get complete email data"""
+    try:
+        # 🔧 RÉCUPÉRER LES DONNÉES COMPLÈTES comme pour l'analyse
+        email_data = get_raw_email_from_csv(feedback.email_id)
 
+        # Créer le texte complet (même méthode que l'analyse)
+        complete_text = f"From: {email_data['from']}\nSubject: {email_data['subject']}\nBody: {email_data['body']}"
+
+        # Préparer les données de feedback avec le texte COMPLET
+        feedback_data = {
+            "timestamp": datetime.now().isoformat(),
+            "email_text": complete_text,  # Plus de texte préservé
+            "predicted_class": feedback.predicted_class,
+            "predicted_probability": feedback.predicted_probability,
+            "user_satisfaction": feedback.user_satisfaction,
+            "language_detected": feedback.language_detected
+        }
+
+        if not save_feedback_to_csv(feedback_data):
+            raise HTTPException(status_code=500, detail="Erreur sauvegarde feedback")
+
+        print(f"📝 Feedback enregistré avec données complètes: {feedback.user_satisfaction}")
+
+        # Déclencher le fine-tuning pour feedbacks négatifs
+        auto_triggered = False
+        if feedback.user_satisfaction == "no":
+            auto_triggered = check_and_trigger_finetuning()
+
+        negative_count = count_negative_feedbacks()
+        finetuning_ready = negative_count >= NEGATIVE_FEEDBACK_THRESHOLD
+
+        response = {
+            "status": "success",
+            "message": "Feedback enregistré avec données complètes",
+            "feedback_type": feedback.user_satisfaction,
+            "negative_feedbacks": negative_count,
+            "finetuning_ready": finetuning_ready,
+            "auto_finetuning_triggered": auto_triggered,
+            "is_finetuning_running": IS_FINETUNING_RUNNING,
+            "data_source": "complete_csv_data"  # 🔧 Nouveau
+        }
+
+        if auto_triggered:
+            response["finetuning_message"] = "🚀 Fine-tuning automatique lancé avec données complètes!"
+        elif finetuning_ready and not IS_FINETUNING_RUNNING:
+            response["finetuning_message"] = "Prêt pour fine-tuning avec données complètes"
+        elif IS_FINETUNING_RUNNING:
+            response["finetuning_message"] = "Fine-tuning en cours..."
+
+        return response
+
+    except Exception as e:
+        print(f"❌ Erreur feedback par ID: {e}")
+        raise HTTPException(status_code=500, detail=f"Erreur: {e}")
 @app.get("/feedbacks/stats", summary="Feedback statistics")
 def get_feedback_stats():
     """
