@@ -12,8 +12,8 @@
   ],
 
   "host_permissions": [
-    "http://localhost:8000/*",
-    "http://127.0.0.1:8000/*",
+    "http://localhost/*",
+    "http://127.0.0.1/*",
     "http://*/*",
     "https://*/*"
   ],
@@ -29,8 +29,6 @@
       "css": ["content.css"],
       "run_at": "document_idle",
       "exclude_matches": [
-        "*://localhost:8000/*",
-        "*://127.0.0.1:8000/*",
         "chrome://*/*",
         "chrome-extension://*/*",
         "moz-extension://*/*"
