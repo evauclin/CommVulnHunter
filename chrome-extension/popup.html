@@ -1,0 +1,760 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI Anti-Phishing Guardian</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            width: 400px;
+            min-height: 500px;
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: #333;
+        }
+
+        .header {
+            background: rgba(255, 255, 255, 0.95);
+            padding: 20px;
+            text-align: center;
+            border-bottom: 1px solid rgba(0, 0, 0, 0.1);
+        }
+
+        .header h1 {
+            font-size: 18px;
+            margin-bottom: 5px;
+            color: #333;
+        }
+
+        .header .subtitle {
+            font-size: 12px;
+            color: #666;
+        }
+
+        .status-section {
+            background: rgba(255, 255, 255, 0.9);
+            padding: 20px;
+            margin: 10px;
+            border-radius: 10px;
+            box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+        }
+
+        .current-site {
+            margin-bottom: 20px;
+        }
+
+        .site-url {
+            font-size: 14px;
+            color: #666;
+            margin-bottom: 10px;
+            word-break: break-all;
+        }
+
+        .site-status {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 15px;
+            border-radius: 8px;
+            font-weight: 600;
+        }
+
+        .site-status.safe {
+            background: linear-gradient(135deg, #4caf50, #388e3c);
+            color: white;
+        }
+
+        .site-status.danger {
+            background: linear-gradient(135deg, #f44336, #d32f2f);
+            color: white;
+        }
+
+        .site-status.analyzing {
+            background: linear-gradient(135deg, #2196f3, #1976d2);
+            color: white;
+        }
+
+        .site-status.unknown {
+            background: #f5f5f5;
+            color: #666;
+            border: 1px solid #ddd;
+        }
+
+        .status-icon {
+            font-size: 20px;
+        }
+
+        .status-text {
+            flex: 1;
+            margin-left: 10px;
+        }
+
+        .confidence-bar {
+            width: 100%;
+            height: 6px;
+            background: rgba(255, 255, 255, 0.3);
+            border-radius: 3px;
+            margin-top: 8px;
+            overflow: hidden;
+        }
+
+        .confidence-fill {
+            height: 100%;
+            background: rgba(255, 255, 255, 0.8);
+            border-radius: 3px;
+            transition: width 0.3s ease;
+        }
+
+        .actions {
+            display: flex;
+            gap: 10px;
+            margin-top: 15px;
+        }
+
+        .btn {
+            flex: 1;
+            padding: 10px;
+            border: none;
+            border-radius: 6px;
+            font-size: 12px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+
+        .btn-primary {
+            background: #2196f3;
+            color: white;
+        }
+
+        .btn-primary:hover {
+            background: #1976d2;
+        }
+
+        .btn-secondary {
+            background: #f5f5f5;
+            color: #666;
+            border: 1px solid #ddd;
+        }
+
+        .btn-secondary:hover {
+            background: #eeeeee;
+        }
+
+        .btn:disabled {
+            opacity: 0.6;
+            cursor: not-allowed;
+        }
+
+        .stats-section {
+            background: rgba(255, 255, 255, 0.9);
+            margin: 10px;
+            border-radius: 10px;
+            overflow: hidden;
+        }
+
+        .stats-header {
+            background: #f8f9fa;
+            padding: 15px;
+            font-weight: 600;
+            border-bottom: 1px solid #eee;
+        }
+
+        .stats-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 15px;
+            padding: 15px;
+        }
+
+        .stat-item {
+            text-align: center;
+        }
+
+        .stat-value {
+            font-size: 24px;
+            font-weight: bold;
+            color: #2196f3;
+        }
+
+        .stat-label {
+            font-size: 12px;
+            color: #666;
+            margin-top: 5px;
+        }
+
+        .history-section {
+            background: rgba(255, 255, 255, 0.9);
+            margin: 10px;
+            border-radius: 10px;
+            max-height: 200px;
+            overflow: hidden;
+        }
+
+        .history-header {
+            background: #f8f9fa;
+            padding: 15px;
+            font-weight: 600;
+            border-bottom: 1px solid #eee;
+            position: sticky;
+            top: 0;
+        }
+
+        .history-list {
+            max-height: 150px;
+            overflow-y: auto;
+        }
+
+        .history-item {
+            padding: 10px 15px;
+            border-bottom: 1px solid #f0f0f0;
+            font-size: 12px;
+        }
+
+        .history-item:last-child {
+            border-bottom: none;
+        }
+
+        .history-url {
+            color: #666;
+            margin-bottom: 5px;
+            word-break: break-all;
+        }
+
+        .history-result {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .result-badge {
+            padding: 2px 6px;
+            border-radius: 10px;
+            font-size: 10px;
+            font-weight: 600;
+            text-transform: uppercase;
+        }
+
+        .result-badge.safe {
+            background: #e8f5e8;
+            color: #2e7d32;
+        }
+
+        .result-badge.danger {
+            background: #ffebee;
+            color: #c62828;
+        }
+
+        .settings-section {
+            background: rgba(255, 255, 255, 0.9);
+            margin: 10px;
+            border-radius: 10px;
+            padding: 15px;
+        }
+
+        .setting-item {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 15px;
+        }
+
+        .setting-item:last-child {
+            margin-bottom: 0;
+        }
+
+        .switch {
+            position: relative;
+            display: inline-block;
+            width: 50px;
+            height: 24px;
+        }
+
+        .switch input {
+            opacity: 0;
+            width: 0;
+            height: 0;
+        }
+
+        .slider {
+            position: absolute;
+            cursor: pointer;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background-color: #ccc;
+            transition: .4s;
+            border-radius: 24px;
+        }
+
+        .slider:before {
+            position: absolute;
+            content: "";
+            height: 18px;
+            width: 18px;
+            left: 3px;
+            bottom: 3px;
+            background-color: white;
+            transition: .4s;
+            border-radius: 50%;
+        }
+
+        input:checked + .slider {
+            background-color: #2196f3;
+        }
+
+        input:checked + .slider:before {
+            transform: translateX(26px);
+        }
+
+        .footer {
+            text-align: center;
+            padding: 15px;
+            color: rgba(255, 255, 255, 0.8);
+            font-size: 11px;
+        }
+
+        .loading {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .spinner {
+            width: 16px;
+            height: 16px;
+            border: 2px solid rgba(255, 255, 255, 0.3);
+            border-top: 2px solid white;
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+        }
+
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+
+        .tab-nav {
+            display: flex;
+            background: rgba(255, 255, 255, 0.9);
+            margin: 10px 10px 0 10px;
+            border-radius: 8px 8px 0 0;
+        }
+
+        .tab-btn {
+            flex: 1;
+            padding: 12px;
+            background: none;
+            border: none;
+            font-size: 12px;
+            font-weight: 600;
+            cursor: pointer;
+            color: #666;
+            transition: all 0.2s;
+        }
+
+        .tab-btn.active {
+            background: #2196f3;
+            color: white;
+        }
+
+        .tab-btn:first-child.active {
+            border-radius: 8px 0 0 0;
+        }
+
+        .tab-btn:last-child.active {
+            border-radius: 0 8px 0 0;
+        }
+
+        .tab-content {
+            display: none;
+        }
+
+        .tab-content.active {
+            display: block;
+        }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h1>🛡️ AI Anti-Phishing Guardian</h1>
+        <div class="subtitle">Protection intelligente contre le phishing</div>
+    </div>
+
+    <div class="tab-nav">
+        <button class="tab-btn active" onclick="switchTab('status')">État</button>
+        <button class="tab-btn" onclick="switchTab('history')">Historique</button>
+        <button class="tab-btn" onclick="switchTab('settings')">Paramètres</button>
+    </div>
+
+    <!-- Onglet État -->
+    <div id="tab-status" class="tab-content active">
+        <div class="status-section">
+            <div class="current-site">
+                <div class="site-url" id="currentUrl">Chargement...</div>
+                <div class="site-status unknown" id="siteStatus">
+                    <span class="status-icon">🔍</span>
+                    <div class="status-text">
+                        <div>Analyse en cours...</div>
+                        <div class="confidence-bar">
+                            <div class="confidence-fill" style="width: 0%"></div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="actions">
+                <button class="btn btn-primary" id="reanalyzeBtn" onclick="reanalyzePage()">
+                    🔄 Re-analyser
+                </button>
+                <button class="btn btn-secondary" onclick="openDashboard()">
+                    📊 Dashboard
+                </button>
+            </div>
+        </div>
+
+        <div class="stats-section">
+            <div class="stats-header">Statistiques de session</div>
+            <div class="stats-grid">
+                <div class="stat-item">
+                    <div class="stat-value" id="sitesAnalyzed">0</div>
+                    <div class="stat-label">Sites analysés</div>
+                </div>
+                <div class="stat-item">
+                    <div class="stat-value" id="threatsBlocked">0</div>
+                    <div class="stat-label">Menaces bloquées</div>
+                </div>
+                <div class="stat-item">
+                    <div class="stat-value" id="successRate">0%</div>
+                    <div class="stat-label">Taux de réussite</div>
+                </div>
+                <div class="stat-item">
+                    <div class="stat-value" id="modelStatus">🔄</div>
+                    <div class="stat-label">Statut du modèle</div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Onglet Historique -->
+    <div id="tab-history" class="tab-content">
+        <div class="history-section">
+            <div class="history-header">
+                Historique récent
+                <button class="btn btn-secondary" style="float: right; padding: 4px 8px; font-size: 10px;" onclick="clearHistory()">
+                    Effacer
+                </button>
+            </div>
+            <div class="history-list" id="historyList">
+                <div style="padding: 20px; text-align: center; color: #666;">
+                    Aucun historique disponible
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Onglet Paramètres -->
+    <div id="tab-settings" class="tab-content">
+        <div class="settings-section">
+            <div class="setting-item">
+                <div>
+                    <strong>Notifications</strong>
+                    <div style="font-size: 12px; color: #666;">Alertes de sécurité</div>
+                </div>
+                <label class="switch">
+                    <input type="checkbox" id="enableNotifications" checked>
+                    <span class="slider"></span>
+                </label>
+            </div>
+
+            <div class="setting-item">
+                <div>
+                    <strong>Analyse automatique</strong>
+                    <div style="font-size: 12px; color: #666;">Scanner chaque page</div>
+                </div>
+                <label class="switch">
+                    <input type="checkbox" id="enableAutoAnalysis" checked>
+                    <span class="slider"></span>
+                </label>
+            </div>
+
+            <div class="setting-item">
+                <div>
+                    <strong>Seuil de confiance</strong>
+                    <div style="font-size: 12px; color: #666;">Sensibilité des alertes</div>
+                </div>
+                <select id="confidenceThreshold" style="padding: 5px; border: 1px solid #ddd; border-radius: 4px;">
+                    <option value="50">50% - Faible</option>
+                    <option value="70" selected>70% - Normal</option>
+                    <option value="85">85% - Élevé</option>
+                    <option value="95">95% - Très élevé</option>
+                </select>
+            </div>
+
+            <div style="margin-top: 20px; padding-top: 15px; border-top: 1px solid #eee;">
+                <button class="btn btn-primary" style="width: 100%;" onclick="saveSettings()">
+                    💾 Sauvegarder les paramètres
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <div class="footer">
+        Propulsé par Intelligence Artificielle • v1.0.0
+    </div>
+
+    <script>
+        class PopupManager {
+            constructor() {
+                this.currentTab = 'status';
+                this.stats = {
+                    sitesAnalyzed: 0,
+                    threatsBlocked: 0,
+                    successRate: 0
+                };
+                this.init();
+            }
+
+            async init() {
+                await this.loadCurrentPageStatus();
+                await this.loadHistory();
+                await this.loadSettings();
+                await this.loadStats();
+                this.setupEventListeners();
+                console.log('✅ Popup initialisé');
+            }
+
+            async loadCurrentPageStatus() {
+                try {
+                    const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+                    if (!tab) return;
+
+                    document.getElementById('currentUrl').textContent = tab.url;
+
+                    // Demander le statut au content script
+                    const response = await chrome.tabs.sendMessage(tab.id, { type: 'GET_PAGE_STATUS' });
+
+                    if (response && response.lastResult) {
+                        this.updateSiteStatus(response.lastResult);
+                    } else {
+                        this.updateSiteStatus({ isAnalyzing: response?.isAnalyzing || false });
+                    }
+                } catch (error) {
+                    console.warn('⚠️ Impossible de charger le statut:', error);
+                    this.updateSiteStatus({ error: 'Non analysé' });
+                }
+            }
+
+            updateSiteStatus(result) {
+                const statusElement = document.getElementById('siteStatus');
+                const reanalyzeBtn = document.getElementById('reanalyzeBtn');
+
+                if (result.error) {
+                    statusElement.className = 'site-status unknown';
+                    statusElement.innerHTML = `
+                        <span class="status-icon">❓</span>
+                        <div class="status-text">
+                            <div>Non analysé</div>
+                        </div>
+                    `;
+                    reanalyzeBtn.disabled = false;
+                } else if (result.isAnalyzing) {
+                    statusElement.className = 'site-status analyzing';
+                    statusElement.innerHTML = `
+                        <span class="status-icon">🔍</span>
+                        <div class="status-text">
+                            <div class="loading">
+                                <div class="spinner"></div>
+                                Analyse en cours...
+                            </div>
+                        </div>
+                    `;
+                    reanalyzeBtn.disabled = true;
+                } else if (result.isPhishing) {
+                    statusElement.className = 'site-status danger';
+                    statusElement.innerHTML = `
+                        <span class="status-icon">⚠️</span>
+                        <div class="status-text">
+                            <div>Site suspect détecté</div>
+                            <div class="confidence-bar">
+                                <div class="confidence-fill" style="width: ${result.confidence}%"></div>
+                            </div>
+                        </div>
+                    `;
+                    reanalyzeBtn.disabled = false;
+                } else {
+                    statusElement.className = 'site-status safe';
+                    statusElement.innerHTML = `
+                        <span class="status-icon">✅</span>
+                        <div class="status-text">
+                            <div>Site sécurisé</div>
+                            <div class="confidence-bar">
+                                <div class="confidence-fill" style="width: ${100 - (result.confidence || 0)}%"></div>
+                            </div>
+                        </div>
+                    `;
+                    reanalyzeBtn.disabled = false;
+                }
+            }
+
+            async loadHistory() {
+                try {
+                    const response = await chrome.runtime.sendMessage({ type: 'GET_HISTORY' });
+                    const historyList = document.getElementById('historyList');
+
+                    if (response.history && response.history.length > 0) {
+                        historyList.innerHTML = response.history.slice(-10).reverse().map(item => `
+                            <div class="history-item">
+                                <div class="history-url">${new URL(item.url).hostname}</div>
+                                <div class="history-result">
+                                    <span>${new Date(item.timestamp).toLocaleTimeString()}</span>
+                                    <span class="result-badge ${item.isPhishing ? 'danger' : 'safe'}">
+                                        ${item.isPhishing ? 'SUSPECT' : 'SÛR'}
+                                    </span>
+                                </div>
+                            </div>
+                        `).join('');
+                    } else {
+                        historyList.innerHTML = '<div style="padding: 20px; text-align: center; color: #666;">Aucun historique disponible</div>';
+                    }
+                } catch (error) {
+                    console.error('❌ Erreur chargement historique:', error);
+                }
+            }
+
+            async loadSettings() {
+                try {
+                    const response = await chrome.runtime.sendMessage({ type: 'GET_SETTINGS' });
+                    const settings = response.settings;
+
+                    document.getElementById('enableNotifications').checked = settings.enableNotifications;
+                    document.getElementById('enableAutoAnalysis').checked = settings.enableAutoAnalysis;
+                    document.getElementById('confidenceThreshold').value = settings.confidenceThreshold;
+                } catch (error) {
+                    console.error('❌ Erreur chargement paramètres:', error);
+                }
+            }
+
+            async loadStats() {
+                try {
+                    const response = await chrome.runtime.sendMessage({ type: 'GET_HISTORY' });
+                    const history = response.history || [];
+
+                    const sitesAnalyzed = history.length;
+                    const threatsBlocked = history.filter(item => item.isPhishing).length;
+                    const successRate = sitesAnalyzed > 0 ? Math.round(((sitesAnalyzed - threatsBlocked) / sitesAnalyzed) * 100) : 0;
+
+                    document.getElementById('sitesAnalyzed').textContent = sitesAnalyzed;
+                    document.getElementById('threatsBlocked').textContent = threatsBlocked;
+                    document.getElementById('successRate').textContent = successRate + '%';
+                    document.getElementById('modelStatus').textContent = '🟢';
+
+                } catch (error) {
+                    console.error('❌ Erreur chargement stats:', error);
+                }
+            }
+
+            setupEventListeners() {
+                // Settings listeners
+                document.getElementById('enableNotifications').addEventListener('change', this.onSettingChange.bind(this));
+                document.getElementById('enableAutoAnalysis').addEventListener('change', this.onSettingChange.bind(this));
+                document.getElementById('confidenceThreshold').addEventListener('change', this.onSettingChange.bind(this));
+            }
+
+            onSettingChange() {
+                // Auto-save settings on change
+                this.saveSettings();
+            }
+
+            async saveSettings() {
+                try {
+                    const settings = {
+                        enableNotifications: document.getElementById('enableNotifications').checked,
+                        enableAutoAnalysis: document.getElementById('enableAutoAnalysis').checked,
+                        confidenceThreshold: parseInt(document.getElementById('confidenceThreshold').value)
+                    };
+
+                    await chrome.runtime.sendMessage({
+                        type: 'UPDATE_SETTINGS',
+                        settings: settings
+                    });
+
+                    // Visual feedback
+                    const btn = event?.target || document.querySelector('button[onclick="saveSettings()"]');
+                    if (btn) {
+                        const originalText = btn.textContent;
+                        btn.textContent = '✅ Sauvegardé';
+                        setTimeout(() => {
+                            btn.textContent = originalText;
+                        }, 1500);
+                    }
+
+                } catch (error) {
+                    console.error('❌ Erreur sauvegarde:', error);
+                }
+            }
+        }
+
+        // Fonctions globales pour les événements
+        function switchTab(tabName) {
+            // Update tab buttons
+            document.querySelectorAll('.tab-btn').forEach(btn => btn.classList.remove('active'));
+            event.target.classList.add('active');
+
+            // Update tab content
+            document.querySelectorAll('.tab-content').forEach(content => content.classList.remove('active'));
+            document.getElementById(`tab-${tabName}`).classList.add('active');
+
+            // Reload data if needed
+            if (tabName === 'history') {
+                popupManager.loadHistory();
+            }
+        }
+
+        async function reanalyzePage() {
+            try {
+                const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+                await chrome.tabs.sendMessage(tab.id, { type: 'REANALYZE_PAGE' });
+
+                // Update UI immediately
+                popupManager.updateSiteStatus({ isAnalyzing: true });
+
+                // Reload status after a delay
+                setTimeout(() => {
+                    popupManager.loadCurrentPageStatus();
+                }, 3000);
+
+            } catch (error) {
+                console.error('❌ Erreur re-analyse:', error);
+            }
+        }
+
+        function openDashboard() {
+            chrome.tabs.create({ url: 'http://localhost:8000' });
+        }
+
+        async function clearHistory() {
+            try {
+                await chrome.runtime.sendMessage({ type: 'CLEAR_HISTORY' });
+                popupManager.loadHistory();
+                popupManager.loadStats();
+            } catch (error) {
+                console.error('❌ Erreur effacement historique:', error);
+            }
+        }
+
+        function saveSettings() {
+            popupManager.saveSettings();
+        }
+
+        // Initialiser le gestionnaire du popup
+        const popupManager = new PopupManager();
+    </script>
+</body>
+</html>

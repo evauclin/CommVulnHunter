@@ -1,0 +1,349 @@
+/* content.css - Styles pour l'extension AI Anti-Phishing Guardian */
+
+/* Styles de base pour éviter les conflits avec les sites */
+#phishing-detector-indicator,
+#phishing-alert,
+#safe-indicator,
+#thank-you-message {
+    all: initial;
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif !important;
+    box-sizing: border-box !important;
+    line-height: 1.4 !important;
+}
+
+/* Indicateur d'analyse en cours */
+#phishing-detector-indicator {
+    position: fixed !important;
+    top: 20px !important;
+    right: 20px !important;
+    background: linear-gradient(135deg, #2196f3, #1976d2) !important;
+    color: white !important;
+    padding: 12px 20px !important;
+    border-radius: 25px !important;
+    box-shadow: 0 4px 20px rgba(33, 150, 243, 0.4) !important;
+    z-index: 2147483647 !important; /* Maximum z-index */
+    font-size: 14px !important;
+    font-weight: 500 !important;
+    animation: slideInRight 0.3s ease-out !important;
+    border: none !important;
+    margin: 0 !important;
+    max-width: 300px !important;
+}
+
+.phishing-indicator-content {
+    display: flex !important;
+    align-items: center !important;
+    gap: 8px !important;
+}
+
+.spinner {
+    width: 16px !important;
+    height: 16px !important;
+    border: 2px solid rgba(255, 255, 255, 0.3) !important;
+    border-top: 2px solid white !important;
+    border-radius: 50% !important;
+    animation: spin 1s linear infinite !important;
+    margin: 0 !important;
+}
+
+/* Alerte de phishing principale */
+#phishing-alert {
+    position: fixed !important;
+    top: 0 !important;
+    left: 0 !important;
+    right: 0 !important;
+    background: linear-gradient(135deg, #f44336, #d32f2f) !important;
+    color: white !important;
+    z-index: 2147483647 !important;
+    font-size: 16px !important;
+    box-shadow: 0 4px 20px rgba(244, 67, 54, 0.5) !important;
+    animation: slideDown 0.4s ease-out !important;
+    border: none !important;
+    margin: 0 !important;
+    padding: 0 !important;
+}
+
+.phishing-alert-content {
+    max-width: 1200px !important;
+    margin: 0 auto !important;
+    padding: 20px !important;
+}
+
+.alert-header {
+    display: flex !important;
+    align-items: center !important;
+    justify-content: space-between !important;
+    margin-bottom: 15px !important;
+    font-size: 18px !important;
+    font-weight: 700 !important;
+}
+
+.alert-icon {
+    font-size: 24px !important;
+    margin-right: 10px !important;
+}
+
+.close-btn {
+    background: rgba(255, 255, 255, 0.2) !important;
+    border: none !important;
+    color: white !important;
+    font-size: 24px !important;
+    font-weight: bold !important;
+    width: 30px !important;
+    height: 30px !important;
+    border-radius: 50% !important;
+    cursor: pointer !important;
+    display: flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+    transition: background 0.2s !important;
+    padding: 0 !important;
+    margin: 0 !important;
+}
+
+.close-btn:hover {
+    background: rgba(255, 255, 255, 0.3) !important;
+}
+
+.alert-body p {
+    margin: 0 0 10px 0 !important;
+    font-size: 16px !important;
+    line-height: 1.4 !important;
+}
+
+.alert-body small {
+    font-size: 14px !important;
+    opacity: 0.9 !important;
+}
+
+.alert-actions {
+    display: flex !important;
+    gap: 12px !important;
+    margin-top: 15px !important;
+    flex-wrap: wrap !important;
+}
+
+.alert-actions button {
+    padding: 10px 20px !important;
+    border: none !important;
+    border-radius: 6px !important;
+    font-weight: 600 !important;
+    font-size: 14px !important;
+    cursor: pointer !important;
+    transition: all 0.2s !important;
+    min-width: 120px !important;
+    font-family: inherit !important;
+    margin: 0 !important;
+}
+
+.btn-danger {
+    background: #fff !important;
+    color: #f44336 !important;
+}
+
+.btn-danger:hover {
+    background: #f5f5f5 !important;
+    transform: translateY(-1px) !important;
+}
+
+.btn-secondary {
+    background: rgba(255, 255, 255, 0.2) !important;
+    color: white !important;
+    border: 1px solid rgba(255, 255, 255, 0.3) !important;
+}
+
+.btn-secondary:hover {
+    background: rgba(255, 255, 255, 0.3) !important;
+}
+
+.btn-primary {
+    background: rgba(255, 255, 255, 0.9) !important;
+    color: #333 !important;
+}
+
+.btn-primary:hover {
+    background: white !important;
+    transform: translateY(-1px) !important;
+}
+
+/* Indicateur de site sécurisé */
+#safe-indicator {
+    position: fixed !important;
+    bottom: 20px !important;
+    right: 20px !important;
+    background: linear-gradient(135deg, #4caf50, #388e3c) !important;
+    color: white !important;
+    padding: 12px 20px !important;
+    border-radius: 25px !important;
+    box-shadow: 0 4px 20px rgba(76, 175, 80, 0.4) !important;
+    z-index: 2147483647 !important;
+    font-size: 14px !important;
+    font-weight: 500 !important;
+    animation: slideInRight 0.3s ease-out, fadeOutRight 0.3s ease-out 2.7s forwards !important;
+    border: none !important;
+    margin: 0 !important;
+}
+
+.safe-indicator-content {
+    display: flex !important;
+    align-items: center !important;
+    gap: 8px !important;
+}
+
+.safe-icon {
+    font-size: 16px !important;
+}
+
+/* Message de remerciement */
+#thank-you-message {
+    position: fixed !important;
+    bottom: 80px !important;
+    right: 20px !important;
+    background: linear-gradient(135deg, #ff9800, #f57c00) !important;
+    color: white !important;
+    padding: 15px 20px !important;
+    border-radius: 20px !important;
+    box-shadow: 0 4px 20px rgba(255, 152, 0, 0.4) !important;
+    z-index: 2147483647 !important;
+    font-size: 14px !important;
+    font-weight: 500 !important;
+    animation: slideInRight 0.3s ease-out, fadeOutRight 0.3s ease-out 3.7s forwards !important;
+    border: none !important;
+    margin: 0 !important;
+    max-width: 250px !important;
+}
+
+.thank-you-content {
+    text-align: center !important;
+}
+
+.thank-you-content small {
+    display: block !important;
+    margin-top: 5px !important;
+    font-size: 12px !important;
+    opacity: 0.9 !important;
+}
+
+/* Animations */
+@keyframes slideInRight {
+    from {
+        transform: translateX(100%) !important;
+        opacity: 0 !important;
+    }
+    to {
+        transform: translateX(0) !important;
+        opacity: 1 !important;
+    }
+}
+
+@keyframes slideDown {
+    from {
+        transform: translateY(-100%) !important;
+        opacity: 0 !important;
+    }
+    to {
+        transform: translateY(0) !important;
+        opacity: 1 !important;
+    }
+}
+
+@keyframes fadeOutRight {
+    from {
+        opacity: 1 !important;
+        transform: translateX(0) !important;
+    }
+    to {
+        opacity: 0 !important;
+        transform: translateX(100%) !important;
+    }
+}
+
+@keyframes spin {
+    to {
+        transform: rotate(360deg) !important;
+    }
+}
+
+/* Responsive design */
+@media screen and (max-width: 768px) {
+    #phishing-alert {
+        font-size: 14px !important;
+    }
+
+    .phishing-alert-content {
+        padding: 15px !important;
+    }
+
+    .alert-actions {
+        flex-direction: column !important;
+    }
+
+    .alert-actions button {
+        width: 100% !important;
+        margin-bottom: 8px !important;
+    }
+
+    #phishing-detector-indicator,
+    #safe-indicator,
+    #thank-you-message {
+        left: 10px !important;
+        right: 10px !important;
+        text-align: center !important;
+        max-width: none !important;
+    }
+
+    #phishing-detector-indicator {
+        top: 10px !important;
+    }
+
+    #safe-indicator {
+        bottom: 10px !important;
+    }
+
+    #thank-you-message {
+        bottom: 70px !important;
+    }
+}
+
+/* Styles pour éviter les conflits avec les sites existants */
+#phishing-detector-indicator *,
+#phishing-alert *,
+#safe-indicator *,
+#thank-you-message * {
+    box-sizing: border-box !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    font-family: inherit !important;
+}
+
+/* Assurer que les éléments sont toujours visibles */
+#phishing-detector-indicator,
+#phishing-alert,
+#safe-indicator,
+#thank-you-message {
+    visibility: visible !important;
+    display: block !important;
+    opacity: 1 !important;
+}
+
+/* Protection contre l'override par les sites */
+body:not([data-phishing-extension-disabled]) #phishing-detector-indicator,
+body:not([data-phishing-extension-disabled]) #phishing-alert,
+body:not([data-phishing-extension-disabled]) #safe-indicator,
+body:not([data-phishing-extension-disabled]) #thank-you-message {
+    display: block !important;
+}
+
+/* Effet de pulsation pour l'alerte critique */
+#phishing-alert {
+    animation: slideDown 0.4s ease-out, pulse-alert 2s ease-in-out 1s infinite !important;
+}
+
+@keyframes pulse-alert {
+    0%, 100% {
+        box-shadow: 0 4px 20px rgba(244, 67, 54, 0.5) !important;
+    }
+    50% {
+        box-shadow: 0 4px 30px rgba(244, 67, 54, 0.8) !important;
+    }
+}
