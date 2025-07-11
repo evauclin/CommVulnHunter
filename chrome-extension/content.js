@@ -170,8 +170,8 @@ class PhishingDetector {
             input_types: Array.from(form.querySelectorAll('input')).map(input => input.type),
             has_password: form.querySelector('input[type="password"]') !== null,
             has_email: form.querySelector('input[type="email"], input[name*="email"]') !== null,
-            // 🔧 CORRECTION LIGNE 464 : Appeler la fonction de vérification de paiement sur le formulaire spécifique
-            has_credit_card: this.hasPaymentFormInContainer(form)
+            // 🔧 CORRECTION : Utiliser la fonction correcte avec le bon paramètre
+            has_credit_card: this.hasPaymentForm(form)
         }));
     }
 
@@ -388,22 +388,26 @@ class PhishingDetector {
         const confidence = this.getConfidenceScore();
 
         // Envoyer le résultat au background script
-        chrome.runtime.sendMessage({
-            type: 'ANALYSIS_COMPLETE',
-            data: {
-                url: this.currentUrl,
-                domain: this.pageData.domain,
-                isPhishing: isPhishing,
-                confidence: confidence,
-                analysis: this.analysisResult,
-                pageData: {
-                    title: this.pageData.title,
-                    hasLoginForm: this.pageData.has_login_form,
-                    hasPaymentForm: this.pageData.has_payment_form,
-                    suspiciousCount: this.pageData.suspicious_indicators.length
+        if (typeof chrome !== 'undefined' && chrome.runtime && chrome.runtime.sendMessage) {
+            chrome.runtime.sendMessage({
+                type: 'ANALYSIS_COMPLETE',
+                data: {
+                    url: this.currentUrl,
+                    domain: this.pageData.domain,
+                    isPhishing: isPhishing,
+                    confidence: confidence,
+                    analysis: this.analysisResult,
+                    pageData: {
+                        title: this.pageData.title,
+                        hasLoginForm: this.pageData.has_login_form,
+                        hasPaymentForm: this.pageData.has_payment_form,
+                        suspiciousCount: this.pageData.suspicious_indicators.length
+                    }
                 }
-            }
-        });
+            }).catch(() => {
+                console.log('⚠️ Impossible d\'envoyer au background script');
+            });
+        }
 
         // Afficher l'alerte si phishing détecté avec confiance élevée
         if (isPhishing && confidence > 60) {
@@ -448,8 +452,8 @@ class PhishingDetector {
                     <p><small>Domaine: ${this.pageData.domain}</small></p>
                     <div class="alert-actions">
                         <button class="btn-danger" onclick="window.history.back()">🔙 Retour sécurisé</button>
-                        <button class="btn-secondary" onclick="phishingDetector.sendFeedback('ignore')">Ignorer cette alerte</button>
-                        <button class="btn-primary" onclick="phishingDetector.sendFeedback('correct')">Signaler comme fausse alerte</button>
+                        <button class="btn-secondary" onclick="window.phishingDetector.sendFeedback('ignore')">Ignorer cette alerte</button>
+                        <button class="btn-primary" onclick="window.phishingDetector.sendFeedback('correct')">Signaler comme fausse alerte</button>
                     </div>
                 </div>
             </div>
@@ -458,12 +462,16 @@ class PhishingDetector {
         document.body.appendChild(alert);
 
         // Notification système
-        chrome.runtime.sendMessage({
-            type: 'SHOW_NOTIFICATION',
-            title: '🚨 Site suspect détecté',
-            message: `${this.pageData.domain} pourrait être dangereux (${confidence}% de confiance)`,
-            type: 'danger'
-        });
+        if (typeof chrome !== 'undefined' && chrome.runtime && chrome.runtime.sendMessage) {
+            chrome.runtime.sendMessage({
+                type: 'SHOW_NOTIFICATION',
+                title: '🚨 Site suspect détecté',
+                message: `${this.pageData.domain} pourrait être dangereux (${confidence}% de confiance)`,
+                type: 'danger'
+            }).catch(() => {
+                console.log('⚠️ Impossible d\'envoyer la notification');
+            });
+        }
     }
 
     showSafeIndicator() {
@@ -562,9 +570,11 @@ if (document.readyState === 'loading') {
 
 function initializeDetector() {
     phishingDetector = new PhishingDetector();
+    // Exposer globalement pour les boutons d'alerte
+    window.phishingDetector = phishingDetector;
 }
 
-// 🔧 CORRECTION LIGNE 640 : Vérifier que chrome et chrome.runtime existent avant d'écouter
+// 🔧 CORRECTION : Vérifier que chrome et chrome.runtime existent avant d'écouter
 if (typeof chrome !== 'undefined' && chrome.runtime && chrome.runtime.onMessage) {
     chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
         if (!phishingDetector) {
@@ -572,24 +582,31 @@ if (typeof chrome !== 'undefined' && chrome.runtime && chrome.runtime.onMessage)
             return;
         }
 
-        if (request.type === 'GET_PAGE_STATUS') {
-            sendResponse({
-                url: window.location.href,
-                domain: window.location.hostname,
-                isAnalyzing: phishingDetector.isAnalyzing,
-                hasAnalyzed: phishingDetector.hasAnalyzed,
-                lastResult: phishingDetector.analysisResult,
-                pageData: phishingDetector.pageData
-            });
-        } else if (request.type === 'REANALYZE_PAGE') {
-            phishingDetector.hasAnalyzed = false;
-            phishingDetector.startAnalysis();
-            sendResponse({ status: 'reanalysis_started' });
-        } else if (request.type === 'GET_PAGE_DATA') {
-            sendResponse({
-                pageData: phishingDetector.pageData,
-                analysisResult: phishingDetector.analysisResult
-            });
+        try {
+            if (request.type === 'GET_PAGE_STATUS') {
+                sendResponse({
+                    url: window.location.href,
+                    domain: window.location.hostname,
+                    isAnalyzing: phishingDetector.isAnalyzing,
+                    hasAnalyzed: phishingDetector.hasAnalyzed,
+                    lastResult: phishingDetector.analysisResult,
+                    pageData: phishingDetector.pageData
+                });
+            } else if (request.type === 'REANALYZE_PAGE') {
+                phishingDetector.hasAnalyzed = false;
+                phishingDetector.startAnalysis();
+                sendResponse({ status: 'reanalysis_started' });
+            } else if (request.type === 'GET_PAGE_DATA') {
+                sendResponse({
+                    pageData: phishingDetector.pageData,
+                    analysisResult: phishingDetector.analysisResult
+                });
+            } else {
+                sendResponse({ error: 'Unknown request type' });
+            }
+        } catch (error) {
+            console.error('❌ Erreur handling message:', error);
+            sendResponse({ error: error.message });
         }
     });
 } else {
