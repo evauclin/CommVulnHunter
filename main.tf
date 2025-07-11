@@ -1,10 +1,10 @@
 provider "aws" {
   region = "eu-west-3"
 }
-/*resource "aws_key_pair" "main" {
+resource "aws_key_pair" "main" {
   key_name   = "windows-ed25519-key"
   public_key = file("C:/Users/farin/.ssh/id_ed25519.pub")
-}*/
+}
 
 resource "aws_security_group" "allow_ssh" {
   name        = "allow_ssh_new"
@@ -45,8 +45,8 @@ resource "aws_security_group" "allow_ssh" {
 resource "aws_instance" "docker_host" {
   ami                    = "ami-007c433663055a1cc"
   instance_type          = "t2.medium"
-#  key_name               =  aws_key_pair.main.key_name
-  key_name               = "key_mac_ed25519"
+  key_name               =  aws_key_pair.main.key_name
+#  key_name               = "key_mac_ed25519"
   vpc_security_group_ids = [aws_security_group.allow_ssh.id]
 
   user_data = file("install.sh")
@@ -64,8 +64,8 @@ resource "aws_instance" "docker_host" {
   connection {
     type        = "ssh"
     user        = "ubuntu"
-    #private_key = file("C:/Users/farin/.ssh/id_ed25519")
-    private_key = file("/Users/vauclinetienne/.ssh/id_ed25519")
+    private_key = file("C:/Users/farin/.ssh/id_ed25519")
+    #private_key = file("/Users/vauclinetienne/.ssh/id_ed25519")
     host        = self.public_ip
     timeout     = "10m" # if timeout occurs, increase this
   }

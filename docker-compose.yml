@@ -10,6 +10,11 @@ services:
     environment:
       - PYTHONUNBUFFERED=1
     restart: unless-stopped
+    volumes:
+      # Monter le dossier src/pages pour accéder aux CSV
+      - ./src/pages:/shared/data:ro  # ro = read-only
+      # Monter aussi le fichier CSV directement si nécessaire
+      - ./emails_live.csv:/app/emails_live.csv:ro
 
   web:
     build:
@@ -20,3 +25,7 @@ services:
     depends_on:
       - fastapi
     restart: unless-stopped
+    volumes:
+      - ./src/pages:/shared/data:ro
+      # Permettre à nginx de servir les fichiers CSV aussi
+      - ./emails_live.csv:/usr/share/nginx/html/emails_live.csv:ro

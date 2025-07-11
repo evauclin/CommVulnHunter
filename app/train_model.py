@@ -788,7 +788,7 @@ class ModelFineTuner:
 
         # Charger les mots suspects (comme dans le modèle original)
         try:
-            suspicious_words_file = Path("./model/suspicious_words.json")
+            suspicious_words_file = Path("./model/model_prod/suspicious_words.json")
             if suspicious_words_file.exists():
                 with open(suspicious_words_file, 'r') as f:
                     suspicious_words_data = json.load(f)

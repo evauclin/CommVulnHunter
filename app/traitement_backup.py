@@ -18,6 +18,7 @@ import nltk
 from nltk.corpus import stopwords
 import shutil
 import os
+import time  # Ajoutez cet import si pas déjà présent
 
 # Configuration pour la reproductibilité
 tf.random.set_seed(42)
@@ -83,7 +84,7 @@ class IndividualFeedbackRetrainingManager:
         Initialise le gestionnaire de re-entraînement par feedback individuel
 
         Args:
-            model_dir: Répertoire contenant les artefacts du modèle de production
+            model_dir: Répertoire contenant les artefacts du modèle
             data_dir: Répertoire contenant les données et feedbacks
         """
         self.model_dir = Path(model_dir)
@@ -113,32 +114,41 @@ class IndividualFeedbackRetrainingManager:
 
         # Configuration re-entraînement pour feedback individuel
         self.retrain_config = {
-            'learning_rate': 0.001,  # Très faible pour stabilité
-            'epochs': 10,  # Peu d'époques pour éviter overfitting
-            'batch_size': 5,  # Un seul feedback
-            'patience': 3,  # Patience réduite
-            'base_sample_size': 50,  # Échantillon de support
-            'validation_split': 0.3,  # Plus de validation
-            # Pondération intelligente
-
-            'feedback_weight': 6.0,  # Prioritaire mais pas excessif
-            'support_weight': 1.0,  # Poids normal
-
+            'learning_rate_initial': 0.001,
+            'learning_rate_min': 0.00001,
+            'learning_rate_decay': 0.8,  # Réduction à chaque tentative
+            'epochs_initial': 10,
+            'epochs_max': 50,
+            'epochs_increment': 5,  # +5 époques à chaque tentative
+            'batch_size': 5,
+            'patience_initial': 3,
+            'patience_max': 10,
+            'patience_increment': 2,
+            'base_sample_size': 50,
+            'validation_split': 0.3,
+            'feedback_weight_initial': 6.0,
+            'feedback_weight_max': 15.0,  # Poids plus agressif si nécessaire
+            'feedback_weight_increment': 1.5,
+            'support_weight': 1.0,
             'safety_backup': True,
-            'min_confidence_threshold': 0.7,  # Seuil de confiance minimum
-            'max_gradient_norm': 1.0  # Gradient clipping
+            'max_gradient_norm': 1.0
         }
 
         # Critères de déploiement pour feedback individuel
         self.deployment_criteria = {
-            'require_feedback_corrected': True,  # Le feedback DOIT être corrigé
-            'min_confidence': 0.6,  # Confiance minimum dans la correction
-            'allow_slight_degradation': 0.01,  # 1% de dégradation max sur performance globale
-            'safety_threshold': 0.80,  # 80% accuracy minimum
-            'max_consecutive_failures': 3  # Maximum d'échecs consécutifs avant arrêt
+            'require_feedback_corrected': True,
+            'min_confidence': 0.6,
+            'min_confidence_relaxed': 0.5,  # Après plusieurs échecs
+            'max_attempts_per_feedback': 10,  # NOUVEAU: Maximum 10 tentatives
+            'learning_progress_threshold': 0.05,
+            'allow_confidence_relaxation': True,  # Assouplir après 5 échecs
+            'safety_threshold': 0.80,
+            'max_consecutive_failures': 5  # Changé de 3 à 5
         }
 
         # Compteurs
+        self.current_attempt = 0
+        self.best_result_so_far = None
         self.consecutive_failures = 0
         self.total_retrainings = 0
         self.successful_deployments = 0
@@ -151,6 +161,105 @@ class IndividualFeedbackRetrainingManager:
         print(f"   DÉPLOIEMENT: Immédiat si la correction fonctionne")
         print(f"   SÉCURITÉ: Confiance ≥ {self.deployment_criteria['min_confidence']:.0%}")
 
+    def get_adaptive_config_for_attempt(self, attempt_number):
+        """
+        Génère une configuration adaptée selon le numéro de tentative
+        """
+        config = self.retrain_config.copy()
+
+        # Adapter le learning rate (décroissant)
+        lr_reduction = config['learning_rate_decay'] ** (attempt_number - 1)
+        config['learning_rate'] = max(
+            config['learning_rate_initial'] * lr_reduction,
+            config['learning_rate_min']
+        )
+
+        # Adapter les époques (croissant)
+        config['epochs'] = min(
+            config['epochs_initial'] + ((attempt_number - 1) * config['epochs_increment']),
+            config['epochs_max']
+        )
+
+        # Adapter la patience (croissant)
+        config['patience'] = min(
+            config['patience_initial'] + ((attempt_number - 1) * config['patience_increment']),
+            config['patience_max']
+        )
+
+        # Adapter le poids du feedback (croissant)
+        config['feedback_weight'] = min(
+            config['feedback_weight_initial'] + ((attempt_number - 1) * config['feedback_weight_increment']),
+            config['feedback_weight_max']
+        )
+
+        print(f"🔧 Configuration tentative #{attempt_number}:")
+        print(f"   Learning rate: {config['learning_rate']:.6f}")
+        print(f"   Époques: {config['epochs']}")
+        print(f"   Patience: {config['patience']}")
+        print(f"   Poids feedback: {config['feedback_weight']:.1f}")
+
+        return config
+
+    def _test_api_endpoint(self, url, method='GET', timeout=10):
+        """Test un endpoint API"""
+        try:
+            import subprocess
+            import json
+
+            if method == 'GET':
+                curl_cmd = ['curl', '-s', url, '--max-time', str(timeout)]
+            else:  # POST
+                curl_cmd = ['curl', '-s', '-X', method, url, '--max-time', str(timeout)]
+
+            result = subprocess.run(curl_cmd, capture_output=True, text=True, timeout=timeout + 2)
+
+            if result.returncode == 0:
+                try:
+                    json.loads(result.stdout)  # Vérifier que c'est du JSON valide
+                    return True
+                except:
+                    return False
+            return False
+
+        except Exception:
+            return False
+
+    def _check_model_version(self, api_url, expected_version):
+        """Vérifie que la bonne version du modèle est chargée"""
+        try:
+            import subprocess
+            import json
+
+            # Utiliser l'endpoint /model-status
+            status_url = f"{api_url}/model-status"
+            curl_cmd = ['curl', '-s', status_url, '--max-time', '10']
+
+            result = subprocess.run(curl_cmd, capture_output=True, text=True, timeout=12)
+
+            if result.returncode == 0:
+                try:
+                    data = json.loads(result.stdout)
+                    current_version = data.get('model_version', 'unknown')
+
+                    print(f"   📊 Version actuelle de l'API: {current_version}")
+
+                    # Comparer les versions
+                    if str(current_version) == str(expected_version):
+                        return True
+                    else:
+                        print(f"   🔍 Version différente: {current_version} vs {expected_version}")
+                        return False
+
+                except json.JSONDecodeError:
+                    print(f"   ⚠️ Réponse API non-JSON")
+                    return False
+            else:
+                print(f"   ❌ Erreur curl: {result.stderr}")
+                return False
+
+        except Exception as e:
+            print(f"   ❌ Erreur vérification version: {e}")
+            return False
     def _setup_stopwords(self):
         """Configure les stopwords NLTK"""
         try:
@@ -171,6 +280,67 @@ class IndividualFeedbackRetrainingManager:
                 'fr': {'le', 'la', 'les', 'un', 'une', 'des', 'et', 'ou', 'mais'}
             }
 
+    # NOUVEAU: Fonction de diagnostic post-déploiement
+    def diagnose_deployment_status(self):
+        """Diagnostic complet du statut de déploiement"""
+        print(f"\n🔍 DIAGNOSTIC POST-DÉPLOIEMENT")
+        print("=" * 50)
+
+        try:
+            # 1. Vérifier les fichiers locaux
+            model_file = self.model_dir / "best_lstm_model.keras"
+            metadata_file = self.model_dir / "model_metadata.json"
+
+            print(f"📁 Fichiers locaux:")
+            print(f"   Modèle: {'✅' if model_file.exists() else '❌'} {model_file}")
+            if model_file.exists():
+                mod_time = datetime.fromtimestamp(model_file.stat().st_mtime)
+                print(f"   Modifié: {mod_time}")
+
+            print(f"   Métadonnées: {'✅' if metadata_file.exists() else '❌'} {metadata_file}")
+
+            # 2. Lire les métadonnées
+            if metadata_file.exists():
+                try:
+                    with open(metadata_file, 'r') as f:
+                        metadata = json.load(f)
+                    print(f"📊 Métadonnées:")
+                    print(f"   Version: {metadata.get('model_version', 'unknown')}")
+                    print(f"   Dernier déploiement: {metadata.get('deployment_timestamp', 'unknown')}")
+                    print(f"   Dernier feedback: {metadata.get('last_feedback_processed', 'unknown')}")
+                except Exception as e:
+                    print(f"   ❌ Erreur lecture métadonnées: {e}")
+
+            # 3. Tester les endpoints API
+            api_urls = ["http://localhost:8000", "http://127.0.0.1:8000"]
+
+            for api_url in api_urls:
+                print(f"\n🌐 Test API: {api_url}")
+                try:
+                    # Test health
+                    health_success = self._test_api_endpoint(f"{api_url}/health")
+                    print(f"   Health: {'✅' if health_success else '❌'}")
+
+                    # Test model-status
+                    status_success = self._test_api_endpoint(f"{api_url}/model-status")
+                    print(f"   Model Status: {'✅' if status_success else '❌'}")
+
+                    if health_success and status_success:
+                        print(f"   🎉 API accessible et fonctionnelle")
+                        break
+
+                except Exception as e:
+                    print(f"   ❌ Erreur test: {e}")
+
+            # 4. Recommandations
+            print(f"\n💡 RECOMMANDATIONS:")
+            print(f"   1. Vérifiez que l'API FastAPI fonctionne: curl http://localhost:8000/health")
+            print(f"   2. Rechargement manuel: curl -X POST http://localhost:8000/reload-model")
+            print(f"   3. Redémarrage Docker: docker-compose restart fastapi")
+            print(f"   4. Vérifiez les logs Docker: docker-compose logs fastapi")
+
+        except Exception as e:
+            print(f"❌ Erreur diagnostic: {e}")
     def load_model_artifacts(self):
         """
         ÉTAPE 1: Charge tous les artefacts du modèle existant
@@ -320,12 +490,15 @@ class IndividualFeedbackRetrainingManager:
             print(f"❌ Erreur récupération feedback: {e}")
             return None
 
-    def create_individual_training_dataset(self, feedback_data, dataset_path):
+    def create_individual_training_dataset(self, feedback_data, dataset_path, attempt_number=1):
         """
-        Crée un dataset d'entraînement avec LE feedback + échantillon de support
+        Crée un dataset d'entraînement avec LE feedback + échantillon de support ADAPTATIF
         """
-        print(f"\n📊 CRÉATION DATASET POUR FEEDBACK INDIVIDUEL")
-        print("=" * 50)
+        print(f"\n📊 CRÉATION DATASET POUR FEEDBACK INDIVIDUEL (Tentative #{attempt_number})")
+        print("=" * 60)
+
+        # Configuration adaptée
+        config = self.get_adaptive_config_for_attempt(attempt_number)
 
         try:
             # Dataset avec LE feedback à corriger
@@ -334,39 +507,65 @@ class IndividualFeedbackRetrainingManager:
                 'label': feedback_data['label'],
                 'language': feedback_data['language'],
                 'source': 'feedback',
-                'weight': self.retrain_config['feedback_weight']  # Utiliser la config
+                'weight': config['feedback_weight']
             }])
 
-            print(f"📝 Feedback individuel ajouté (poids: {self.retrain_config['feedback_weight']})")
+            print(f"📝 Feedback individuel ajouté (poids: {config['feedback_weight']:.1f})")
 
-            # Ajouter un échantillon de support pour stabilité
+            # Ajouter un échantillon de support ADAPTATIF
             base_sample_df = pd.DataFrame()
             if Path(dataset_path).exists():
                 df = pd.read_csv(dataset_path)
 
-                # Échantillon équilibré pour stabilité
-                sample_size = self.retrain_config['base_sample_size']
+                # Taille d'échantillon adaptée à la tentative
+                sample_size = config['base_sample_size'] + ((attempt_number - 1) * 10)
+                sample_size = min(sample_size, len(df) // 2)  # Max 50% du dataset
+
                 if len(df) > sample_size:
-                    # Échantillonnage stratifié équilibré
-                    balanced_sample = []
-                    for label in df['label'].unique():
-                        label_df = df[df['label'] == label]
-                        label_sample_size = sample_size // len(df['label'].unique())
+                    # Pour les tentatives avancées, privilégier les exemples similaires
+                    if attempt_number > 3:
+                        target_label = feedback_data['label']
+                        similar_examples = df[df['label'] == target_label]
+                        other_examples = df[df['label'] != target_label]
 
-                        if len(label_df) >= label_sample_size:
-                            label_sample = label_df.sample(n=label_sample_size, random_state=42)
+                        # 70% d'exemples du bon label, 30% autres
+                        target_sample_size = int(sample_size * 0.7)
+                        other_sample_size = sample_size - target_sample_size
+
+                        balanced_sample = []
+                        if len(similar_examples) >= target_sample_size:
+                            balanced_sample.append(similar_examples.sample(n=target_sample_size, random_state=42))
                         else:
-                            label_sample = label_df
+                            balanced_sample.append(similar_examples)
 
-                        balanced_sample.append(label_sample)
+                        if len(other_examples) >= other_sample_size:
+                            balanced_sample.append(other_examples.sample(n=other_sample_size, random_state=42))
+                        else:
+                            balanced_sample.append(other_examples)
 
-                    base_sample_df = pd.concat(balanced_sample, ignore_index=True)
+                        base_sample_df = pd.concat(balanced_sample, ignore_index=True)
+                        print(f"📊 Échantillonnage ciblé pour tentative #{attempt_number}")
+                    else:
+                        # Échantillonnage équilibré standard
+                        balanced_sample = []
+                        for label in df['label'].unique():
+                            label_df = df[df['label'] == label]
+                            label_sample_size = sample_size // len(df['label'].unique())
+
+                            if len(label_df) >= label_sample_size:
+                                label_sample = label_df.sample(n=label_sample_size, random_state=42)
+                            else:
+                                label_sample = label_df
+
+                            balanced_sample.append(label_sample)
+
+                        base_sample_df = pd.concat(balanced_sample, ignore_index=True)
                 else:
                     base_sample_df = df.copy()
 
                 base_sample_df = base_sample_df[['text', 'label', 'language']].copy()
                 base_sample_df['source'] = 'dataset'
-                base_sample_df['weight'] = self.retrain_config['support_weight']
+                base_sample_df['weight'] = config['support_weight']
 
                 print(f"📊 Échantillon de support: {len(base_sample_df)} échantillons")
 
@@ -378,14 +577,12 @@ class IndividualFeedbackRetrainingManager:
 
             print(f"🔗 Dataset final: {len(combined_df)} échantillons")
             print(f"   Distribution: {combined_df['label'].value_counts().to_dict()}")
-            print(f"   📊 Ratio feedback/support: 1/{len(base_sample_df)}")
 
             return combined_df
 
         except Exception as e:
             print(f"❌ Erreur création dataset: {e}")
             return pd.DataFrame()
-
     def preprocess_text(self, text, language='en'):
         """Préprocesse le texte"""
         if pd.isna(text):
@@ -570,40 +767,47 @@ class IndividualFeedbackRetrainingManager:
                 return backup_dir
             except:
                 return None
-    def perform_individual_retraining(self, training_data, feedback_data):
+
+    def perform_individual_retraining(self, training_data, feedback_data, attempt_number=1):
         """
-        RE-ENTRAÎNE le modèle pour corriger LE feedback spécifique
+        RE-ENTRAÎNE le modèle pour corriger LE feedback spécifique avec configuration adaptative
         """
-        print(f"\n🎯 RE-ENTRAÎNEMENT POUR FEEDBACK #{feedback_data['id']}")
+        print(f"\n🎯 RE-ENTRAÎNEMENT ADAPTATIF (Tentative #{attempt_number})")
         print("=" * 60)
         print(f"🎯 OBJECTIF: Corriger '{feedback_data['original_prediction']}' → '{feedback_data['label']}'")
+
+        # Configuration adaptée
+        config = self.get_adaptive_config_for_attempt(attempt_number)
 
         try:
             # Créer une copie du modèle
             model_retrained = tf.keras.models.clone_model(self.model)
             model_retrained.set_weights(self.model.get_weights())
 
-            # Configuration optimisée
-            print(f"🔧 Configuration re-entraînement:")
-            for key, value in self.retrain_config.items():
-                if key not in ['base_sample_size', 'safety_backup']:
-                    print(f"   {key}: {value}")
-
-            # Optimiseur conservateur
-            optimizer = Adam(learning_rate=self.retrain_config['learning_rate'])
+            # Optimiseur adaptatif
+            optimizer = Adam(
+                learning_rate=config['learning_rate'],
+                clipnorm=config['max_gradient_norm']
+            )
             model_retrained.compile(
                 optimizer=optimizer,
                 loss='binary_crossentropy',
                 metrics=['accuracy']
             )
 
-            # Callbacks conservateurs
+            # Callbacks adaptatifs
             callbacks = [
                 EarlyStopping(
-                    patience=self.retrain_config['patience'],
+                    patience=config['patience'],
                     restore_best_weights=True,
                     monitor='loss',
                     min_delta=0.0001
+                ),
+                ReduceLROnPlateau(
+                    factor=0.5,
+                    patience=max(2, config['patience'] // 2),
+                    min_lr=config['learning_rate_min'],
+                    verbose=1
                 )
             ]
 
@@ -616,37 +820,38 @@ class IndividualFeedbackRetrainingManager:
             y_val = training_data['y_val']
             weights_train = training_data['weights_train']
 
-            # Re-entraînement ciblé
-            print(f"\n🚀 Début du re-entraînement ciblé...")
+            print(f"\n🚀 Début du re-entraînement adaptatif...")
 
+            # Re-entraînement ciblé
             history = model_retrained.fit(
                 [X_text_train, X_num_train], y_train,
                 validation_data=([X_text_val, X_num_val], y_val),
-                batch_size=self.retrain_config['batch_size'],
-                epochs=self.retrain_config['epochs'],
+                batch_size=config['batch_size'],
+                epochs=config['epochs'],
                 sample_weight=weights_train,
                 callbacks=callbacks,
                 verbose=1
             )
 
-            print(f"✅ Re-entraînement terminé")
+            print(f"✅ Re-entraînement tentative #{attempt_number} terminé")
 
             return model_retrained, history
 
         except Exception as e:
-            print(f"❌ Erreur re-entraînement: {e}")
+            print(f"❌ Erreur re-entraînement tentative #{attempt_number}: {e}")
             import traceback
             traceback.print_exc()
             return None, None
 
-    def validate_feedback_correction(self, retrained_model, feedback_data):
+    def validate_feedback_correction(self, retrained_model, feedback_data, attempt_number=1):
         """
-        Valide que LE feedback spécifique est maintenant corrigé
+        Valide que LE feedback spécifique est maintenant corrigé avec critères adaptatifs
         """
-        print(f"\n🔍 VALIDATION DE LA CORRECTION DU FEEDBACK #{feedback_data['id']}")
+        print(f"\n🔍 VALIDATION DE LA CORRECTION (Tentative #{attempt_number})")
         print("=" * 60)
 
         try:
+            # AJOUTER CETTE PARTIE MANQUANTE - Préparation des données
             # Préparer le texte du feedback pour test
             processed_text = self.preprocess_text(feedback_data['text'], feedback_data.get('language', 'en'))
 
@@ -682,61 +887,84 @@ class IndividualFeedbackRetrainingManager:
             new_pred_proba = retrained_model.predict([X_text, X_num], verbose=0)[0][0]
             new_pred_class_int = int(new_pred_proba > 0.5)
             new_pred_class = self.label_encoder.inverse_transform([new_pred_class_int])[0]
+            # FIN DE LA PARTIE À AJOUTER
 
-            # Calculer la confiance
-            confidence_score = abs(new_pred_proba - 0.5) * 2  # 0 à 1
+            # Calculs de confiance et amélioration
+            confidence_score = abs(new_pred_proba - 0.5) * 2
+            original_confidence = abs(original_pred_proba - 0.5) * 2
+            confidence_improvement = confidence_score - original_confidence
 
-            # Vérifier si la correction a fonctionné
+            # Critères adaptatifs selon la tentative
+            min_confidence = self.deployment_criteria['min_confidence']
+            if attempt_number > 5 and self.deployment_criteria['allow_confidence_relaxation']:
+                min_confidence = self.deployment_criteria['min_confidence_relaxed']
+                print(f"🔧 Critères assouplis après {attempt_number} tentatives")
+
             expected_label = feedback_data['label']
             is_corrected = (new_pred_class == expected_label)
-            confidence_sufficient = confidence_score >= self.deployment_criteria['min_confidence']
+            confidence_sufficient = confidence_score >= min_confidence
+            shows_improvement = confidence_improvement >= self.deployment_criteria['learning_progress_threshold']
 
-            print(f"📊 RÉSULTATS DE LA VALIDATION:")
+            print(f"📊 RÉSULTATS DE LA VALIDATION (Tentative #{attempt_number}):")
             print(f"   Texte testé: {feedback_data['text'][:100]}...")
             print(f"   Label attendu: {expected_label}")
             print(f"   Prédiction originale: {original_pred_class} (prob: {original_pred_proba:.3f})")
             print(f"   Nouvelle prédiction: {new_pred_class} (prob: {new_pred_proba:.3f})")
-            print(f"   Confiance: {confidence_score:.3f}")
+            print(f"   Confiance: {confidence_score:.3f} (min requis: {min_confidence:.3f})")
+            print(f"   Amélioration: {confidence_improvement:+.3f}")
             print(f"   Correction réussie: {'✅' if is_corrected else '❌'}")
             print(f"   Confiance suffisante: {'✅' if confidence_sufficient else '❌'}")
 
             validation_result = {
                 'feedback_id': feedback_data['id'],
+                'attempt_number': attempt_number,
                 'expected_label': expected_label,
                 'original_prediction': original_pred_class,
                 'original_probability': float(original_pred_proba),
+                'original_confidence': float(original_confidence),
                 'new_prediction': new_pred_class,
                 'new_probability': float(new_pred_proba),
-                'confidence_score': confidence_score,
+                'confidence_score': float(confidence_score),
+                'confidence_improvement': float(confidence_improvement),
                 'is_corrected': is_corrected,
                 'confidence_sufficient': confidence_sufficient,
-                'validation_passed': is_corrected and confidence_sufficient
+                'shows_improvement': shows_improvement,
+                'validation_passed': is_corrected and confidence_sufficient,
+                'criteria_used': {
+                    'min_confidence': min_confidence,
+                    'relaxed_criteria': attempt_number > 5
+                }
             }
+
+            # Tracking du meilleur résultat
+            if (self.best_result_so_far is None or
+                    confidence_score > self.best_result_so_far.get('confidence_score', 0)):
+                self.best_result_so_far = validation_result.copy()
+                print(f"🌟 NOUVEAU MEILLEUR RÉSULTAT enregistré!")
 
             if validation_result['validation_passed']:
                 print(f"\n🎉 VALIDATION RÉUSSIE!")
                 print(f"   Le feedback a été corrigé avec confiance suffisante")
-                self.consecutive_failures = 0  # Reset compteur d'échecs
+                self.consecutive_failures = 0
             else:
-                print(f"\n❌ VALIDATION ÉCHOUÉE!")
+                print(f"\n⚠️ VALIDATION ÉCHOUÉE pour tentative #{attempt_number}")
                 if not is_corrected:
                     print(f"   Le modèle n'a pas appris la correction")
                 if not confidence_sufficient:
-                    print(
-                        f"   Confiance insuffisante ({confidence_score:.3f} < {self.deployment_criteria['min_confidence']:.3f})")
-                self.consecutive_failures += 1
+                    print(f"   Confiance insuffisante ({confidence_score:.3f} < {min_confidence:.3f})")
+                if shows_improvement:
+                    print(f"   ✅ Mais amélioration détectée (+{confidence_improvement:.3f})")
 
             return validation_result
 
         except Exception as e:
-            print(f"❌ Erreur validation correction: {e}")
-            self.consecutive_failures += 1
+            print(f"❌ Erreur validation tentative #{attempt_number}: {e}")
             return {
                 'feedback_id': feedback_data['id'],
+                'attempt_number': attempt_number,
                 'validation_passed': False,
                 'error': str(e)
             }
-
     def trigger_api_reload(self):
         """Déclenche le rechargement du modèle dans l'API via un appel HTTP"""
         try:
@@ -793,85 +1021,95 @@ class IndividualFeedbackRetrainingManager:
             return False
 
     def deploy_retrained_model(self, retrained_model, feedback_data, backup_dir, validation_result):
-        """Déploie immédiatement le modèle re-entraîné ET déclenche le rechargement de l'API"""
+        """DÉPLOIEMENT CORRIGÉ avec rechargement automatique amélioré"""
         print(f"\n🚀 DÉPLOIEMENT IMMÉDIAT DU MODÈLE RE-ENTRAÎNÉ")
         print("=" * 50)
 
         try:
             timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
 
-            # Sauvegarder temporairement le nouveau modèle
+            # ÉTAPE 1: Créer et tester le modèle temporaire
             temp_model_path = self.data_dir / f"retrained_model_feedback_{feedback_data['id']}_{timestamp}.keras"
+            print(f"💾 Sauvegarde temporaire: {temp_model_path}")
+
             retrained_model.save(str(temp_model_path))
 
-            # Remplacer le modèle de production
+            # Test immédiat du modèle sauvegardé
+            print(f"🧪 Test du modèle sauvegardé...")
+            test_model = load_model(str(temp_model_path))
+
+            # ÉTAPE 2: Validation finale avec le modèle sauvegardé
+            final_validation = self.validate_feedback_correction(test_model, feedback_data, self.current_attempt)
+            if not final_validation.get('validation_passed', False):
+                print(f"❌ Validation finale échouée avec le modèle sauvegardé")
+                temp_model_path.unlink()  # Nettoyer
+                return False
+
+            # ÉTAPE 3: Déploiement atomique (backup + remplacement)
             production_model_path = self.model_dir / "best_lstm_model.keras"
-            shutil.copy2(temp_model_path, production_model_path)
 
-            # 🔧 CORRECTION CRITIQUE: Gestion sûre des métadonnées
-            if self.metadata:
-                updated_metadata = convert_numpy_types(self.metadata.copy())
-            else:
-                updated_metadata = {}
+            # Créer backup de l'ancien modèle
+            backup_model_path = self.model_dir / f"backup_model_{timestamp}.keras"
+            shutil.copy2(production_model_path, backup_model_path)
+            print(f"💾 Backup ancien modèle: {backup_model_path}")
 
-            # 🔧 CORRECTION: Conversion sûre de model_version
-            current_version = updated_metadata.get('model_version', 1)
-            if isinstance(current_version, str):
-                try:
-                    current_version = int(current_version)
-                except (ValueError, TypeError):
-                    current_version = 1
+            # Remplacer atomiquement
+            shutil.move(str(temp_model_path), str(production_model_path))
+            print(f"✅ Modèle déployé: {production_model_path}")
 
+            # ÉTAPE 4: Mettre à jour les métadonnées AVANT rechargement
+            current_version = 1
+            if self.metadata and 'model_version' in self.metadata:
+                current_version = int(self.metadata.get('model_version', 1))
             new_version = current_version + 1
 
-            # Nettoyer TOUS les types avant mise à jour
-            clean_validation_result = convert_numpy_types(validation_result)
-            clean_retraining_config = convert_numpy_types(self.retrain_config)
-
-            # Mettre à jour avec des types Python natifs
-            updated_metadata.update({
+            # Créer métadonnées nettoyées
+            updated_metadata = {
+                'model_version': new_version,
                 'last_individual_retraining': timestamp,
                 'last_feedback_processed': int(feedback_data['id']),
-                'retraining_config': clean_retraining_config,
-                'model_version': new_version,  # Déjà un int Python
-                'backup_location': str(backup_dir),
+                'deployment_timestamp': timestamp,
                 'deployment_method': 'individual_feedback_retraining',
                 'total_individual_retrainings': int(self.total_retrainings + 1),
                 'successful_deployments': int(self.successful_deployments + 1),
-                'validation_result': clean_validation_result,
-                'deployment_timestamp': timestamp,
-                'auto_reload_trigger': True
-            })
+                'validation_result': convert_numpy_types(final_validation),
+                'backup_location': str(backup_dir),
+                'config': self.metadata.get('config', {}) if self.metadata else {},
+                'auto_reload_trigger': True,
+                'reload_instructions': {
+                    'method': 'POST',
+                    'endpoint': '/reload-model',
+                    'expected_version': new_version
+                }
+            }
 
-            # Nettoyer encore une fois les métadonnées finales
-            final_clean_metadata = convert_numpy_types(updated_metadata)
+            # Sauvegarder métadonnées
+            metadata_path = self.model_dir / "model_metadata.json"
+            with open(metadata_path, 'w') as f:
+                json.dump(updated_metadata, f, indent=2)
+            print(f"✅ Métadonnées mises à jour (version {new_version})")
 
-            # Sauvegarder les métadonnées nettoyées
-            with open(self.model_dir / "model_metadata.json", 'w') as f:
-                json.dump(final_clean_metadata, f, indent=2, default=str)
+            # ÉTAPE 5: Rechargement automatique amélioré avec retry
+            reload_success = self.trigger_api_reload_improved(new_version, max_retries=5)
 
-            # Nettoyer le fichier temporaire
-            temp_model_path.unlink()
+            if reload_success:
+                print(f"🎉 DÉPLOIEMENT COMPLET RÉUSSI!")
+                print(f"   ✅ Modèle déployé et rechargé automatiquement")
+                print(f"   📊 Version: {current_version} → {new_version}")
+            else:
+                print(f"⚠️ DÉPLOIEMENT PARTIEL")
+                print(f"   ✅ Modèle déployé (version {new_version})")
+                print(f"   ❌ Rechargement automatique échoué")
+                print(f"   💡 Rechargement manuel requis:")
+                print(f"      curl -X POST http://localhost:8000/reload-model")
 
-            # Mettre à jour les compteurs
+            # Mettre à jour les variables d'instance
             self.total_retrainings += 1
             self.successful_deployments += 1
+            self.metadata = updated_metadata
 
-            # Mettre à jour self.metadata avec la version nettoyée
-            self.metadata = final_clean_metadata
-
-            # Recharger le modèle en mémoire
+            # Recharger le modèle en mémoire pour les futures opérations
             self.model = load_model(str(production_model_path))
-
-            print(f"✅ DÉPLOIEMENT RÉUSSI!")
-            print(f"   Version du modèle: {new_version}")
-            print(f"   Feedback traité: #{feedback_data['id']}")
-            print(f"   Re-entraînements totaux: {self.total_retrainings}")
-            print(f"   Déploiements réussis: {self.successful_deployments}")
-            print(f"   Sauvegarde: {backup_dir}")
-
-            # Déclencher le rechargement automatique de l'API
-            self.trigger_api_reload()
 
             return True
 
@@ -880,6 +1118,69 @@ class IndividualFeedbackRetrainingManager:
             import traceback
             traceback.print_exc()
             return False
+
+    def trigger_api_reload_improved(self, expected_version, max_retries=5):
+        """Version améliorée du rechargement automatique avec retry et validation"""
+        print(f"\n🔄 RECHARGEMENT AUTOMATIQUE AMÉLIORÉ")
+        print(f"   Version attendue: {expected_version}")
+        print(f"   Tentatives max: {max_retries}")
+
+        # URLs à tester dans l'ordre de priorité
+        api_urls = [
+            "http://localhost:8000",
+            "http://127.0.0.1:8000",
+            "http://fastapi:8000",  # Container Docker
+            "http://host.docker.internal:8000"  # Docker Desktop
+        ]
+
+        for attempt in range(max_retries):
+            print(f"\n🔄 Tentative {attempt + 1}/{max_retries}")
+
+            for api_url in api_urls:
+                try:
+                    print(f"   🌐 Test: {api_url}")
+
+                    # 1. Vérifier que l'API est accessible
+                    health_url = f"{api_url}/health"
+                    health_result = self._test_api_endpoint(health_url, method='GET', timeout=5)
+                    if not health_result:
+                        print(f"   ❌ API non accessible")
+                        continue
+
+                    print(f"   ✅ API accessible")
+
+                    # 2. Déclencher le rechargement
+                    reload_url = f"{api_url}/reload-model"
+                    reload_result = self._test_api_endpoint(reload_url, method='POST', timeout=15)
+                    if not reload_result:
+                        print(f"   ❌ Rechargement échoué")
+                        continue
+
+                    print(f"   ✅ Rechargement déclenché")
+
+                    # 3. Attendre un peu pour que le rechargement se termine
+                    print(f"   ⏳ Attente 3 secondes...")
+                    time.sleep(3)
+
+                    # 4. Vérifier que la nouvelle version est chargée
+                    version_check = self._check_model_version(api_url, expected_version)
+                    if version_check:
+                        print(f"   🎉 RECHARGEMENT VALIDÉ!")
+                        print(f"   ✅ Nouvelle version {expected_version} confirmée")
+                        return True
+                    else:
+                        print(f"   ⚠️ Version non mise à jour")
+
+                except Exception as e:
+                    print(f"   ❌ Erreur: {e}")
+                    continue
+
+            if attempt < max_retries - 1:
+                print(f"   ⏳ Pause de 5 secondes avant nouvelle tentative...")
+                time.sleep(5)
+
+        print(f"\n❌ RECHARGEMENT AUTOMATIQUE ÉCHOUÉ après {max_retries} tentatives")
+        return False
     def log_retraining_attempt(self, feedback_data, validation_result, deployed, backup_dir):
         """Enregistre la tentative de re-entraînement"""
         try:
@@ -966,11 +1267,12 @@ class IndividualFeedbackRetrainingManager:
             return False
 
     def process_single_feedback(self, dataset_path="./data/full_merged_dataset_fr_en_spam.csv"):
-        """FONCTION PRINCIPALE: Traite UN SEUL feedback avec re-entraînement immédiat"""
-        print("\n" + "🎯" * 50)
-        print("TRAITEMENT D'UN FEEDBACK INDIVIDUEL")
-        print("RE-ENTRAÎNEMENT + VALIDATION + DÉPLOIEMENT IMMÉDIAT")
-        print("🎯" * 50)
+        """
+        FONCTION PRINCIPALE MODIFIÉE: Traite UN feedback avec RE-ENTRAÎNEMENT CONTINU jusqu'à réussite
+        """
+        print("\n" + "🔄" * 50)
+        print("TRAITEMENT FEEDBACK AVEC RE-ENTRAÎNEMENT CONTINU")
+        print("🔄" * 50)
 
         start_time = datetime.now()
 
@@ -985,13 +1287,9 @@ class IndividualFeedbackRetrainingManager:
             print("ℹ️ Aucun feedback à traiter")
             return False
 
-        # Vérifier les échecs consécutifs
-        if self.consecutive_failures >= self.deployment_criteria['max_consecutive_failures']:
-            print(f"🚨 ARRÊT: {self.consecutive_failures} échecs consécutifs")
-            print("💡 Le modèle semble avoir des difficultés d'apprentissage")
-            return False
-
         print(f"🎯 Traitement du feedback #{feedback_data['id']}")
+        print(f"📊 Prédiction erronée: {feedback_data['original_prediction']}")
+        print(f"✅ Correction attendue: {feedback_data['label']}")
 
         # Étape 3: Créer une sauvegarde
         backup_dir = self.create_backup_for_feedback(feedback_data['id'])
@@ -999,76 +1297,144 @@ class IndividualFeedbackRetrainingManager:
             print("❌ Impossible de créer la sauvegarde - Arrêt")
             return False
 
-        # Étape 4: Créer le dataset d'entraînement
-        training_dataset = self.create_individual_training_dataset(feedback_data, dataset_path)
-        if training_dataset.empty:
-            print("❌ Impossible de créer le dataset d'entraînement")
-            return False
+        # Initialisation pour la boucle
+        self.current_attempt = 0
+        self.best_result_so_far = None
+        success = False
+        final_model = None
+        final_validation_result = None
 
-        # Étape 5: Préparer les données
-        training_data = self.prepare_training_data(training_dataset)
-        if training_data is None:
-            print("❌ Échec de la préparation des données")
-            return False
+        # 🔄 BOUCLE DE RE-ENTRAÎNEMENT CONTINU
+        while self.current_attempt < self.deployment_criteria['max_attempts_per_feedback']:
+            self.current_attempt += 1
 
-        # Étape 6: Re-entraînement ciblé
-        retrained_model, history = self.perform_individual_retraining(training_data, feedback_data)
-        if retrained_model is None:
-            print("❌ Échec du re-entraînement")
-            validation_result = {'validation_passed': False, 'error': 'retraining_failed'}
-            self.mark_feedback_as_processed(feedback_data['id'], deployed=False, validation_result=validation_result)
-            self.log_retraining_attempt(feedback_data, validation_result, False, backup_dir)
-            return False
+            print(
+                f"\n{'🎯' * 20} TENTATIVE {self.current_attempt}/{self.deployment_criteria['max_attempts_per_feedback']} {'🎯' * 20}")
 
-        # Étape 7: Validation de la correction
-        validation_result = self.validate_feedback_correction(retrained_model, feedback_data)
+            # Étape 4: Créer le dataset d'entraînement adaptatif
+            training_dataset = self.create_individual_training_dataset(
+                feedback_data, dataset_path, self.current_attempt
+            )
+            if training_dataset.empty:
+                print(f"❌ Impossible de créer le dataset pour tentative {self.current_attempt}")
+                continue
 
-        # Étape 8: Décision de déploiement
-        should_deploy = validation_result['validation_passed']
+            # Étape 5: Préparer les données
+            training_data = self.prepare_training_data(training_dataset)
+            if training_data is None:
+                print(f"❌ Échec de la préparation des données pour tentative {self.current_attempt}")
+                continue
+
+            # Étape 6: Re-entraînement adaptatif
+            retrained_model, history = self.perform_individual_retraining(
+                training_data, feedback_data, self.current_attempt
+            )
+            if retrained_model is None:
+                print(f"❌ Échec du re-entraînement pour tentative {self.current_attempt}")
+                continue
+
+            # Étape 7: Validation de la correction
+            validation_result = self.validate_feedback_correction(
+                retrained_model, feedback_data, self.current_attempt
+            )
+
+            # Étape 8: Vérifier le succès
+            if validation_result['validation_passed']:
+                print(f"\n🎉 SUCCÈS À LA TENTATIVE {self.current_attempt}!")
+                print(f"✅ Le feedback a été corrigé avec succès")
+                success = True
+                final_model = retrained_model
+                final_validation_result = validation_result
+                break
+            else:
+                print(f"\n⚠️ TENTATIVE {self.current_attempt} ÉCHOUÉE")
+                if validation_result.get('shows_improvement', False):
+                    print(f"📈 Mais amélioration détectée, on continue...")
+                else:
+                    print(f"❌ Pas d'amélioration, adaptation des paramètres...")
+
+                # Pause entre tentatives
+                if self.current_attempt < self.deployment_criteria['max_attempts_per_feedback']:
+                    print(f"⏳ Pause de 2 secondes avant prochaine tentative...")
+                    time.sleep(2)
+
+        # Étape 9: Décision finale
         deployment_success = False
-
-        if should_deploy:
-            deployment_success = self.deploy_retrained_model(retrained_model, feedback_data, backup_dir,
-                                                             validation_result)
+        if success:
+            print(f"\n🎉 FEEDBACK CORRIGÉ AVEC SUCCÈS!")
+            deployment_success = self.deploy_retrained_model(
+                final_model, feedback_data, backup_dir, final_validation_result
+            )
         else:
-            print(f"\n🛑 PAS DE DÉPLOIEMENT")
-            print(f"   Le feedback n'a pas été corrigé correctement")
+            print(f"\n❌ ÉCHEC APRÈS {self.current_attempt} TENTATIVES")
+            if self.best_result_so_far and self.best_result_so_far.get('shows_improvement', False):
+                print(f"🤔 Meilleur résultat obtenu à la tentative #{self.best_result_so_far['attempt_number']}")
+                print(f"📊 Confiance: {self.best_result_so_far['confidence_score']:.3f}")
+                # Optionnel: déployer le meilleur modèle même imparfait
 
-        # Étape 9: Marquer comme traité
+            self.consecutive_failures += 1
+
+        # Étape 10: Marquer comme traité
         self.mark_feedback_as_processed(feedback_data['id'], deployed=deployment_success,
-                                        validation_result=validation_result)
+                                        validation_result=final_validation_result or self.best_result_so_far)
 
-        # Étape 10: Log de la tentative
-        self.log_retraining_attempt(feedback_data, validation_result, deployment_success, backup_dir)
-
-        # Résumé
+        # Résumé final
         end_time = datetime.now()
         duration = end_time - start_time
 
-        print(f"\n🎉 RÉSUMÉ DU TRAITEMENT INDIVIDUEL")
+        print(f"\n🎉 RÉSUMÉ DU TRAITEMENT CONTINU")
         print("=" * 50)
         print(f"⏱️ Durée: {duration}")
         print(f"🎯 Feedback traité: #{feedback_data['id']}")
+        print(f"🔄 Tentatives utilisées: {self.current_attempt}")
         print(f"🔧 Prédiction originale: {feedback_data['original_prediction']}")
         print(f"✅ Correction attendue: {feedback_data['label']}")
 
-        if validation_result and 'new_prediction' in validation_result:
-            print(f"🔄 Nouvelle prédiction: {validation_result['new_prediction']}")
-            print(f"📊 Confiance: {validation_result.get('confidence_score', 0):.3f}")
-
-        if deployment_success:
+        if success:
             print(f"\n🚀 RÉSULTAT: MODÈLE RE-ENTRAÎNÉ ET DÉPLOYÉ!")
-            print(f"   Le feedback a été corrigé avec succès")
-            print(f"   Version du modèle: {self.total_retrainings + 1}")
-            print(f"💾 Sauvegarde: {backup_dir}")
-            print(f"🔄 L'API devrait maintenant utiliser le nouveau modèle automatiquement")
+            print(f"   Feedback corrigé à la tentative #{self.current_attempt}")
+            print(f"   Confiance finale: {final_validation_result['confidence_score']:.3f}")
         else:
             print(f"\n🛑 RÉSULTAT: Modèle original conservé")
-            print(f"💡 Le re-entraînement n'a pas réussi à corriger le feedback")
-            print(f"📊 Échecs consécutifs: {self.consecutive_failures}")
+            print(f"💡 Le re-entraînement n'a pas réussi à corriger ce feedback")
+            if self.best_result_so_far:
+                print(f"📊 Meilleure confiance atteinte: {self.best_result_so_far['confidence_score']:.3f}")
 
         return deployment_success
 
+    def mark_feedback_as_processed(self, feedback_id, deployed=True, validation_result=None):
+        """Marque LE feedback comme traité avec info sur les tentatives"""
+        print(f"\n📝 MARQUAGE DU FEEDBACK #{feedback_id} COMME TRAITÉ")
+        print("=" * 50)
+
+        try:
+            df = pd.read_csv(self.feedback_csv_path)
+
+            # Marquer le feedback spécifique
+            df.loc[feedback_id, 'processed'] = True
+            df.loc[feedback_id, 'processed_at'] = datetime.now().isoformat()
+            df.loc[feedback_id, 'deployed'] = bool(deployed)
+            df.loc[feedback_id, 'retraining_method'] = 'continuous_individual_feedback'
+            df.loc[feedback_id, 'attempts_used'] = int(self.current_attempt)  # NOUVEAU
+
+            if validation_result:
+                df.loc[feedback_id, 'correction_validated'] = bool(validation_result.get('validation_passed', False))
+                df.loc[feedback_id, 'new_prediction'] = str(validation_result.get('new_prediction', ''))
+                df.loc[feedback_id, 'final_confidence'] = float(validation_result.get('confidence_score', 0.0))
+                df.loc[feedback_id, 'confidence_improvement'] = float(
+                    validation_result.get('confidence_improvement', 0.0))
+
+            # Sauvegarder
+            df.to_csv(self.feedback_csv_path, index=False)
+
+            status = "et déployé" if deployed else "mais non déployé"
+            print(f"✅ Feedback #{feedback_id} marqué comme traité {status}")
+            print(f"📊 Tentatives utilisées: {self.current_attempt}")
+            return True
+
+        except Exception as e:
+            print(f"❌ Erreur marquage feedback: {e}")
+            return False
     def run_continuous_individual_processing(self, dataset_path="./data/test_dataset.csv", max_iterations=None):
         """Traite en continu CHAQUE feedback individuellement"""
         print("\n" + "🔄" * 50)

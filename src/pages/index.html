@@ -8,16 +8,67 @@
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css">
     <style>
         body { background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); min-height: 100vh; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; }
-        .email-item { border-left: 4px solid #28a745; transition: all 0.3s ease; cursor: pointer; margin-bottom: 10px; padding: 15px; background: white; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }
+        .email-item { border-left: 4px solid #28a745; transition: all 0.3s ease; cursor: pointer; margin-bottom: 10px; padding: 15px; background: white; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); position: relative; }
         .email-item.spam { border-left-color: #dc3545; }
         .email-item:hover { transform: translateX(5px); box-shadow: 0 4px 15px rgba(0,0,0,0.2); }
         .email-item.active { background-color: #e3f2fd !important; border-color: #2196f3; box-shadow: 0 4px 20px rgba(33, 150, 243, 0.3); }
+
+        /* Styles pour le feedback et le fine-tuning */
+        .email-item.has-feedback { border-right: 4px solid #ff9800; }
+        .email-item.has-feedback::before,
+        .email-item.contributing-to-finetuning::before,
+        .email-item.finetuned-successfully::before { /* ✅ MODIFIÉ: Style commun pour les icônes */
+            content: '';
+            position: absolute;
+            top: 10px;
+            right: 10px;
+            font-size: 16px;
+            padding: 2px 6px;
+            border-radius: 50%;
+        }
+
+        .email-item.has-feedback::before {
+            content: '🧠';
+            background: rgba(255, 152, 0, 0.1);
+        }
+
+        .email-item.contributing-to-finetuning {
+            background: linear-gradient(135deg, rgba(255, 152, 0, 0.1), rgba(255, 87, 34, 0.1));
+            border-right: 4px solid #ff5722;
+        }
+        .email-item.contributing-to-finetuning::before {
+            content: '🔥';
+            background: rgba(255, 87, 34, 0.2);
+        }
+
+        .email-item.finetuned-successfully {
+            border-right: 4px solid #28a745; /* Bordure verte */
+            background: rgba(40, 167, 69, 0.05); /* Léger fond vert */
+        }
+        .email-item.finetuned-successfully::before {
+            content: '✅';
+            background: rgba(40, 167, 69, 0.1);
+        }
+
+        .feedback-badge {
+            position: absolute;
+            top: 5px;
+            right: 5px;
+            font-size: 0.7rem;
+            padding: 2px 6px;
+            border-radius: 10px;
+            font-weight: 600;
+        }
+        .feedback-positive { background: #d4edda; color: #155724; }
+        .feedback-negative { background: #f8d7da; color: #721c24; }
+
         .card { backdrop-filter: blur(10px); background: rgba(255, 255, 255, 0.95); border: none; box-shadow: 0 8px 32px rgba(0, 0, 0, 0.1); }
         .stats-card { text-align: center; padding: 2rem; color: white; border-radius: 15px; transition: transform 0.3s ease; }
         .stats-card:hover { transform: translateY(-5px); }
         .stats-primary { background: linear-gradient(135deg, #4299e1, #3182ce); }
         .stats-success { background: linear-gradient(135deg, #48bb78, #38a169); }
         .stats-danger { background: linear-gradient(135deg, #f56565, #e53e3e); }
+        .stats-warning { background: linear-gradient(135deg, #ff9800, #ff5722); }
         .email-preview { background: #f8f9fa; border: 2px solid #dee2e6; border-radius: 10px; padding: 15px; font-family: 'Courier New', monospace; max-height: 300px; overflow-y: auto; white-space: pre-wrap; }
         .analyze-section { background: linear-gradient(135deg, #2c3e50, #3498db); border-radius: 15px; padding: 25px; color: white; text-align: center; }
         .btn-analyze { background: rgba(255,255,255,0.2); border: 2px solid rgba(255,255,255,0.3); color: white; font-weight: 600; padding: 12px 30px; border-radius: 25px; transition: all 0.3s ease; }
@@ -30,6 +81,7 @@
         .ml-status { background: rgba(255, 255, 255, 0.1); border-radius: 10px; padding: 10px; margin-bottom: 15px; font-size: 0.85rem; }
         .ml-status.online { border-left: 4px solid #28a745; }
         .ml-status.offline { border-left: 4px solid #dc3545; }
+        .ml-status.training { border-left: 4px solid #ffc107; background: rgba(255, 193, 7, 0.1); }
         .filter-buttons .btn { margin: 2px; }
         ::-webkit-scrollbar { width: 8px; }
         ::-webkit-scrollbar-track { background: #f1f1f1; border-radius: 4px; }
@@ -39,6 +91,65 @@
         .error-message { background: #f8d7da; color: #721c24; padding: 10px; border-radius: 8px; border: 1px solid #f5c6cb; margin: 10px 0; }
         .feedback-section { background: rgba(255,255,255,0.1); border-radius: 10px; padding: 15px; margin-top: 15px; }
         .feedback-message { margin-top: 10px; }
+
+        /* Styles pour les indicateurs de fine-tuning */
+        .finetuning-indicator {
+            background: linear-gradient(45deg, #ff9800, #ff5722);
+            color: white;
+            border-radius: 10px;
+            padding: 15px;
+            margin-bottom: 20px;
+            animation: pulse 2s infinite;
+        }
+        .auto-refresh-indicator {
+            background: rgba(33, 150, 243, 0.1);
+            border: 2px solid #2196f3;
+            border-radius: 10px;
+            padding: 10px;
+            margin-bottom: 15px;
+        }
+
+        @keyframes pulse {
+            0% { box-shadow: 0 0 0 0 rgba(255, 152, 0, 0.7); }
+            70% { box-shadow: 0 0 0 10px rgba(255, 152, 0, 0); }
+            100% { box-shadow: 0 0 0 0 rgba(255, 152, 0, 0); }
+        }
+
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+        .spin { animation: spin 1s linear infinite; }
+
+        .btn-auto-refresh {
+            background: linear-gradient(135deg, #2196f3, #1976d2);
+            border: none;
+            color: white;
+            font-weight: 600;
+        }
+        .btn-auto-refresh:hover {
+            background: linear-gradient(135deg, #1976d2, #1565c0);
+            color: white;
+        }
+
+        /* Style pour la légende du feedback */
+        .feedback-legend {
+            background: rgba(255, 255, 255, 0.9);
+            border-radius: 10px;
+            padding: 10px;
+            margin-bottom: 15px;
+            font-size: 0.85rem;
+        }
+        .legend-item {
+            display: flex;
+            align-items: center;
+            margin-bottom: 5px;
+        }
+        .legend-color {
+            width: 20px;
+            height: 15px;
+            margin-right: 8px;
+            border-radius: 3px;
+        }
     </style>
 </head>
 <body>
@@ -52,18 +163,18 @@
                                 <h2 class="mb-0">
                                     <i class="bi bi-cpu text-primary"></i> Email Filter ML Dashboard
                                 </h2>
-                                <p class="text-muted mb-0">Détection de spam par Intelligence Artificielle</p>
+                                <p class="text-muted mb-0">Détection de spam par Intelligence Artificielle avec apprentissage automatique</p>
                             </div>
                             <div class="col-md-6 text-end">
                                 <div class="btn-group" role="group">
+                                    <button type="button" class="btn btn-auto-refresh" onclick="loadEmailsWithAI()">
+                                        <i class="bi bi-robot"></i> Charger avec IA
+                                    </button>
                                     <button type="button" class="btn btn-success" onclick="loadLiveEmails()">
-                                        <i class="bi bi-cloud-download"></i> Gmail CSV
+                                        <i class="bi bi-cloud-download"></i> CSV Brut
                                     </button>
                                     <button type="button" class="btn btn-primary" onclick="loadDemoEmails()">
                                         <i class="bi bi-file-text"></i> Demo
-                                    </button>
-                                    <button type="button" class="btn btn-secondary" onclick="refreshEmails()">
-                                        <i class="bi bi-arrow-clockwise"></i> Refresh
                                     </button>
                                     <button type="button" class="btn btn-info" onclick="checkMLStatus()">
                                         <i class="bi bi-activity"></i> Vérifier ML
@@ -71,6 +182,58 @@
                                 </div>
                             </div>
                         </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- ✅ MODIFIÉ: Indicateur de Fine-tuning avec timer -->
+        <div id="finetuningIndicator" class="finetuning-indicator" style="display: none;">
+            <div class="d-flex justify-content-between align-items-center">
+                <div class="d-flex align-items-center">
+                    <div class="spinner-border spinner-border-sm me-3"></div>
+                    <div>
+                        <h6 class="mb-1">🧠 IA en Apprentissage</h6>
+                        <small id="finetuningDetails">Le modèle s'améliore grâce à vos feedbacks.</small>
+                    </div>
+                </div>
+                <div class="badge bg-light text-dark" id="finetuningTimer">00:00</div>
+            </div>
+        </div>
+
+        <!-- Indicateur de Refresh Auto -->
+        <div id="autoRefreshIndicator" class="auto-refresh-indicator" style="display: none;">
+            <div class="d-flex align-items-center">
+                <i class="bi bi-robot text-primary me-2"></i>
+                <span><strong>Mode IA Automatique:</strong> Les emails sont automatiquement analysés par l'Intelligence Artificielle</span>
+            </div>
+        </div>
+
+        <div class="feedback-legend">
+            <h6 class="mb-2"><i class="bi bi-info-circle"></i> Légende du Feedback</h6>
+            <div class="row">
+                <div class="col-md-3">
+                    <div class="legend-item">
+                        <div class="legend-color" style="border: 2px solid #ff9800;"></div>
+                        <span>🧠 Feedback envoyé</span>
+                    </div>
+                </div>
+                <div class="col-md-3">
+                    <div class="legend-item">
+                        <div class="legend-color" style="border: 2px solid #ff5722;"></div>
+                        <span>🔥 En cours de fine-tuning</span>
+                    </div>
+                </div>
+                <div class="col-md-3">
+                    <div class="legend-item">
+                        <div class="legend-color" style="border: 2px solid #28a745;"></div>
+                        <span>✅ Fine-tuning terminé</span>
+                    </div>
+                </div>
+                <div class="col-md-3">
+                    <div class="legend-item">
+                        <div class="legend-color" style="background: #f8d7da;"></div>
+                        <span>❌ Feedback négatif</span>
                     </div>
                 </div>
             </div>
@@ -99,28 +262,40 @@
                         <button class="btn btn-outline-danger btn-sm" onclick="filterEmails('SPAM')" data-filter="SPAM">
                             <i class="bi bi-x-circle"></i> Spam
                         </button>
+                        <button class="btn btn-outline-warning btn-sm" onclick="filterEmails('WITH_FEEDBACK')" data-filter="WITH_FEEDBACK">
+                            <i class="bi bi-chat-dots"></i> Avec Feedback
+                        </button>
+                        <button class="btn btn-outline-info btn-sm" onclick="filterEmails('FINETUNING')" data-filter="FINETUNING">
+                            <i class="bi bi-cpu"></i> Fine-tuning
+                        </button>
                     </div>
                 </div>
             </div>
         </div>
 
         <div class="row mb-4">
-            <div class="col-md-4">
+            <div class="col-md-3">
                 <div class="stats-card stats-primary">
                     <div class="display-4" id="totalEmails">0</div>
                     <h5>Emails analysés</h5>
                 </div>
             </div>
-            <div class="col-md-4">
+            <div class="col-md-3">
                 <div class="stats-card stats-success">
                     <div class="display-4" id="successRate">0%</div>
                     <h5>Taux de réussite</h5>
                 </div>
             </div>
-            <div class="col-md-4">
+            <div class="col-md-3">
                 <div class="stats-card stats-danger">
                     <div class="display-4" id="spamCount">0</div>
                     <h5>Spams détectés</h5>
+                </div>
+            </div>
+            <div class="col-md-3">
+                <div class="stats-card stats-warning">
+                    <div class="display-4" id="feedbackCount">0</div>
+                    <h5>Feedbacks envoyés</h5>
                 </div>
             </div>
         </div>
@@ -130,7 +305,10 @@
                 <div class="card">
                     <div class="card-header d-flex justify-content-between align-items-center">
                         <h5 class="mb-0"><i class="bi bi-envelope"></i> Liste des emails</h5>
-                        <span id="emailCounter" class="badge bg-secondary">0 emails</span>
+                        <div>
+                            <span id="emailCounter" class="badge bg-secondary me-2">0 emails</span>
+                            <span id="feedbackCounter" class="badge bg-warning">0 avec feedback</span>
+                        </div>
                     </div>
                     <div class="card-body p-0">
                         <div id="emailList">
@@ -147,8 +325,9 @@
 
             <div class="col-lg-5">
                 <div class="card">
-                    <div class="card-header">
+                    <div class="card-header d-flex justify-content-between align-items-center">
                         <h5 class="mb-0"><i class="bi bi-eye"></i> Aperçu de l'email</h5>
+                        <div id="emailFeedbackStatus" class="badge" style="display: none;"></div>
                     </div>
                     <div class="card-body">
                         <div class="mb-3">
@@ -232,10 +411,20 @@
         let currentSearchQuery = '';
         let filteredEmails = [];
         let mlStatusOnline = false;
+        let autoRefreshMode = false;
+        let finetuningStatus = false;
+        // ✅ NOUVEAU: Variables pour le timer de fine-tuning
+        let finetuningTimerInterval = null;
+        let finetuningStartTime = null;
 
         // Variables pour le feedback
         let currentEmailData = null;
         let currentAnalysisResult = null;
+
+        // Stockage local du cycle de vie du feedback
+        let feedbackStorage = JSON.parse(localStorage.getItem('emailFeedbacks') || '{}');
+        let finetuningEmailIds = new Set(JSON.parse(localStorage.getItem('finetuningEmails') || '[]'));
+        let finetunedEmailIds = new Set(JSON.parse(localStorage.getItem('finetunedEmails') || '[]'));
 
         const getApiUrl = () => {
             const hostname = window.location.hostname;
@@ -247,44 +436,292 @@
 
         const mlApiUrl = getApiUrl();
 
-        // Fonctions de chargement des emails
+        // Fonctions de gestion du stockage
+        function saveFeedbackToStorage(emailId, feedback) {
+            feedbackStorage[emailId] = {
+                satisfaction: feedback.satisfaction,
+                timestamp: feedback.timestamp,
+                prediction: feedback.prediction,
+                probability: feedback.probability
+            };
+            localStorage.setItem('emailFeedbacks', JSON.stringify(feedbackStorage));
+            console.log(`💾 Feedback sauvegardé pour email ${emailId}`);
+        }
+
+        function markEmailForFinetuning(emailId) {
+            finetuningEmailIds.add(emailId);
+            localStorage.setItem('finetuningEmails', JSON.stringify([...finetuningEmailIds]));
+            console.log(`🔥 Email ${emailId} marqué pour fine-tuning`);
+        }
+
+        function markEmailsAsFinetuned(emailIds) {
+            emailIds.forEach(id => finetunedEmailIds.add(id));
+            localStorage.setItem('finetunedEmails', JSON.stringify([...finetunedEmailIds]));
+            console.log(`✅ ${emailIds.size} emails marqués comme fine-tunés.`);
+        }
+
+        function clearPendingFinetuningEmails() {
+            finetuningEmailIds.clear();
+            localStorage.removeItem('finetuningEmails');
+            console.log('🗑️ File d\'attente de fine-tuning vidée.');
+        }
+
+        function getEmailFeedbackStatus(emailId) {
+            return feedbackStorage[emailId] || null;
+        }
+
+        function isEmailContributingToFinetuning(emailId) {
+            return finetuningEmailIds.has(emailId);
+        }
+
+        function isEmailFinetuned(emailId) {
+            return finetunedEmailIds.has(emailId);
+        }
+
+        function updateEmailDisplayWithFeedback() {
+            const emailItems = document.querySelectorAll('.email-item');
+            let feedbackCount = 0;
+
+            emailItems.forEach((item, index) => {
+                const email = filteredEmails[index];
+                if (!email) return;
+
+                const emailId = email.id || `email_${index}`;
+                const feedbackStatus = getEmailFeedbackStatus(emailId);
+                const isContributing = isEmailContributingToFinetuning(emailId);
+                const isFinetuned = isEmailFinetuned(emailId);
+
+                item.classList.remove('has-feedback', 'contributing-to-finetuning', 'finetuned-successfully');
+
+                const existingBadges = item.querySelectorAll('.feedback-badge');
+                existingBadges.forEach(badge => badge.remove());
+
+                if (isFinetuned) {
+                    item.classList.add('finetuned-successfully');
+                } else if (isContributing) {
+                    item.classList.add('contributing-to-finetuning');
+                } else if (feedbackStatus) {
+                    item.classList.add('has-feedback');
+                }
+
+                if (feedbackStatus) {
+                    feedbackCount++;
+                    const badge = document.createElement('div');
+                    badge.className = `feedback-badge ${feedbackStatus.satisfaction === 'yes' ? 'feedback-positive' : 'feedback-negative'}`;
+                    badge.innerHTML = feedbackStatus.satisfaction === 'yes' ? '👍' : '👎';
+                    badge.title = `Feedback: ${feedbackStatus.satisfaction === 'yes' ? 'Positif' : 'Négatif'} - ${new Date(feedbackStatus.timestamp).toLocaleString()}`;
+                    item.appendChild(badge);
+                }
+            });
+            document.getElementById('feedbackCounter').textContent = `${feedbackCount} avec feedback`;
+            document.getElementById('feedbackCount').textContent = feedbackCount;
+        }
+
+        async function loadEmailsWithAI() {
+            console.log('🤖 Chargement automatique avec IA...');
+            autoRefreshMode = true;
+            showAutoRefreshIndicator(true);
+
+            try {
+                await refreshEmailsWithML();
+                emailLoader.updateSourceIndicator(`🤖 Emails analysés automatiquement par l'IA (${emailLoader.emails.length} emails)`, 'success');
+            } catch (error) {
+                console.warn('⚠️ Erreur IA automatique, fallback CSV brut');
+                autoRefreshMode = false;
+                showAutoRefreshIndicator(false);
+                await loadLiveEmails();
+            }
+        }
+
+        async function refreshEmailsWithML() {
+            try {
+                emailLoader.updateSourceIndicator('🔄 Traitement automatique par l\'IA en cours...', 'info');
+                const csvResponse = await fetch('./emails_live.csv');
+                if (!csvResponse.ok) throw new Error('Impossible de charger le fichier CSV');
+
+                const csvBlob = await csvResponse.blob();
+                const formData = new FormData();
+                formData.append('file', csvBlob, 'emails_live.csv');
+
+                const response = await fetch(`${mlApiUrl}/process-csv`, {
+                    method: 'POST', mode: 'cors', body: formData, signal: AbortSignal.timeout(180000)
+                });
+                if (!response.ok) throw new Error(`API Error ${response.status}: ${await response.text()}`);
+
+                const processedCsvBlob = await response.blob();
+                const textContent = await processedCsvBlob.text();
+                emailLoader.emails = emailLoader.parseCSV(textContent);
+                emailLoader.currentSource = 'ai_processed';
+
+                emailLoader.displayEmails(document.getElementById('emailList'));
+                emailLoader.updateStatsDisplay();
+                updateEmailDisplayWithFeedback();
+                if (emailLoader.emails.length > 0) selectEmail(0);
+                console.log(`✅ ${emailLoader.emails.length} emails traités par l'IA`);
+
+            } catch (error) {
+                console.error('❌ Erreur traitement IA:', error);
+                emailLoader.updateSourceIndicator(`❌ Erreur IA: ${error.message}`, 'danger');
+                throw error;
+            }
+        }
+
+        // ✅ MODIFIÉ: Gestion du timer de fine-tuning
+        async function checkFinetuningStatus() {
+            try {
+                const response = await fetch(`${mlApiUrl}/health`, { mode: 'cors', signal: AbortSignal.timeout(5000) });
+
+                if (response.ok) {
+                    const data = await response.json();
+                    const isTraining = data.is_finetuning_running || false;
+
+                    if (finetuningStatus && !isTraining) {
+                        console.log('✅🎉 FINE-TUNING TERMINÉ!');
+                        stopFinetuningTimer(); // Arrêter le timer
+                        markEmailsAsFinetuned(finetuningEmailIds);
+                        clearPendingFinetuningEmails();
+                        applyFiltersAndSearch();
+
+                        if (autoRefreshMode) {
+                            setTimeout(() => {
+                                console.log('🔄 Rechargement automatique après fine-tuning');
+                                loadEmailsWithAI();
+                            }, 2000);
+                        }
+                    } else if (!finetuningStatus && isTraining) {
+                        console.log('🔥 FINE-TUNING DÉTECTÉ!');
+                        startFinetuningTimer(); // Lancer le timer
+                    }
+
+                    finetuningStatus = isTraining;
+                    showFinetuningIndicator(isTraining);
+                    updateMLStatusForTraining(isTraining);
+                }
+            } catch (error) {
+                console.warn('⚠️ Impossible de vérifier le statut fine-tuning:', error);
+                if (finetuningStatus) { // Si on perd la connexion pendant le FT
+                    stopFinetuningTimer();
+                    showFinetuningIndicator(false);
+                }
+            }
+        }
+
+        // ✅ NOUVEAU: Fonctions pour le timer
+        function startFinetuningTimer() {
+            if (finetuningTimerInterval) clearInterval(finetuningTimerInterval);
+            finetuningStartTime = Date.now();
+            const timerElement = document.getElementById('finetuningTimer');
+
+            timerElement.textContent = '00:00';
+            finetuningTimerInterval = setInterval(() => {
+                const elapsed = Math.floor((Date.now() - finetuningStartTime) / 1000);
+                const minutes = String(Math.floor(elapsed / 60)).padStart(2, '0');
+                const seconds = String(elapsed % 60).padStart(2, '0');
+                timerElement.textContent = `${minutes}:${seconds}`;
+            }, 1000);
+        }
+
+        function stopFinetuningTimer() {
+            if (finetuningTimerInterval) {
+                clearInterval(finetuningTimerInterval);
+                finetuningTimerInterval = null;
+                console.log('⏱️ Timer de fine-tuning arrêté.');
+            }
+        }
+
+        function showFinetuningIndicator(show) {
+            const indicator = document.getElementById('finetuningIndicator');
+            if (indicator) indicator.style.display = show ? 'flex' : 'none'; // Utiliser flex pour l'alignement
+        }
+
+        function showAutoRefreshIndicator(show) {
+            const indicator = document.getElementById('autoRefreshIndicator');
+            if (indicator) indicator.style.display = show ? 'block' : 'none';
+        }
+
+        // ✅ MODIFIÉ: Mise à jour du statut ML
+        function updateMLStatusForTraining(isTraining) {
+            const statusElement = document.getElementById('mlStatus');
+            const analyzeBtn = document.getElementById('analyzeBtn');
+
+            if (isTraining) {
+                statusElement.innerHTML = '<i class="bi bi-circle-fill text-warning"></i> <strong>IA en Apprentissage...</strong><br><small>Analyses sur modèle actuel</small>';
+                statusElement.className = 'ml-status training';
+            } else if (mlStatusOnline) {
+                 statusElement.innerHTML = `<i class="bi bi-circle-fill text-success"></i> Modèle ML: <strong>En ligne</strong>`;
+                 statusElement.className = 'ml-status online';
+            }
+
+            // ✅ MODIFIÉ: Le bouton d'analyse reste activé
+            if (mlStatusOnline) {
+                analyzeBtn.disabled = document.getElementById('emailId').textContent === 'Sélectionnez un email';
+            } else {
+                analyzeBtn.disabled = true;
+            }
+        }
+
         async function loadLiveEmails() {
             try {
+                autoRefreshMode = false;
+                showAutoRefreshIndicator(false);
                 await emailLoader.loadEmailsFromCSV('./emails_live.csv');
-                emailLoader.updateSourceIndicator(`Données de "emails_live.csv" (${emailLoader.emails.length} emails)`, 'success');
+                emailLoader.updateSourceIndicator(`📊 Données CSV brutes (${emailLoader.emails.length} emails)`, 'success');
                 loadAndUpdate();
             } catch (error) {
-                alert(`Erreur de chargement du fichier CSV. Assurez-vous d'utiliser un serveur local (ex: Live Server sur VS Code) et que le fichier 'emails_live.csv' est au bon endroit.`);
+                alert(`Erreur de chargement du fichier CSV. Assurez-vous d'utiliser un serveur local et que le fichier 'emails_live.csv' est présent.`);
             }
         }
 
         async function loadDemoEmails() {
             try {
+                autoRefreshMode = false;
+                showAutoRefreshIndicator(false);
                 await emailLoader.loadEmailsFromCSV('./emails_demo.csv');
-                emailLoader.updateSourceIndicator(`Données de "emails_demo.csv" (${emailLoader.emails.length} emails)`, 'primary');
+                emailLoader.updateSourceIndicator(`📝 Données de démonstration (${emailLoader.emails.length} emails)`, 'primary');
                 loadAndUpdate();
             } catch (error) {
-                alert(`Erreur de chargement du fichier démo. Assurez-vous qu'il existe.`);
+                alert(`Erreur de chargement du fichier démo.`);
             }
         }
 
         function loadAndUpdate() {
             applyFiltersAndSearch();
             emailLoader.updateStatsDisplay();
-            if (filteredEmails.length > 0) {
-                selectEmail(0);
-            }
+            updateEmailDisplayWithFeedback();
+            if (filteredEmails.length > 0) selectEmail(0);
         }
 
-        function refreshEmails() {
-            emailLoader.currentSource === 'csv_live' ? loadLiveEmails() : loadDemoEmails();
+        async function refreshEmails() {
+            if (autoRefreshMode) {
+                await refreshEmailsWithML();
+            } else {
+                if (emailLoader.currentSource === 'csv_live') {
+                    await loadLiveEmails();
+                } else {
+                    await loadDemoEmails();
+                }
+            }
         }
 
         function applyFiltersAndSearch() {
             let emails = emailLoader.emails;
+
             if (currentFilter !== 'ALL') {
-                emails = emails.filter(email => email.type === currentFilter);
+                if (currentFilter === 'WITH_FEEDBACK') {
+                    emails = emails.filter(email => {
+                        const emailId = email.id || `email_${emailLoader.emails.indexOf(email)}`;
+                        return getEmailFeedbackStatus(emailId) !== null;
+                    });
+                } else if (currentFilter === 'FINETUNING') {
+                    emails = emails.filter(email => {
+                        const emailId = email.id || `email_${emailLoader.emails.indexOf(email)}`;
+                        return isEmailContributingToFinetuning(emailId) || isEmailFinetuned(emailId);
+                    });
+                } else {
+                    emails = emails.filter(email => email.type === currentFilter);
+                }
             }
+
             if (currentSearchQuery) {
                 const query = currentSearchQuery.toLowerCase();
                 emails = emails.filter(email =>
@@ -293,14 +730,21 @@
                     (email.body && (email.body || '').toLowerCase().includes(query))
                 );
             }
+
             filteredEmails = emails;
             emailLoader.displayEmails(document.getElementById('emailList'), filteredEmails);
+            updateEmailDisplayWithFeedback();
+
+            const feedbackCount = filteredEmails.filter(email => {
+                const emailId = email.id || `email_${emailLoader.emails.indexOf(email)}`;
+                return getEmailFeedbackStatus(emailId) !== null;
+            }).length;
+
             document.getElementById('emailCounter').textContent = `${filteredEmails.length}/${emailLoader.emails.length} emails`;
+            document.getElementById('feedbackCounter').textContent = `${feedbackCount} avec feedback`;
         }
 
-        // Fonction selectEmail modifiée avec feedback
         function selectEmail(index) {
-            // Réinitialiser la sélection précédente
             document.querySelectorAll('.email-item').forEach(item => item.classList.remove('active'));
 
             const email = filteredEmails[index];
@@ -310,87 +754,84 @@
                 return;
             }
 
-            // Stocker les données de l'email pour le feedback
+            const emailId = email.id || `email_${index}`;
+            const feedbackStatus = getEmailFeedbackStatus(emailId);
+            const isContributing = isEmailContributingToFinetuning(emailId);
+            const isFinetuned = isEmailFinetuned(emailId);
+
             currentEmailData = {
-                id: email.id || `email_${index}`,
+                id: emailId,
                 from: email.from || '',
                 subject: email.subject || '',
                 body: email.body || '',
                 type: email.type || 'unknown',
                 fullText: `From: ${email.from || ''} Subject: ${email.subject || ''} Body: ${email.body || ''}`
             };
-            // DEBUG - Vérifier que les données sont bien stockées
-            console.log('📧 Email sélectionné:', currentEmailData);
-            console.log('✅ Données prêtes pour feedback');
-            // Sélectionner visuellement l'email
+
             const emailElement = document.querySelector(`[data-index="${index}"]`);
             if (emailElement) emailElement.classList.add('active');
 
-            // Mettre à jour l'affichage
-            document.getElementById('emailId').textContent = email.id || 'N/A';
+            document.getElementById('emailId').textContent = emailId;
             document.getElementById('emailFrom').textContent = email.from;
             document.getElementById('emailDate').textContent = emailLoader.formatDate(email.date);
             document.getElementById('emailSubject').textContent = email.subject;
             document.getElementById('emailBody').dataset.textContent = email.body || '';
 
-            updateBodyDisplay();
+            const feedbackStatusElement = document.getElementById('emailFeedbackStatus');
+            if (feedbackStatus) {
+                feedbackStatusElement.style.display = 'block';
+                feedbackStatusElement.className = `badge ${feedbackStatus.satisfaction === 'yes' ? 'bg-success' : 'bg-danger'}`;
+                let statusText = feedbackStatus.satisfaction === 'yes' ? '✅ Feedback Positif' : '❌ Feedback Négatif';
 
+                if (isFinetuned) {
+                    statusText += ' - ✅ Fine-tuné';
+                } else if (isContributing) {
+                    statusText += ' - 🔥 En cours';
+                }
+
+                feedbackStatusElement.innerHTML = statusText;
+                feedbackStatusElement.title = `Envoyé le ${new Date(feedbackStatus.timestamp).toLocaleString()}`;
+            } else {
+                feedbackStatusElement.style.display = 'none';
+            }
+
+            updateBodyDisplay();
+            // ✅ MODIFIÉ: Le bouton ne se désactive que si le ML est hors ligne
             document.getElementById('analyzeBtn').disabled = !mlStatusOnline;
 
-            // Réinitialiser l'analyse et le feedback
             resetAnalysisAndFeedback();
         }
 
         function resetEmailDisplay() {
             const elements = ['emailId', 'emailFrom', 'emailDate', 'emailSubject'];
             elements.forEach(id => {
-                const element = document.getElementById(id);
-                if (element) {
-                    element.textContent = id === 'emailDate' ? '-' :
-                                        id === 'emailId' ? 'Sélectionnez un email' : 'Aucun email sélectionné';
-                }
+                document.getElementById(id).textContent = id === 'emailDate' ? '-' : id === 'emailId' ? 'Sélectionnez un email' : 'Aucun email sélectionné';
             });
-
-            const bodyElement = document.getElementById('emailBody');
-            if (bodyElement) {
-                bodyElement.textContent = 'Sélectionnez un email dans la liste pour voir son contenu ici.';
-            }
+            document.getElementById('emailBody').textContent = 'Sélectionnez un email dans la liste pour voir son contenu ici.';
+            document.getElementById('emailFeedbackStatus').style.display = 'none';
         }
 
         function resetAnalysisAndFeedback() {
             currentAnalysisResult = null;
-
-            const analysisResult = document.getElementById('analysisResult');
-            if (analysisResult) {
-                analysisResult.innerHTML = '';
-            }
-
-            // Désactiver et décocher les boutons de feedback
+            document.getElementById('analysisResult').innerHTML = '';
             document.querySelectorAll('input[name="satisfaction"]').forEach(input => {
                 input.checked = false;
                 input.disabled = true;
             });
         }
 
-        // Fonctions ML
         async function checkMLStatus() {
             const statusElement = document.getElementById('mlStatus');
             const analyzeBtn = document.getElementById('analyzeBtn');
-
             statusElement.innerHTML = '<i class="bi bi-arrow-clockwise spin"></i> Vérification du modèle ML...';
 
             try {
-                const response = await fetch(`${mlApiUrl}/health`, {
-                    mode: 'cors',
-                    signal: AbortSignal.timeout(5000)
-                });
+                const response = await fetch(`${mlApiUrl}/health`, { mode: 'cors', signal: AbortSignal.timeout(5000) });
 
                 if (response.ok) {
-                    const data = await response.json();
                     mlStatusOnline = true;
-                    statusElement.innerHTML = `<i class="bi bi-circle-fill text-success"></i> Modèle ML: <strong>En ligne</strong> - ${data.status || 'Prêt'}`;
-                    statusElement.className = 'ml-status online';
-                    analyzeBtn.disabled = document.getElementById('emailId').textContent === 'Sélectionnez un email';
+                    const data = await response.json();
+                    updateMLStatusForTraining(data.is_finetuning_running || false);
                 } else {
                     throw new Error(`HTTP ${response.status}`);
                 }
@@ -399,11 +840,8 @@
                 statusElement.innerHTML = `<i class="bi bi-circle-fill text-danger"></i> Modèle ML: <strong>Hors ligne</strong><br><small>${error.name === 'AbortError' ? 'Timeout' : 'Erreur connexion'}</small>`;
                 statusElement.className = 'ml-status offline';
                 analyzeBtn.disabled = true;
+                showFinetuningIndicator(false);
             }
-        }
-
-        function cleanText(text) {
-            return text ? text.replace(/"/g, "'").replace(/\n/g, ' ').replace(/\s+/g, ' ').trim() : '';
         }
 
         async function analyzeEmail() {
@@ -414,32 +852,23 @@
 
             const resultDiv = document.getElementById('analysisResult');
             const analyzeBtn = document.getElementById('analyzeBtn');
-            const emailFrom = document.getElementById('emailFrom').textContent;
-            const emailSubject = document.getElementById('emailSubject').textContent;
-            const emailBody = document.getElementById('emailBody').textContent;
 
-            if (emailFrom === 'Sélectionnez un email') {
+            if (!currentEmailData || !currentEmailData.id) {
                 showAnalysisError('Veuillez sélectionner un email complet.');
                 return;
             }
 
-            const rawEmailText = `From: ${emailFrom} Subject: ${emailSubject} Body: ${emailBody}`;
-
+            const emailId = currentEmailData.id;
             analyzeBtn.disabled = true;
             resultDiv.innerHTML = `<div class="text-info"><div class="spinner-border spinner-border-sm me-2"></div><strong>Analyse IA en cours...</strong></div>`;
 
             try {
-                const response = await fetch(`${mlApiUrl}/predict`, {
-                    method: 'POST',
-                    mode: 'cors',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ text: cleanText(rawEmailText) }),
+                const response = await fetch(`${mlApiUrl}/predict/email-id`, {
+                    method: 'POST', mode: 'cors', headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ email_id: emailId }),
                     signal: AbortSignal.timeout(30000)
                 });
-
-                if (!response.ok) {
-                    throw new Error(`API Error ${response.status}: ${await response.text()}`);
-                }
+                if (!response.ok) throw new Error(`API Error ${response.status}: ${await response.text()}`);
 
                 displayMLResult(await response.json());
             } catch (error) {
@@ -450,97 +879,73 @@
             }
         }
 
-        // Fonction displayMLResult modifiée pour activer le feedback
         function displayMLResult(data) {
             const confidence = Math.round((data.probability || 0) * 100);
             const isSpam = data.prediction === 'phishing' || data.prediction === 'spam';
 
-            // Stocker le résultat pour le feedback
             currentAnalysisResult = {
-                prediction: data.prediction,
-                probability: data.probability,
-                confidence: confidence,
-                language_detected: data.language_detected || 'en',
-                isSpam: isSpam,
-                timestamp: new Date().toISOString()
+                prediction: data.prediction, probability: data.probability, confidence: confidence,
+                language_detected: data.language_detected || 'en', isSpam: isSpam, timestamp: new Date().toISOString()
             };
 
-            // Afficher le résultat
-            const resultHtml = `
+            document.getElementById('analysisResult').innerHTML = `
                 <div class="analysis-result ${isSpam ? 'text-danger' : 'text-success'}">
                     <div class="d-flex align-items-center mb-2">
                         <i class="bi bi-${isSpam ? 'shield-x' : 'shield-check'} me-2"></i>
                         <strong>${isSpam ? 'SPAM/PHISHING détecté' : 'Email LÉGITIME'}</strong>
                     </div>
-                    <div class="mb-1">
-                        <small>Confiance: <strong>${confidence}%</strong></small>
-                    </div>
-                    <div>
-                        <small class="text-muted">Langue: ${data.language_detected || 'en'}</small>
-                    </div>
+                    <div class="mb-1"><small>Confiance: <strong>${confidence}%</strong></small></div>
+                    <div><small class="text-muted">Langue: ${data.language_detected || 'en'}</small></div>
                 </div>
             `;
-
-            document.getElementById('analysisResult').innerHTML = resultHtml;
-
-            // Activer les boutons de feedback
-            document.querySelectorAll('input[name="satisfaction"]').forEach(input => {
-                input.disabled = false;
-            });
-
-            console.log('✅ Analyse terminée, feedback activé');
+            document.querySelectorAll('input[name="satisfaction"]').forEach(input => input.disabled = false);
         }
 
-        // Fonctions de feedback
         async function sendFeedback(satisfaction) {
-            if (!currentEmailData || !currentAnalysisResult) {
-                console.warn('Données manquantes pour le feedback');
-                showFeedbackMessage('Erreur: données manquantes', 'error');
-                return;
-            }
+            if (!currentEmailData || !currentAnalysisResult) return;
 
             try {
                 const feedbackData = {
-                    email_text: currentEmailData.fullText.substring(0, 500),
-                    predicted_class: currentAnalysisResult.prediction,
-                    predicted_probability: currentAnalysisResult.probability,
-                    user_satisfaction: satisfaction,
+                    email_id: currentEmailData.id, predicted_class: currentAnalysisResult.prediction,
+                    predicted_probability: currentAnalysisResult.probability, user_satisfaction: satisfaction,
                     language_detected: currentAnalysisResult.language_detected
                 };
-
-                console.log('📤 Envoi du feedback:', feedbackData);
                 showFeedbackMessage('Envoi du feedback...', 'info');
 
-                const response = await fetch(`${mlApiUrl}/feedback`, {
-                    method: 'POST',
-                    mode: 'cors',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify(feedbackData),
-                    signal: AbortSignal.timeout(10000)
+                const response = await fetch(`${mlApiUrl}/feedback/by-id`, {
+                    method: 'POST', mode: 'cors', headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(feedbackData), signal: AbortSignal.timeout(10000)
                 });
-
-                if (!response.ok) {
-                    const errorText = await response.text();
-                    throw new Error(`HTTP ${response.status}: ${errorText}`);
-                }
+                if (!response.ok) throw new Error(`HTTP ${response.status}: ${await response.text()}`);
 
                 const result = await response.json();
-                console.log('✅ Feedback envoyé:', result);
-                showFeedbackMessage('✅ Merci pour votre feedback !', 'success');
-
-                // Désactiver les boutons après envoi
-                document.querySelectorAll('input[name="satisfaction"]').forEach(input => {
-                    input.disabled = true;
+                saveFeedbackToStorage(currentEmailData.id, {
+                    satisfaction: satisfaction, timestamp: new Date().toISOString(),
+                    prediction: currentAnalysisResult.prediction, probability: currentAnalysisResult.probability
                 });
+
+                if (result.auto_finetuning_triggered) {
+                    markEmailForFinetuning(currentEmailData.id);
+                    showFeedbackMessage('✅ Feedback enregistré! 🧠 IA en cours d\'amélioration...', 'success');
+                    await checkFinetuningStatus(); // Mettre à jour l'état immédiatement
+                    applyFiltersAndSearch();
+                } else {
+                    showFeedbackMessage('✅ Merci ! Feedback enregistré', 'success');
+                }
+
+                updateEmailDisplayWithFeedback();
+
+                const feedbackStatusElement = document.getElementById('emailFeedbackStatus');
+                feedbackStatusElement.style.display = 'block';
+                feedbackStatusElement.className = `badge ${satisfaction === 'yes' ? 'bg-success' : 'bg-danger'}`;
+                feedbackStatusElement.innerHTML = `${satisfaction === 'yes' ? '✅ Feedback Positif' : '❌ Feedback Négatif'}`;
+                document.querySelectorAll('input[name="satisfaction"]').forEach(input => input.disabled = true);
 
             } catch (error) {
                 console.error('❌ Erreur feedback:', error);
                 showFeedbackMessage('❌ Erreur lors de l\'envoi', 'error');
-
-                // Réactiver les boutons en cas d'erreur
                 document.querySelectorAll('input[name="satisfaction"]').forEach(input => {
-                    input.disabled = false;
-                    input.checked = false;
+                    input.disabled = false; input.checked = false;
                 });
             }
         }
@@ -548,63 +953,20 @@
         function showFeedbackMessage(message, type = 'info') {
             const analysisResult = document.getElementById('analysisResult');
             if (!analysisResult) return;
-
-            // Supprimer les anciens messages
             const existingMessages = analysisResult.querySelectorAll('.feedback-message');
             existingMessages.forEach(msg => msg.remove());
-
-            // Créer le message
             const messageDiv = document.createElement('div');
-            messageDiv.className = `feedback-message alert alert-sm mt-2 py-2`;
-
-            if (type === 'success') {
-                messageDiv.classList.add('alert-success');
-            } else if (type === 'error') {
-                messageDiv.classList.add('alert-danger');
-            } else {
-                messageDiv.classList.add('alert-info');
-            }
-
+            messageDiv.className = `feedback-message alert alert-sm mt-2 py-2 alert-${type === 'success' ? 'success' : type === 'error' ? 'danger' : 'info'}`;
             messageDiv.innerHTML = `<small>${message}</small>`;
             analysisResult.appendChild(messageDiv);
 
-            // Auto-suppression
             if (type !== 'error') {
-                setTimeout(() => {
-                    if (messageDiv.parentNode) {
-                        messageDiv.remove();
-                    }
-                }, type === 'success' ? 4000 : 2000);
+                setTimeout(() => messageDiv.remove(), type === 'success' ? 4000 : 2000);
             }
         }
 
         function handleFeedback(satisfaction) {
-            console.log(`📝 Feedback: ${satisfaction}`);
-
-            // Vérifications améliorées avec debug
-            console.log('🔍 État des variables:');
-            console.log('  currentEmailData:', currentEmailData);
-            console.log('  currentAnalysisResult:', currentAnalysisResult);
-
-            if (!currentAnalysisResult) {
-                console.warn('❌ currentAnalysisResult manquant');
-                showFeedbackMessage('Veuillez d\'abord analyser un email', 'error');
-                return;
-            }
-
-            if (!currentEmailData) {
-                console.warn('❌ currentEmailData manquant');
-                showFeedbackMessage('Aucun email sélectionné', 'error');
-                return;
-            }
-
-            // Vérifier que fullText existe
-            if (!currentEmailData.fullText) {
-                console.warn('❌ fullText manquant dans currentEmailData');
-                showFeedbackMessage('Données de l\'email incomplètes', 'error');
-                return;
-            }
-
+            if (!currentAnalysisResult || !currentEmailData || !currentEmailData.fullText) return;
             const isPositive = satisfaction === 'yes';
             const predictionText = currentAnalysisResult.isSpam ? 'SPAM/PHISHING' : 'LÉGITIME';
             const confirmMessage = isPositive
@@ -614,33 +976,25 @@
             if (confirm(confirmMessage)) {
                 sendFeedback(satisfaction);
             } else {
-                document.querySelectorAll('input[name="satisfaction"]').forEach(input => {
-                    input.checked = false;
-                });
+                document.querySelectorAll('input[name="satisfaction"]').forEach(input => input.checked = false);
             }
         }
-        // Autres fonctions utilitaires
+
         function showAnalysisError(message) {
             document.getElementById('analysisResult').innerHTML = `<div class="error-message">${message}</div>`;
         }
-
         function performSearch() {
             currentSearchQuery = document.getElementById('searchInput').value.trim().toLowerCase();
             applyFiltersAndSearch();
         }
-
         function filterEmails(type) {
             currentFilter = type;
-            document.querySelectorAll('.filter-buttons .btn').forEach(btn => {
-                btn.classList.toggle('active', btn.dataset.filter === type);
-            });
+            document.querySelectorAll('.filter-buttons .btn').forEach(btn => btn.classList.toggle('active', btn.dataset.filter === type));
             applyFiltersAndSearch();
         }
-
         function updateBodyDisplay() {
             const bodyElement = document.getElementById('emailBody');
             const rawContent = bodyElement.dataset.textContent || '';
-
             if (document.getElementById('htmlMode').checked) {
                 bodyElement.innerHTML = rawContent.replace(/\n/g, '<br>');
                 bodyElement.style.fontFamily = 'inherit';
@@ -652,52 +1006,21 @@
             }
         }
 
-        // Initialisation
         document.addEventListener('DOMContentLoaded', () => {
-            console.log('🚀 Initialisation du dashboard ML...');
-
-            // Charger les emails
-            loadLiveEmails();
-
-            // Vérifier le statut ML
+            console.log('🚀 Initialisation du dashboard ML avec cycle de vie et timer...');
+            loadEmailsWithAI();
             checkMLStatus();
 
-            // Event listeners pour le feedback
-            document.querySelectorAll('input[name="satisfaction"]').forEach(input => {
-                input.addEventListener('change', function(e) {
-                    if (this.checked) {
-                        handleFeedback(this.value);
-                    }
-                });
-            });
+            setInterval(checkFinetuningStatus, 5000);
 
-            // Event listeners pour les modes d'affichage
-            document.querySelectorAll('input[name="viewMode"]').forEach(input => {
-                input.addEventListener('change', updateBodyDisplay);
-            });
+            document.querySelectorAll('input[name="satisfaction"]').forEach(input => input.addEventListener('change', e => e.target.checked && handleFeedback(e.target.value)));
+            document.querySelectorAll('input[name="viewMode"]').forEach(input => input.addEventListener('change', updateBodyDisplay));
 
-            console.log('✅ Système de feedback initialisé');
+            console.log('✅ Système de feedback et fine-tuning avec cycle de vie initialisé');
+            console.log(`📊 ${Object.keys(feedbackStorage).length} feedbacks en mémoire`);
+            console.log(`🔥 ${finetuningEmailIds.size} emails en attente de fine-tuning`);
+            console.log(`✅ ${finetunedEmailIds.size} emails déjà fine-tunés`);
         });
-
-        // Styles pour l'animation de rotation
-        const style = document.createElement('style');
-        style.textContent = `
-            .spin {
-                animation: spin 1s linear infinite;
-            }
-            @keyframes spin {
-                to { transform: rotate(360deg); }
-            }
-        `;
-        document.head.appendChild(style);
-
-        // Fonction de debug (optionnelle)
-        function debugFeedbackState() {
-            console.log('🔍 État du feedback:');
-            console.log('  currentEmailData:', currentEmailData);
-            console.log('  currentAnalysisResult:', currentAnalysisResult);
-            console.log('  mlStatusOnline:', mlStatusOnline);
-        }
     </script>
 </body>
 </html>

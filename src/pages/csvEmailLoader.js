@@ -566,17 +566,17 @@ function selectEmail(index) {
     if (email) {
         const formatted = emailLoader.formatEmailForDisplay(email);
 
-        // SAUVEGARDER POUR LE FEEDBACK (AJOUT IMPORTANT)
+        // SAUVEGARDER LES DONNÉES RAW POUR LE ML (CORRIGÉ)
         if (typeof currentEmailData !== 'undefined') {
             currentEmailData = {
                 id: email.id || `email_${index}`,
-                from: formatted.cleanFrom || email.from || '',
-                subject: formatted.cleanSubject || email.subject || '',
-                body: formatted.cleanBody || email.body || '',
+                from: email.from || '',  // DONNÉES RAW
+                subject: email.subject || '',  // DONNÉES RAW
+                body: email.body || '',  // DONNÉES RAW
                 type: email.type || 'unknown',
-                fullText: `From: ${formatted.cleanFrom || email.from || ''} Subject: ${formatted.cleanSubject || email.subject || ''} Body: ${formatted.cleanBody || email.body || ''}`
+                fullText: `From: ${email.from || ''} Subject: ${email.subject || ''} Body: ${email.body || ''}`  // DONNÉES RAW
             };
-            console.log('📧 currentEmailData sauvegardé depuis csvEmailLoader:', currentEmailData);
+            console.log('📧 currentEmailData RAW sauvegardé:', currentEmailData);
         }
 
         const elements = {
@@ -623,14 +623,6 @@ function selectEmail(index) {
             resetAnalysisAndFeedback();
         }
     }
-}
-function refreshEmails() {
-    console.log('🔄 Actualisation des emails...');
-    if (emailLoader.currentSource === 'csv_live') {
-        loadLiveEmails();
-    } else {
-        loadDemoEmails();
-    }www
 }
 
 // Export pour utilisation dans d'autres scripts
