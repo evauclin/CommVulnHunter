@@ -92,6 +92,25 @@
         .feedback-section { background: rgba(255,255,255,0.1); border-radius: 10px; padding: 15px; margin-top: 15px; }
         .feedback-message { margin-top: 10px; }
 
+        /* Masquer le contenu initial jusqu'à vérification d'authentification */
+        .main-content {
+            visibility: hidden;
+        }
+
+        .auth-loading {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            z-index: 9999;
+            color: white;
+        }
+
         /* Styles pour les indicateurs de fine-tuning */
         .finetuning-indicator {
             background: linear-gradient(45deg, #ff9800, #ff5722);
@@ -151,8 +170,110 @@
             border-radius: 3px;
         }
     </style>
+
+    <!-- Protection d'authentification améliorée -->
+    <script>
+        // PROTECTION CRITIQUE - Ne pas contourner cette vérification
+        (function() {
+            'use strict';
+
+            console.log('[AUTH] Vérification d\'authentification en cours...');
+
+            function checkAuth() {
+                try {
+                    // Vérifier le localStorage
+                    const session = localStorage.getItem('emailFilter_session');
+                    const remember = localStorage.getItem('emailFilter_remember');
+
+                    console.log('[AUTH] Session:', session ? 'trouvée' : 'absente');
+                    console.log('[AUTH] Remember:', remember ? 'trouvé' : 'absent');
+
+                    if (session) {
+                        const sessionData = JSON.parse(session);
+                        const isValid = sessionData.expires > Date.now() && sessionData.user;
+                        console.log('[AUTH] Session valide:', isValid);
+                        if (isValid) {
+                            return true;
+                        }
+                    }
+
+                    if (remember) {
+                        const rememberData = JSON.parse(remember);
+                        const isValid = rememberData.expires > Date.now() && rememberData.user;
+                        console.log('[AUTH] Remember valide:', isValid);
+                        if (isValid) {
+                            return true;
+                        }
+                    }
+
+                    return false;
+                } catch (e) {
+                    console.error('[AUTH] Erreur lors de la vérification:', e);
+                    return false;
+                }
+            }
+
+            function showAuthLoading() {
+                const loadingDiv = document.createElement('div');
+                loadingDiv.className = 'auth-loading';
+                loadingDiv.innerHTML = `
+                    <div class="text-center">
+                        <div class="spinner-border text-light mb-3" role="status">
+                            <span class="visually-hidden">Vérification...</span>
+                        </div>
+                        <h4>Vérification de l'authentification...</h4>
+                    </div>
+                `;
+                document.body.appendChild(loadingDiv);
+                return loadingDiv;
+            }
+
+            function removeAuthLoading(loadingDiv) {
+                if (loadingDiv && loadingDiv.parentNode) {
+                    loadingDiv.parentNode.removeChild(loadingDiv);
+                }
+            }
+
+            // Afficher l'écran de chargement immédiatement
+            const loadingDiv = showAuthLoading();
+
+            // Délai pour permettre à la page de se charger et éviter le flash
+            setTimeout(() => {
+                const isAuthenticated = checkAuth();
+                console.log('[AUTH] Résultat authentification:', isAuthenticated);
+
+                if (!isAuthenticated) {
+                    console.log('[AUTH] ACCÈS REFUSÉ - Redirection vers login');
+                    // Redirection douce vers login
+                    window.location.href = 'login.html';
+                    return;
+                }
+
+                console.log('[AUTH] ACCÈS AUTORISÉ - Affichage du contenu');
+                // Afficher le contenu si authentifié
+                document.addEventListener('DOMContentLoaded', function() {
+                    const mainContent = document.querySelector('.main-content');
+                    if (mainContent) {
+                        mainContent.style.visibility = 'visible';
+                    }
+                    removeAuthLoading(loadingDiv);
+                });
+
+                // Si DOMContentLoaded est déjà passé
+                if (document.readyState === 'complete' || document.readyState === 'interactive') {
+                    const mainContent = document.querySelector('.main-content');
+                    if (mainContent) {
+                        mainContent.style.visibility = 'visible';
+                    }
+                    removeAuthLoading(loadingDiv);
+                }
+            }, 500);
+        })();
+    </script>
 </head>
 <body>
+    <!-- Contenu principal -->
+    <div class="main-content">
     <div class="container-fluid py-4">
         <div class="row mb-4">
             <div class="col-12">
@@ -401,8 +522,13 @@
             </div>
         </div>
     </div>
+    </div><!-- Fin main-content -->
+
+    <!-- Scripts d'authentification -->
+    <script src="auth-guard.js"></script>
 
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
+    <script src="auth-simple.js"></script>
     <script src="csvEmailLoader.js" defer></script>
 
     <script defer>
@@ -1009,6 +1135,20 @@
         document.addEventListener('DOMContentLoaded', () => {
             console.log('🚀 Initialisation du dashboard ML avec cycle de vie et timer...');
             loadEmailsWithAI();
+            console.log('🚀 Initialisation du dashboard ML...');
+
+            // Vérifier l'authentification
+            if (!requireAuth()) {
+                return;
+            }
+
+            // Initialiser les informations utilisateur
+            initializeUserInterface();
+
+            // Charger les emails
+            loadLiveEmails();
+
+            // Vérifier le statut ML
             checkMLStatus();
 
             setInterval(checkFinetuningStatus, 5000);
@@ -1021,6 +1161,53 @@
             console.log(`🔥 ${finetuningEmailIds.size} emails en attente de fine-tuning`);
             console.log(`✅ ${finetunedEmailIds.size} emails déjà fine-tunés`);
         });
+
+        // Initialiser l'interface utilisateur
+        function initializeUserInterface() {
+            const user = AuthManager.getCurrentUser();
+            if (user) {
+                document.getElementById('userName').textContent = user.name || 'Utilisateur';
+                document.getElementById('userEmail').textContent = user.email || '';
+                document.getElementById('userRole').textContent = user.role || 'Utilisateur';
+            }
+        }
+
+        // Fonction de déconnexion
+        function logout() {
+            if (confirm('Êtes-vous sûr de vouloir vous déconnecter ?')) {
+                AuthManager.logout();
+            }
+        }
+
+        // Afficher les informations de session
+        function showSessionInfo() {
+            const sessionInfo = AuthManager.getSessionInfo();
+            if (sessionInfo) {
+                alert(`Session Info:\n\nUtilisateur: ${sessionInfo.user.name}\nEmail: ${sessionInfo.user.email}\nRôle: ${sessionInfo.user.role}\nConnecté le: ${sessionInfo.created}\nExpire le: ${sessionInfo.expires}`);
+            } else {
+                alert('Aucune information de session disponible.');
+            }
+        }
+
+        // Styles pour l'animation de rotation
+        const style = document.createElement('style');
+        style.textContent = `
+            .spin {
+                animation: spin 1s linear infinite;
+            }
+            @keyframes spin {
+                to { transform: rotate(360deg); }
+            }
+        `;
+        document.head.appendChild(style);
+
+        // Fonction de debug (optionnelle)
+        function debugFeedbackState() {
+            console.log('🔍 État du feedback:');
+            console.log('  currentEmailData:', currentEmailData);
+            console.log('  currentAnalysisResult:', currentAnalysisResult);
+            console.log('  mlStatusOnline:', mlStatusOnline);
+        }
     </script>
 </body>
 </html>
