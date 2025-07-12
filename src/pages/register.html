@@ -1,0 +1,477 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Email Filter - Inscription</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css">
+    <style>
+        body {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+        }
+        .register-container {
+            background: rgba(255, 255, 255, 0.95);
+            backdrop-filter: blur(10px);
+            border-radius: 20px;
+            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
+            padding: 40px;
+            width: 100%;
+            max-width: 450px;
+            border: 1px solid rgba(255, 255, 255, 0.18);
+        }
+        .register-header {
+            text-align: center;
+            margin-bottom: 30px;
+        }
+        .register-header h2 {
+            color: #2c3e50;
+            font-weight: 600;
+            margin-bottom: 10px;
+        }
+        .register-header p {
+            color: #7f8c8d;
+            margin: 0;
+        }
+        .form-floating {
+            margin-bottom: 20px;
+        }
+        .form-control {
+            border-radius: 12px;
+            border: 2px solid #e9ecef;
+            padding: 12px 16px;
+            font-size: 16px;
+            transition: all 0.3s ease;
+        }
+        .form-control:focus {
+            border-color: #667eea;
+            box-shadow: 0 0 0 0.2rem rgba(102, 126, 234, 0.25);
+        }
+        .form-control.is-invalid {
+            border-color: #dc3545;
+        }
+        .form-control.is-valid {
+            border-color: #28a745;
+        }
+        .btn-register {
+            width: 100%;
+            padding: 12px;
+            font-size: 16px;
+            font-weight: 600;
+            border-radius: 12px;
+            background: linear-gradient(135deg, #28a745 0%, #20c997 100%);
+            border: none;
+            color: white;
+            transition: all 0.3s ease;
+        }
+        .btn-register:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 6px 20px rgba(40, 167, 69, 0.4);
+            color: white;
+        }
+        .btn-register:disabled {
+            opacity: 0.6;
+            cursor: not-allowed;
+            transform: none;
+        }
+        .error-message, .success-message {
+            padding: 12px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+            display: none;
+        }
+        .error-message {
+            background: #f8d7da;
+            color: #721c24;
+            border: 1px solid #f5c6cb;
+        }
+        .success-message {
+            background: #d4edda;
+            color: #155724;
+            border: 1px solid #c3e6cb;
+        }
+        .form-check {
+            margin-bottom: 20px;
+        }
+        .form-check-input:checked {
+            background-color: #667eea;
+            border-color: #667eea;
+        }
+        .login-link {
+            text-align: center;
+            margin-top: 20px;
+        }
+        .login-link a {
+            color: #667eea;
+            text-decoration: none;
+            font-weight: 500;
+        }
+        .login-link a:hover {
+            text-decoration: underline;
+        }
+        .loading-spinner {
+            display: none;
+            text-align: center;
+            margin-top: 20px;
+        }
+        .password-strength {
+            margin-top: 5px;
+            font-size: 0.8rem;
+        }
+        .strength-weak { color: #dc3545; }
+        .strength-medium { color: #ffc107; }
+        .strength-strong { color: #28a745; }
+        .invalid-feedback, .valid-feedback {
+            font-size: 0.8rem;
+            margin-top: 5px;
+        }
+        .role-selection {
+            background: #f8f9fa;
+            border-radius: 10px;
+            padding: 15px;
+            margin-bottom: 20px;
+        }
+        .role-option {
+            margin-bottom: 10px;
+        }
+        .role-option:last-child {
+            margin-bottom: 0;
+        }
+    </style>
+</head>
+<body>
+    <div class="register-container">
+        <div class="register-header">
+            <i class="bi bi-person-plus" style="font-size: 3rem; color: #667eea;"></i>
+            <h2>Créer un compte</h2>
+            <p>Rejoignez Email Filter</p>
+        </div>
+
+        <div id="errorMessage" class="error-message">
+            <i class="bi bi-exclamation-triangle me-2"></i>
+            <span id="errorText"></span>
+        </div>
+
+        <div id="successMessage" class="success-message">
+            <i class="bi bi-check-circle me-2"></i>
+            <span id="successText"></span>
+        </div>
+
+        <form id="registerForm">
+            <div class="form-floating">
+                <input type="text" class="form-control" id="name" placeholder="Nom complet" required>
+                <label for="name"><i class="bi bi-person me-2"></i>Nom complet</label>
+                <div class="invalid-feedback" id="nameError"></div>
+                <div class="valid-feedback">Nom valide ✓</div>
+            </div>
+            
+            <div class="form-floating">
+                <input type="email" class="form-control" id="email" placeholder="nom@example.com" required>
+                <label for="email"><i class="bi bi-envelope me-2"></i>Email</label>
+                <div class="invalid-feedback" id="emailError"></div>
+                <div class="valid-feedback">Email valide ✓</div>
+            </div>
+            
+            <div class="form-floating">
+                <input type="password" class="form-control" id="password" placeholder="Mot de passe" required minlength="6">
+                <label for="password"><i class="bi bi-key me-2"></i>Mot de passe</label>
+                <div class="password-strength" id="passwordStrength"></div>
+                <div class="invalid-feedback" id="passwordError"></div>
+                <div class="valid-feedback">Mot de passe valide ✓</div>
+            </div>
+
+            <div class="form-floating">
+                <input type="password" class="form-control" id="confirmPassword" placeholder="Confirmer le mot de passe" required>
+                <label for="confirmPassword"><i class="bi bi-key-fill me-2"></i>Confirmer le mot de passe</label>
+                <div class="invalid-feedback" id="confirmPasswordError"></div>
+                <div class="valid-feedback">Mots de passe identiques ✓</div>
+            </div>
+
+            <div class="role-selection">
+                <label class="form-label"><strong>Rôle d'utilisateur :</strong></label>
+                <div class="role-option">
+                    <input class="form-check-input" type="radio" name="role" id="roleUser" value="user" checked>
+                    <label class="form-check-label" for="roleUser">
+                        <strong>Utilisateur</strong> - Accès standard à l'application
+                    </label>
+                </div>
+                <div class="role-option">
+                    <input class="form-check-input" type="radio" name="role" id="roleDemo" value="demo">
+                    <label class="form-check-label" for="roleDemo">
+                        <strong>Démo</strong> - Accès en lecture seule
+                    </label>
+                </div>
+            </div>
+
+            <div class="form-check">
+                <input class="form-check-input" type="checkbox" id="agreeTerms" required>
+                <label class="form-check-label" for="agreeTerms">
+                    J'accepte les <a href="#" onclick="showTerms()">conditions d'utilisation</a>
+                </label>
+            </div>
+
+            <div class="form-check">
+                <input class="form-check-input" type="checkbox" id="agreeNewsletter">
+                <label class="form-check-label" for="agreeNewsletter">
+                    Recevoir les nouvelles par email (optionnel)
+                </label>
+            </div>
+
+            <button type="submit" class="btn btn-register" id="registerBtn">
+                <i class="bi bi-person-plus me-2"></i>Créer mon compte
+            </button>
+        </form>
+
+        <div class="loading-spinner" id="loadingSpinner">
+            <div class="spinner-border text-success" role="status">
+                <span class="visually-hidden">Création du compte...</span>
+            </div>
+            <p class="mt-2 text-muted">Création du compte en cours...</p>
+        </div>
+
+        <div class="login-link">
+            Déjà un compte ? <a href="login.html">Se connecter</a>
+        </div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
+    <script src="auth-simple.js"></script>
+    <script>
+        // Variables globales
+        let formValid = {
+            name: false,
+            email: false,
+            password: false,
+            confirmPassword: false,
+            terms: false
+        };
+
+        // Gestionnaire du formulaire d'inscription
+        document.getElementById('registerForm').addEventListener('submit', async function(e) {
+            e.preventDefault();
+            
+            if (!validateForm()) {
+                showError('Veuillez corriger les erreurs avant de continuer.');
+                return;
+            }
+            
+            const formData = {
+                name: document.getElementById('name').value.trim(),
+                email: document.getElementById('email').value.trim(),
+                password: document.getElementById('password').value,
+                role: document.querySelector('input[name="role"]:checked').value,
+                newsletter: document.getElementById('agreeNewsletter').checked
+            };
+            
+            await handleRegistration(formData);
+        });
+
+        // Fonction de gestion de l'inscription
+        async function handleRegistration(formData) {
+            const registerBtn = document.getElementById('registerBtn');
+            const loadingSpinner = document.getElementById('loadingSpinner');
+            
+            // Désactiver le bouton et afficher le chargement
+            registerBtn.disabled = true;
+            registerBtn.style.display = 'none';
+            loadingSpinner.style.display = 'block';
+            hideMessages();
+            
+            try {
+                // Appeler la fonction d'inscription
+                const result = await AuthManager.register(formData);
+                
+                if (result.success) {
+                    showSuccess('Compte créé avec succès ! Redirection vers la connexion...');
+                    
+                    // Rediriger vers la page de connexion après 2 secondes
+                    setTimeout(() => {
+                        window.location.href = 'login.html';
+                    }, 2000);
+                } else {
+                    showError(result.message || 'Erreur lors de la création du compte');
+                    resetForm();
+                }
+            } catch (error) {
+                showError('Erreur lors de la création du compte. Veuillez réessayer.');
+                console.error('Erreur d\'inscription:', error);
+                resetForm();
+            }
+        }
+
+        // Validation en temps réel
+        document.getElementById('name').addEventListener('input', validateName);
+        document.getElementById('email').addEventListener('input', validateEmail);
+        document.getElementById('password').addEventListener('input', validatePassword);
+        document.getElementById('confirmPassword').addEventListener('input', validateConfirmPassword);
+        document.getElementById('agreeTerms').addEventListener('change', validateTerms);
+
+        function validateName() {
+            const name = document.getElementById('name');
+            const nameError = document.getElementById('nameError');
+            
+            if (name.value.trim().length < 2) {
+                setFieldInvalid(name, nameError, 'Le nom doit contenir au moins 2 caractères');
+                formValid.name = false;
+            } else if (!/^[a-zA-ZÀ-ÿ\s-']+$/.test(name.value.trim())) {
+                setFieldInvalid(name, nameError, 'Le nom ne peut contenir que des lettres, espaces et tirets');
+                formValid.name = false;
+            } else {
+                setFieldValid(name);
+                formValid.name = true;
+            }
+        }
+
+        function validateEmail() {
+            const email = document.getElementById('email');
+            const emailError = document.getElementById('emailError');
+            const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+            
+            if (!emailRegex.test(email.value.trim())) {
+                setFieldInvalid(email, emailError, 'Veuillez saisir un email valide');
+                formValid.email = false;
+            } else {
+                setFieldValid(email);
+                formValid.email = true;
+            }
+        }
+
+        function validatePassword() {
+            const password = document.getElementById('password');
+            const passwordError = document.getElementById('passwordError');
+            const passwordStrength = document.getElementById('passwordStrength');
+            const value = password.value;
+            
+            if (value.length < 6) {
+                setFieldInvalid(password, passwordError, 'Le mot de passe doit contenir au moins 6 caractères');
+                formValid.password = false;
+                passwordStrength.textContent = '';
+            } else {
+                setFieldValid(password);
+                formValid.password = true;
+                
+                // Évaluer la force du mot de passe
+                const strength = calculatePasswordStrength(value);
+                passwordStrength.textContent = strength.text;
+                passwordStrength.className = `password-strength ${strength.class}`;
+            }
+            
+            // Revalider la confirmation si elle existe
+            if (document.getElementById('confirmPassword').value) {
+                validateConfirmPassword();
+            }
+        }
+
+        function validateConfirmPassword() {
+            const password = document.getElementById('password');
+            const confirmPassword = document.getElementById('confirmPassword');
+            const confirmPasswordError = document.getElementById('confirmPasswordError');
+            
+            if (confirmPassword.value !== password.value) {
+                setFieldInvalid(confirmPassword, confirmPasswordError, 'Les mots de passe ne correspondent pas');
+                formValid.confirmPassword = false;
+            } else if (confirmPassword.value.length > 0) {
+                setFieldValid(confirmPassword);
+                formValid.confirmPassword = true;
+            }
+        }
+
+        function validateTerms() {
+            const agreeTerms = document.getElementById('agreeTerms');
+            formValid.terms = agreeTerms.checked;
+        }
+
+        function calculatePasswordStrength(password) {
+            let score = 0;
+            
+            if (password.length >= 8) score++;
+            if (/[a-z]/.test(password)) score++;
+            if (/[A-Z]/.test(password)) score++;
+            if (/\d/.test(password)) score++;
+            if (/[^a-zA-Z\d]/.test(password)) score++;
+            
+            if (score < 3) {
+                return { text: 'Mot de passe faible', class: 'strength-weak' };
+            } else if (score < 5) {
+                return { text: 'Mot de passe moyen', class: 'strength-medium' };
+            } else {
+                return { text: 'Mot de passe fort', class: 'strength-strong' };
+            }
+        }
+
+        function setFieldValid(field) {
+            field.classList.remove('is-invalid');
+            field.classList.add('is-valid');
+        }
+
+        function setFieldInvalid(field, errorElement, message) {
+            field.classList.remove('is-valid');
+            field.classList.add('is-invalid');
+            if (errorElement) {
+                errorElement.textContent = message;
+            }
+        }
+
+        function validateForm() {
+            validateName();
+            validateEmail();
+            validatePassword();
+            validateConfirmPassword();
+            validateTerms();
+            
+            return Object.values(formValid).every(valid => valid);
+        }
+
+        function resetForm() {
+            const registerBtn = document.getElementById('registerBtn');
+            const loadingSpinner = document.getElementById('loadingSpinner');
+            
+            registerBtn.disabled = false;
+            registerBtn.style.display = 'block';
+            loadingSpinner.style.display = 'none';
+        }
+
+        // Fonctions utilitaires pour les messages
+        function showError(message) {
+            const errorMessage = document.getElementById('errorMessage');
+            const errorText = document.getElementById('errorText');
+            
+            errorText.textContent = message;
+            errorMessage.style.display = 'block';
+            document.getElementById('successMessage').style.display = 'none';
+            
+            setTimeout(() => hideMessages(), 5000);
+        }
+
+        function showSuccess(message) {
+            const successMessage = document.getElementById('successMessage');
+            const successText = document.getElementById('successText');
+            
+            successText.textContent = message;
+            successMessage.style.display = 'block';
+            document.getElementById('errorMessage').style.display = 'none';
+        }
+
+        function hideMessages() {
+            document.getElementById('errorMessage').style.display = 'none';
+            document.getElementById('successMessage').style.display = 'none';
+        }
+
+        function showTerms() {
+            alert('Conditions d\'utilisation:\n\n1. Utilisation responsable de l\'application\n2. Respect de la confidentialité des données\n3. Interdiction d\'utilisation malveillante\n4. Les données sont stockées localement\n5. Aucune garantie sur la précision de la détection de spam');
+        }
+
+        // Vérifier si l'utilisateur est déjà connecté
+        document.addEventListener('DOMContentLoaded', function() {
+            if (AuthManager.isAuthenticated()) {
+                window.location.href = 'index.html';
+            }
+        });
+    </script>
+</body>
+</html>
