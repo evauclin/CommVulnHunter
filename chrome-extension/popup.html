@@ -2,39 +2,18 @@
 <html lang="fr">
 <head>
     <meta charset="UTF-8">
-    <title>Notification Guardian</title>
+    <title>Guardian Status</title>
     <link rel="stylesheet" href="popup.css">
 </head>
 <body>
     <div class="header">
-        <img src="icons/icon48.png" alt="Logo" class="logo">
-        <div class="header-text">
-            <h1>Notification Guardian</h1>
-            <p>Interception Globale Active</p>
-        </div>
+        <h1>Phishing Guardian</h1>
     </div>
-    <div class="main-content">
-        <div class="tab-nav">
-            <button class="tab-btn active" data-tab="status">Statut</button>
-            <button class="tab-btn" data-tab="history">Historique</button>
-        </div>
-        <div id="tab-status" class="tab-content active">
-            <div class="status-card">
-                <div class="status-indicator-on">
-                    <div class="status-dot"></div>
-                    <span>Intercepteur Actif</span>
-                </div>
-                <p class="status-description">Toutes les notifications des sites web sont analysées.</p>
-            </div>
-        </div>
-        <div id="tab-history" class="tab-content">
-            <div class="history-header">
-                <h3>Notifications Récentes</h3>
-                <button id="clearHistoryBtn" class="btn-clear">Effacer</button>
-            </div>
-            <div id="historyList" class="history-list">
-                <p class="empty-state">Aucune notification enregistrée.</p>
-            </div>
+    <div class="content">
+        <div id="status-card" class="waiting">
+            <div id="status-icon" class="status-icon">?</div>
+            <div id="status-text" class="status-text">En attente...</div>
+            <div id="notification-content" class="notification-content" style="display: none;"></div>
         </div>
     </div>
     <script src="popup.js"></script>

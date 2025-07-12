@@ -1,65 +1,38 @@
-// popup.js - Gère l'affichage du popup.
-
-async function sendMessage(message) {
-    try {
-        if (!chrome.runtime?.id) return null;
-        return await chrome.runtime.sendMessage(message);
-    } catch (e) {
-        console.error(`Erreur de communication: ${e.message}`);
-        return null;
-    }
-}
-
-function displayHistory(history) {
-    const listElement = document.getElementById('historyList');
-    if (!history || history.length === 0) {
-        listElement.innerHTML = '<p class="empty-state">Aucune notification enregistrée.</p>';
-        return;
-    }
-
-    // --- CORRECTION DE LA FONCTION ---
-    const escapeHTML = (str = '') =>
-        str.replace(/[&<>"']/g, m => ({
-            '&': '&',
-            '<': '<',
-            '>': '>',
-            '"': '"',
-            "'": "'"
-        }[m]));
-    // ---------------------------------
-
-    listElement.innerHTML = history.map(item => `
-        <div class="history-item ${item.isPhishing ? 'phishing' : 'safe'}">
-            <div class="item-header">
-                <span class="item-origin">${escapeHTML(item.origin)}</span>
-                <span class="item-time">${new Date(item.timestamp).toLocaleTimeString()}</span>
-            </div>
-            <p class="item-title">${escapeHTML(item.title)}</p>
-            <p class="item-body">${escapeHTML(item.body)}</p>
-        </div>
-    `).join('');
-}
-
-function switchTab(tabName) {
-    document.querySelectorAll('.tab-content, .tab-btn').forEach(el => el.classList.remove('active'));
-    document.getElementById(`tab-${tabName}`).classList.add('active');
-    document.querySelector(`[data-tab="${tabName}"]`).classList.add('active');
-    if (tabName === 'history') {
-        sendMessage({ type: 'GET_HISTORY' }).then(response => {
-            if (response) displayHistory(response);
-        });
-    }
-}
-
+// popup.js
 document.addEventListener('DOMContentLoaded', () => {
-    document.querySelectorAll('.tab-btn').forEach(btn => {
-        btn.addEventListener('click', () => switchTab(btn.dataset.tab));
-    });
-    document.getElementById('clearHistoryBtn').addEventListener('click', async () => {
-        if (confirm("Voulez-vous vraiment effacer tout l'historique ?")) {
-            await sendMessage({ type: 'CLEAR_HISTORY' });
-            displayHistory([]);
+    const statusCard = document.getElementById('status-card');
+    const statusIcon = document.getElementById('status-icon');
+    const statusText = document.getElementById('status-text');
+    const notificationContent = document.getElementById('notification-content');
+
+    function updatePopup(scanResult) {
+        if (!scanResult || !scanResult.last_scan) {
+            statusCard.className = 'waiting';
+            statusIcon.textContent = '⏱️';
+            statusText.textContent = 'En attente de la prochaine notification...';
+            notificationContent.style.display = 'none';
+            return;
+        }
+
+        const lastScan = scanResult.last_scan;
+        notificationContent.textContent = `Titre : "${lastScan.content}"`;
+        notificationContent.style.display = 'block';
+
+        if (lastScan.is_phishing) {
+            statusCard.className = 'phishing';
+            statusIcon.textContent = '⚠️';
+            statusText.textContent = 'Phishing Détecté !';
+        } else {
+            statusCard.className = 'safe';
+            statusIcon.textContent = '✅';
+            statusText.textContent = 'Message Analysé et Sûr';
+        }
+    }
+
+    chrome.storage.local.get(['last_scan'], updatePopup);
+    chrome.storage.onChanged.addListener((changes, namespace) => {
+        if (namespace === 'local' && changes.last_scan) {
+            chrome.storage.local.get(['last_scan'], updatePopup);
         }
     });
-    switchTab('status');
 });

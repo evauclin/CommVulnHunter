@@ -1,117 +1,73 @@
-// background.js - Analyse, notifie et sauvegarde l'historique.
+// background.js
 
-console.log('🛡️ Guardian Background Service Actif.');
-
-const API_URL = 'http://localhost:8000';
-const pendingFeedbacks = new Map();
-
-// --- GESTION DE L'HISTORIQUE via chrome.storage ---
-async function getHistory() {
-    try {
-        const result = await chrome.storage.local.get(['notificationHistory']);
-        return result.notificationHistory || [];
-    } catch (e) { return []; }
-}
-
-async function addToHistory(item) {
-    const history = await getHistory();
-    const newHistory = [item, ...history].slice(0, 100);
-    await chrome.storage.local.set({ notificationHistory: newHistory });
-}
-
-async function clearHistory() {
-    await chrome.storage.local.set({ notificationHistory: [] });
-}
-
-// --- GESTION DES MESSAGES ---
-chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
-    switch (request.type) {
-        case 'ANALYZE_NOTIFICATION':
-            processNotification(request.data, sender.origin);
-            break;
-        case 'GET_HISTORY':
-            getHistory().then(sendResponse);
-            return true;
-        case 'CLEAR_HISTORY':
-            clearHistory().then(() => sendResponse({ status: 'ok' }));
-            return true;
+// --- 1. INJECTION DE L'ESPION (POUR GMAIL ET YAHOO) ---
+chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
+    // On vérifie que la page est complètement chargée et que l'URL correspond à l'un des deux services
+    if (changeInfo.status === 'complete' && tab.url &&
+        (tab.url.startsWith("https://mail.google.com/") || tab.url.includes(".mail.yahoo.com/"))
+    ) {
+        console.log(`[BG] Injection de l'espion sur : ${tab.url}`);
+        chrome.scripting.executeScript({
+            target: { tabId: tabId },
+            files: ['interceptor.js'],
+            world: 'MAIN',
+        }).catch(err => console.error("Échec de l'injection :", err));
     }
 });
 
-// --- LOGIQUE D'ANALYSE ET NOTIFICATION ---
-async function processNotification(notifData, origin) {
+// --- 2. ÉCOUTE DES NOTIFICATIONS INTERCEPTÉES (NE CHANGE PAS) ---
+chrome.runtime.onMessage.addListener((message) => {
+    if (message.type === 'ANALYZE_NOTIFICATION') {
+        console.log("✅ [BG] Notification interceptée, analyse en cours...", message.data);
+        analyzeWithAPI(message.data);
+    }
+});
+
+// --- 3. LOGIQUE D'ANALYSE ET DE NOTIFICATION (NE CHANGE PAS) ---
+async function analyzeWithAPI(notifData) {
+    const textToAnalyze = `${notifData.title}\n${notifData.body}`;
+    console.log("▶️ [BG] Envoi à l'API :", textToAnalyze);
+
     try {
-        const textToAnalyze = `${notifData.title}\n${notifData.body}`;
-        const response = await fetch(`${API_URL}/predict`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
+        const response = await fetch("http://localhost:8000/predict", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
             body: JSON.stringify({ text: textToAnalyze })
         });
-        if (!response.ok) throw new Error(`API Error ${response.status}`);
+
+        if (!response.ok) throw new Error(`Erreur API ${response.status}`);
 
         const result = await response.json();
+        console.log("✅ [BG] Réponse de l'API :", result);
 
-        await addToHistory({
-            title: notifData.title,
-            body: notifData.body,
-            origin: new URL(origin).hostname,
-            isPhishing: result.prediction === 'phishing',
-            timestamp: new Date().toISOString()
-        });
+        const isPhishing = result.prediction === 'phishing';
 
-        createReplacementNotification(notifData, origin, result);
-    } catch (error) {
-        console.error("❌ Erreur d'analyse:", error);
-        createReplacementNotification(notifData, origin, null, true); // Crée une notification d'erreur
-    }
-}
+        await chrome.storage.local.set({ last_scan: { content: notifData.title, is_phishing: isPhishing } });
 
-function createReplacementNotification(notifData, origin, analysisResult, isError = false) {
-    const notificationId = `guardian-${Date.now()}`;
-    // --- CORRECTION ---
-    const isPhishing = !isError && analysisResult?.prediction === 'phishing';
-
-    let title = "✅ Notification Analysée";
-    if (isPhishing) title = "⚠️ ALERTE - Contenu Suspect";
-    if (isError) title = "❓ Erreur d'Analyse";
-
-    if (!isError) {
-        pendingFeedbacks.set(notificationId, { notifData, analysisResult });
-    }
-
-    chrome.notifications.create(notificationId, {
-        type: 'basic',
-        iconUrl: 'icons/icon128.png',
-        title: title,
-        message: `${notifData.title}${notifData.body ? `\n${notifData.body}` : ''}`,
-        contextMessage: `Origine: ${new URL(origin).hostname}`,
-        buttons: isError ? [] : [{ title: '👍 Correct' }, { title: '👎 Incorrect' }]
-    });
-}
-
-// --- GESTION DU FEEDBACK ---
-chrome.notifications.onButtonClicked.addListener(async (notificationId, buttonIndex) => {
-    const feedbackInfo = pendingFeedbacks.get(notificationId);
-    if (!feedbackInfo || !feedbackInfo.analysisResult) return;
-
-    const userSatisfaction = (buttonIndex === 0) ? 'yes' : 'no';
-
-    try {
-        const payload = {
-            email_text: `${feedbackInfo.notifData.title}\n${feedbackInfo.notifData.body}`,
-            predicted_class: feedbackInfo.analysisResult.prediction,
-            predicted_probability: feedbackInfo.analysisResult.probability,
-            user_satisfaction: userSatisfaction
+        const notificationOptions = {
+            type: "basic",
+            iconUrl: "icons/icon48.png",
+            title: isPhishing ? "⚠️ ALERTE PHISHING !" : "✅ Message Analysé (Sûr)",
+            message: `Le message original "${notifData.title}" a été analysé.`,
+            priority: 2
         };
-        await fetch(`${API_URL}/feedback`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(payload)
-        });
-    } catch (error) {
-        console.error("❌ Échec de l'envoi du feedback:", error);
-    }
+        chrome.notifications.create(notificationOptions);
 
-    chrome.notifications.clear(notificationId);
-    pendingFeedbacks.delete(notificationId);
-});
+    } catch (error) {
+        console.error("❌ [BG] ERREUR lors de l'appel API :", error);
+
+        const errorOptions = {
+            type: "basic",
+            iconUrl: "icons/icon48.png",
+            title: "Erreur d'Analyse",
+            message: "Impossible de contacter l'API. Vérifiez qu'elle est lancée.",
+            priority: 1
+        };
+        // On crée la notification d'erreur. Si ça échoue, on logue l'erreur de l'icône.
+        chrome.notifications.create('error_notif', errorOptions, () => {
+            if (chrome.runtime.lastError) {
+                console.error("Impossible de créer la notification d'erreur :", chrome.runtime.lastError.message);
+            }
+        });
+    }
+}
