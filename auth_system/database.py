@@ -41,7 +41,8 @@ class AuthDatabase:
                     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                     last_login TIMESTAMP,
                     failed_login_attempts INTEGER DEFAULT 0,
-                    locked_until TIMESTAMP
+                    locked_until TIMESTAMP,
+                    google_app_password TEXT
                 )
             """)
             
@@ -119,7 +120,7 @@ class AuthDatabase:
         """Verify password against hash"""
         return bcrypt.checkpw(password.encode('utf-8'), password_hash.encode('utf-8'))
     
-    def create_user(self, email: str, password: str, name: str, role: str = "user") -> Optional[int]:
+    def create_user(self, email: str, password: str, name: str, role: str = "user", google_app_password: str = None) -> Optional[int]:
         """Create a new user"""
         try:
             password_hash = self.hash_password(password)
@@ -127,9 +128,9 @@ class AuthDatabase:
             with self.get_connection() as conn:
                 cursor = conn.cursor()
                 cursor.execute("""
-                    INSERT INTO users (email, password_hash, name, role)
-                    VALUES (?, ?, ?, ?)
-                """, (email, password_hash, name, role))
+                    INSERT INTO users (email, password_hash, name, role, google_app_password)
+                    VALUES (?, ?, ?, ?, ?)
+                """, (email, password_hash, name, role, google_app_password))
                 
                 user_id = cursor.lastrowid
                 conn.commit()
@@ -144,7 +145,7 @@ class AuthDatabase:
             cursor = conn.cursor()
             cursor.execute("""
                 SELECT id, email, password_hash, name, role, is_active, 
-                       created_at, last_login, failed_login_attempts, locked_until
+                       created_at, last_login, failed_login_attempts, locked_until, google_app_password
                 FROM users 
                 WHERE email = ?
             """, (email,))

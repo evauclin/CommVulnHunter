@@ -35,6 +35,15 @@ import html
 from fastapi import Request
 from fastapi.responses import JSONResponse
 import time
+import sys
+sys.path.append(os.path.join(os.path.dirname(__file__), '..', 'src', 'utils'))
+
+try:
+    from gmail_fetcher import fetch_emails_from_gmail, validate_gmail_credentials
+except ImportError:
+    print("⚠️ Module gmail_fetcher non trouvé - fonctionnalité Gmail désactivée")
+    fetch_emails_from_gmail = None
+    validate_gmail_credentials = None
 
 
 
@@ -110,7 +119,7 @@ def clean_input_field(text: str) -> str:
 def get_raw_email_from_csv(email_id: str) -> dict:
     """Récupère les données brutes d'un email depuis le fichier CSV"""
     print(f"🔍 Recherche du fichier CSV pour email ID: {email_id}")
-    
+
     # Essayer plusieurs emplacements possibles (volume partagé en priorité)
     possible_paths = [
         Path("/shared/data/emails_live.csv"),  # Volume partagé Docker
@@ -118,7 +127,7 @@ def get_raw_email_from_csv(email_id: str) -> dict:
         Path("./src/pages/emails_live.csv"),   # Dossier src/pages
         Path("/app/emails_live.csv"),          # Dans le container
     ]
-    
+
     csv_path = None
     for path in possible_paths:
         print(f"🔍 Vérification: {path} - Existe: {path.exists()}")
@@ -126,7 +135,7 @@ def get_raw_email_from_csv(email_id: str) -> dict:
             csv_path = path
             print(f"✅ Fichier trouvé: {csv_path}")
             break
-    
+
     if csv_path is None:
         print(f"❌ Aucun fichier CSV trouvé")
         # Lister le contenu des dossiers pour debug
@@ -138,20 +147,20 @@ def get_raw_email_from_csv(email_id: str) -> dict:
                     print(f"📁 Contenu de {check_dir}: {[f.name for f in files]}")
             except:
                 print(f"📁 Impossible de lire {check_dir}")
-        
+
         raise HTTPException(status_code=404, detail=f"Fichier emails_live.csv non trouvé dans: {[str(p) for p in possible_paths]}")
-    
+
     try:
         df = pd.read_csv(csv_path)
-        
+
         # Chercher l'email par ID
         email_row = df[df['id'] == email_id]
-        
+
         if email_row.empty:
             raise HTTPException(status_code=404, detail=f"Email avec ID {email_id} non trouvé")
-        
+
         row = email_row.iloc[0]
-        
+
         # Retourner les données brutes SANS nettoyage
         return {
             'id': row['id'],
@@ -160,7 +169,7 @@ def get_raw_email_from_csv(email_id: str) -> dict:
             'body': str(row['body']) if not pd.isna(row['body']) else "",
             'type': row['type'] if 'type' in row else 'unknown'
         }
-        
+
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Erreur lecture CSV: {str(e)}")
 
@@ -439,8 +448,37 @@ class FeedbackByIdInput(BaseModel):
 
 
 
+class GmailCredentials(BaseModel):
+    username: str
+    password: str
 
-# --- Fonctions de Prétraitement (IDENTIQUES) ---
+    class Config:
+        json_schema_extra = {
+            "example": {
+                "username": "votre@gmail.com",
+                "password": "votre_mot_de_passe_application"
+            }
+        }
+
+
+class GmailFetchRequest(BaseModel):
+    username: str
+    password: str
+    max_emails: Optional[int] = 50
+    include_spam: Optional[bool] = True
+
+    class Config:
+        json_schema_extra = {
+            "example": {
+                "username": "votre@gmail.com",
+                "password": "votre_mot_de_passe_application",
+                "max_emails": 50,
+                "include_spam": True
+            }
+        }
+
+
+# --- Fonctions de Prétraitement ---
 def preprocess_text(text: str, language: str):
     """Specialized and multilingual text preprocessing."""
     if pd.isna(text):
@@ -967,7 +1005,7 @@ def health_check():
 def predict(item: TextInput):
     """Analyze text with standard method (compatibility mode)"""
     print(f"⚠️ ANCIEN ENDPOINT /predict APPELÉ avec texte de {len(item.text)} chars")
-    
+
     if not model:
         raise HTTPException(status_code=503, detail="Modèle non disponible")
 
@@ -984,30 +1022,30 @@ def predict(item: TextInput):
 def predict_by_email_id(item: EmailIDInput):
     """Analyze email using raw data directly from CSV file"""
     print(f"🎯 ENDPOINT /predict/email-id APPELÉ avec ID: {item.email_id}")
-    
+
     if not model:
         raise HTTPException(status_code=503, detail="Modèle non disponible")
 
     try:
         # Récupérer les données brutes depuis le CSV
         email_data = get_raw_email_from_csv(item.email_id)
-        
+
         # Créer le texte combiné avec les données BRUTES
         raw_text = f"From: {email_data['from']}\nSubject: {email_data['subject']}\nBody: {email_data['body']}"
-        
+
         print(f"🔍 RAW EMAIL ID {item.email_id} - INPUT (1000 chars):")
         print(f"'{raw_text[:1000]}'")
         print(f"Total length: {len(raw_text)}")
-        
+
         # Prédiction avec les données brutes
         result = perform_prediction(raw_text)
-        
+
         # Ajouter l'ID de l'email dans la réponse
         result['email_id'] = item.email_id
         result['data_source'] = 'raw_csv'
-        
+
         return result
-        
+
     except HTTPException:
         raise
     except Exception as e:
@@ -1506,6 +1544,122 @@ def get_model_status():
             "check_timestamp": datetime.now().isoformat()
         }
 
+
+# --- Endpoints Gmail ---
+
+@app.post("/gmail/validate", summary="Valider les identifiants Gmail")
+async def validate_gmail(credentials: GmailCredentials):
+    """
+    Valide les identifiants Gmail sans récupérer les emails
+    """
+    if not validate_gmail_credentials:
+        raise HTTPException(status_code=503, detail="Fonctionnalité Gmail non disponible")
+
+    try:
+        success, message = validate_gmail_credentials(credentials.username, credentials.password)
+
+        if success:
+            return {
+                "status": "success",
+                "message": message,
+                "username": credentials.username
+            }
+        else:
+            raise HTTPException(status_code=401, detail=message)
+
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Erreur de validation: {str(e)}")
+
+
+@app.post("/gmail/fetch", summary="Récupérer les emails depuis Gmail")
+async def fetch_gmail_emails(request: GmailFetchRequest, background_tasks: BackgroundTasks):
+    """
+    Récupère les emails depuis Gmail et les sauvegarde dans emails_live.csv et emails_live.json
+    """
+    if not fetch_emails_from_gmail:
+        raise HTTPException(status_code=503, detail="Fonctionnalité Gmail non disponible")
+
+    try:
+        # Valider d'abord les identifiants
+        if validate_gmail_credentials:
+            valid, validation_message = validate_gmail_credentials(request.username, request.password)
+            if not valid:
+                raise HTTPException(status_code=401, detail=validation_message)
+
+        # Lancer la récupération en arrière-plan
+        def fetch_emails_task():
+            success, message, emails_data = fetch_emails_from_gmail(request.username, request.password)
+            if success:
+                print(f"✅ Emails récupérés avec succès: {len(emails_data)} emails")
+                # Hash de l'email pour identifier le dossier
+                email_hash = hashlib.md5(request.username.encode()).hexdigest()[:12]
+                print(f"📁 Emails sauvegardés dans: src/pages/emails/{email_hash}")
+            else:
+                print(f"❌ Erreur récupération emails: {message}")
+
+        background_tasks.add_task(fetch_emails_task)
+
+        return {
+            "status": "started",
+            "message": "Récupération des emails démarrée en arrière-plan",
+            "username": request.username,
+            "max_emails": request.max_emails,
+            "include_spam": request.include_spam
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Erreur lors de la récupération: {str(e)}")
+
+
+@app.get("/gmail/status", summary="Statut de la récupération Gmail")
+async def gmail_status():
+    """
+    Vérifie le statut des fichiers emails_live.csv et emails_live.json
+    """
+    try:
+        csv_path = Path("src/pages/emails_live.csv")
+        json_path = Path("src/pages/emails_live.json")
+
+        csv_exists = csv_path.exists()
+        json_exists = json_path.exists()
+
+        csv_modified = None
+        json_modified = None
+        total_emails = 0
+
+        if csv_exists:
+            csv_modified = datetime.fromtimestamp(csv_path.stat().st_mtime).isoformat()
+            # Compter les lignes du CSV (moins 1 pour le header)
+            try:
+                with open(csv_path, 'r', encoding='utf-8') as f:
+                    total_emails = sum(1 for line in f) - 1
+            except:
+                total_emails = 0
+
+        if json_exists:
+            json_modified = datetime.fromtimestamp(json_path.stat().st_mtime).isoformat()
+
+        return {
+            "csv_file": {
+                "exists": csv_exists,
+                "path": str(csv_path),
+                "last_modified": csv_modified,
+                "total_emails": total_emails
+            },
+            "json_file": {
+                "exists": json_exists,
+                "path": str(json_path),
+                "last_modified": json_modified
+            },
+            "check_timestamp": datetime.now().isoformat()
+        }
+
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Erreur lors de la vérification: {str(e)}")
+
+
 @app.post("/process-csv", summary="Process CSV file with ML predictions")
 async def process_csv_file(file: UploadFile = File(...)):
     """
@@ -1573,7 +1727,7 @@ async def process_csv_file(file: UploadFile = File(...)):
                     from_field = str(row['from']) if not pd.isna(row['from']) else ""
                     subject_field = str(row['subject']) if not pd.isna(row['subject']) else ""
                     body_field = str(row['body']) if not pd.isna(row['body']) else ""
-                    
+
                     # Créer le texte combiné pour l'analyse (même format que l'interface web)
                     combined_text = f"From: {from_field}\nSubject: {subject_field}\nBody: {body_field}".strip()
 
