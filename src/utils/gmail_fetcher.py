@@ -1,6 +1,6 @@
 """
-email_fetcher_csv.py - Version corrigée
-Script pour récupérer les emails depuis Gmail et les sauvegarder au format CSV
+gmail_fetcher.py - Module pour récupérer les emails depuis Gmail
+Adapté pour accepter les identifiants utilisateur
 """
 
 import imaplib
@@ -10,69 +10,89 @@ from email.utils import parsedate_to_datetime
 import os
 import csv
 import json
-import random
-from datetime import datetime
-from dotenv import load_dotenv
 import re
+from datetime import datetime
+import hashlib
 
-# Charger les variables d'environnement
-load_dotenv()
 
-
-def fetch_emails_from_gmail():
-    """Récupère les emails depuis Gmail et les formate en CSV"""
-
-    # Configuration Gmail
-    username = os.getenv("EMAIL_USERNAME", "")
-    password = os.getenv("EMAIL_PASSWORD", "")
-
+def fetch_emails_from_gmail(username, password):
+    """
+    Fetch emails from Gmail using provided credentials
+    
+    Args:
+        username (str): Gmail address
+        password (str): Gmail app password
+        
+    Returns:
+        tuple: (success: bool, message: str, emails_data: list)
+    """
+    
     try:
         # Connexion à Gmail
-        print("🔌 Connexion à Gmail...")
+        print(f"🔌 Connexion à Gmail pour {username}...")
         mail = imaplib.IMAP4_SSL("imap.gmail.com")
         mail.login(username, password)
-        print(" Connexion réussie")
+        print("✅ Connexion réussie")
 
         emails_data = []
 
         # 1. Récupérer les emails importants (boîte de réception)
         mail.select("INBOX")
         status, messages = mail.search(None, "ALL")
-        email_ids = messages[0].split()[-50:]  # 50 derniers emails
+        
+        if messages[0]:
+            email_ids = messages[0].split()[-50:]  # 50 derniers emails
+            print(f"📥 Récupération de {len(email_ids)} emails de la boîte de réception...")
 
-        for email_id in email_ids:
-            email_data = process_email(mail, email_id, "IMPORTANT")
-            if email_data:
-                emails_data.append(email_data)
+            for i, email_id in enumerate(email_ids):
+                email_data = process_email(mail, email_id, "IMPORTANT")
+                if email_data:
+                    emails_data.append(email_data)
+                
+                # Progress indicator
+                if (i + 1) % 10 == 0:
+                    print(f"   ... {i + 1}/{len(email_ids)} emails traités")
 
         # 2. Récupérer les spams
         try:
             mail.select("[Gmail]/Spam")
             status, messages = mail.search(None, "ALL")
-            spam_ids = messages[0].split()[-25:]  # 25 derniers spams
+            
+            if messages[0]:
+                spam_ids = messages[0].split()[-25:]  # 25 derniers spams
+                print(f"🗑️ Récupération de {len(spam_ids)} spams...")
 
-            for email_id in spam_ids:
-                email_data = process_email(mail, email_id, "SPAM")
-                if email_data:
-                    emails_data.append(email_data)
-        except:
-            print("⚠️ Impossible d'accéder aux spams")
+                for email_id in spam_ids:
+                    email_data = process_email(mail, email_id, "SPAM")
+                    if email_data:
+                        emails_data.append(email_data)
+        except Exception as e:
+            print(f"⚠️ Impossible d'accéder aux spams: {e}")
 
         mail.logout()
 
         # Générer les fichiers CSV et JSON
-        generate_csv_files(emails_data)
+        success_files = generate_csv_files(emails_data, username)
+        
+        if success_files:
+            message = f"✅ {len(emails_data)} emails récupérés et sauvegardés"
+            print(message)
+            return True, message, emails_data
+        else:
+            return False, "Erreur lors de la génération des fichiers", []
 
-        print(f" {len(emails_data)} emails récupérés et sauvegardés en CSV")
-        return emails_data
-
+    except imaplib.IMAP4.error as e:
+        error_msg = f"Erreur de connexion IMAP: {str(e)}"
+        print(f"❌ {error_msg}")
+        return False, error_msg, []
     except Exception as e:
-        print(f" Erreur: {e}")
-        return []
+        error_msg = f"Erreur: {str(e)}"
+        print(f"❌ {error_msg}")
+        return False, error_msg, []
 
 
 def process_email(mail, email_id, email_type):
-    """Traite un email individuel"""
+    """Process an individual email"""
     try:
         res, msg_data = mail.fetch(email_id, "(RFC822)")
         for response_part in msg_data:
@@ -99,20 +119,18 @@ def process_email(mail, email_id, email_type):
                     "processed_at": datetime.now().isoformat(),
                 }
     except Exception as e:
-        print(f" Erreur traitement email: {e}")
+        print(f"⚠️ Erreur traitement email: {e}")
         return None
 
 
 def generate_email_id(from_addr, subject, date_str):
-    """Génère un ID unique pour l'email"""
-    import hashlib
-
+    """Generate a unique ID for the email"""
     content = f"{from_addr}-{subject}-{date_str}"
     return hashlib.md5(content.encode()).hexdigest()[:12]
 
 
 def decode_header_text(header_value):
-    """Décode un en-tête d'email"""
+    """Decode an email header"""
     if not header_value:
         return ""
 
@@ -133,7 +151,7 @@ def decode_header_text(header_value):
 
 
 def clean_text_for_csv(text):
-    """Nettoie le texte pour le format CSV"""
+    """Clean text for CSV format"""
     if not text:
         return ""
 
@@ -150,7 +168,7 @@ def clean_text_for_csv(text):
 
 
 def format_date(date_str):
-    """Formate la date pour CSV"""
+    """Format date for CSV"""
     try:
         if date_str:
             date_obj = parsedate_to_datetime(date_str)
@@ -162,7 +180,7 @@ def format_date(date_str):
 
 
 def extract_body(msg):
-    """Extrait le corps de l'email"""
+    """Extract email body"""
     body = ""
     try:
         if msg.is_multipart():
@@ -200,9 +218,7 @@ def extract_body(msg):
 
 
 def extract_text_from_html(html_content):
-    """Extrait le texte du contenu HTML"""
-    import re
-
+    """Extract text from HTML content"""
     # Supprimer les scripts et styles
     html_content = re.sub(
         r"<script[^>]*>.*?</script>", "", html_content, flags=re.DOTALL | re.IGNORECASE
@@ -224,22 +240,22 @@ def extract_text_from_html(html_content):
     return text
 
 
-def generate_csv_files(emails_data):
-    """Génère les fichiers CSV et JSON - VERSION CORRIGÉE
+def generate_csv_files(emails_data, username=None):
+    """Generate CSV and JSON files"""
     
-    Note: Ce fichier est obsolète - utiliser gmail_fetcher.py à la place
-    Structure mise à jour: src/pages/emails/{hash}/emails_live.csv
-    """
-
-    output_dir = "src/pages"
+    # Créer le hash de l'email pour le nom du dossier
+    if username:
+        email_hash = hashlib.md5(username.encode()).hexdigest()[:12]
+        output_dir = os.path.join("src", "pages", "emails", email_hash)
+    else:
+        output_dir = "src/pages"
+    
     os.makedirs(output_dir, exist_ok=True)
 
     csv_file_path = os.path.join(output_dir, "emails_live.csv")
     json_file_path = os.path.join(output_dir, "emails_live.json")
 
-    print(f" Génération des fichiers dans: {output_dir}")
-    print(f" CSV: {csv_file_path}")
-    print(f" JSON: {json_file_path}")
+    print(f"📁 Génération des fichiers dans: {output_dir}")
 
     # 1. Fichier CSV principal
     fieldnames = [
@@ -264,7 +280,7 @@ def generate_csv_files(emails_data):
             for email_data in emails_data:
                 writer.writerow(email_data)
 
-        print(f" Fichier CSV généré: {csv_file_path}")
+        print(f"✅ Fichier CSV généré: {csv_file_path}")
 
         # 2. Fichier JSON (pour compatibilité et backup)
         json_data = {
@@ -278,17 +294,20 @@ def generate_csv_files(emails_data):
         with open(json_file_path, "w", encoding="utf-8") as f:
             json.dump(json_data, f, ensure_ascii=False, indent=2)
 
-        print(f" Fichier JSON généré: {json_file_path}")
+        print(f"✅ Fichier JSON généré: {json_file_path}")
 
         # 3. Génération des statistiques
         generate_statistics(emails_data, output_dir)
+        
+        return True
 
     except Exception as e:
-        print(f"Erreur génération fichiers: {e}")
+        print(f"❌ Erreur génération fichiers: {e}")
+        return False
 
 
 def generate_statistics(emails_data, output_dir):
-    """Génère un fichier de statistiques"""
+    """Generate statistics file"""
 
     stats = {
         "total_emails": len(emails_data),
@@ -320,7 +339,7 @@ def generate_statistics(emails_data, output_dir):
     with open(stats_file, "w", encoding="utf-8") as f:
         json.dump(stats, f, ensure_ascii=False, indent=2)
 
-    print(f" Statistiques générées: {stats_file}")
+    print(f"📊 Statistiques générées: {stats_file}")
 
     # Afficher un résumé
     print("\n📊 Résumé:")
@@ -330,16 +349,19 @@ def generate_statistics(emails_data, output_dir):
     print(f"   Taux de réussite: {stats['success_rate']}%")
 
 
-if __name__ == "__main__":
-    print("📧 Récupération des emails depuis Gmail (Version CSV)...")
-
-    # Vérification de la configuration
-    if not os.getenv("EMAIL_PASSWORD"):
-        print("Configuration manquante!")
-        print("Créez un fichier .env avec:")
-        print("EMAIL_USERNAME=votre@gmail.com")
-        print("EMAIL_PASSWORD=votre_mot_de_passe_application")
-        exit(1)
-
-    emails = fetch_emails_from_gmail()
-    print("Terminé!")
+def validate_gmail_credentials(username, password):
+    """
+    Validate Gmail credentials without fetching emails
+    
+    Returns:
+        tuple: (success: bool, message: str)
+    """
+    try:
+        mail = imaplib.IMAP4_SSL("imap.gmail.com")
+        mail.login(username, password)
+        mail.logout()
+        return True, "Identifiants Gmail valides"
+    except imaplib.IMAP4.error as e:
+        return False, f"Identifiants Gmail invalides: {str(e)}"
+    except Exception as e:
+        return False, f"Erreur de connexion: {str(e)}"

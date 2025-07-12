@@ -1,6 +1,7 @@
 version: '3.8'
 
 services:
+  # API ML existante
   fastapi:
     build:
       context: .
@@ -20,25 +21,28 @@ services:
       - "9000:9000"
     environment:
       - PYTHONUNBUFFERED=1
-    restart: unless-stopped
     volumes:
       # Monter le dossier src/pages pour accéder aux CSV
       - ./src/pages:/shared/data:ro  # ro = read-only
       # Monter aussi le fichier CSV directement si nécessaire
       - ./emails_live.csv:/app/emails_live.csv:ro
       - auth_data:/app/auth_system/data
+      - emails_data:/app/src/pages/emails
+    restart: unless-stopped
     healthcheck:
       test: ["CMD", "python", "-c", "import requests; requests.get('http://localhost:9000/auth/health')"]
       interval: 30s
       timeout: 10s
       retries: 3
 
+  # Service web avec authentification
   web:
     build:
       context: .
       dockerfile: Dockerfile_web
     ports:
       - "8080:80"
+
     depends_on:
       - fastapi
       - auth
@@ -47,3 +51,4 @@ services:
       - ./src/pages:/shared/data:ro
       # Permettre à nginx de servir les fichiers CSV aussi
       - ./emails_live.csv:/usr/share/nginx/html/emails_live.csv:ro
+      - emails_data:/usr/share/nginx/html/pages/emails

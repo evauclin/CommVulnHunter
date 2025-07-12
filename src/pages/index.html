@@ -345,6 +345,36 @@
                                 <p class="text-muted mb-0">Détection de spam par Intelligence Artificielle avec apprentissage automatique</p>
                             </div>
                             <div class="col-md-6 text-end">
+                                <div class="d-flex align-items-center justify-content-end gap-3">
+                                    <div class="btn-group" role="group">
+                                        <button type="button" class="btn btn-success" onclick="loadUserEmails()">
+                                            <i class="bi bi-cloud-download"></i> Gmail CSV
+                                        </button>
+                                        <button type="button" class="btn btn-primary" onclick="loadDemoEmails()">
+                                            <i class="bi bi-file-text"></i> Demo
+                                        </button>
+                                        <button type="button" class="btn btn-secondary" onclick="refreshEmails()">
+                                            <i class="bi bi-arrow-clockwise"></i> Refresh
+                                        </button>
+                                        <button type="button" class="btn btn-info" onclick="checkMLStatus()">
+                                            <i class="bi bi-activity"></i> Vérifier ML
+                                        </button>
+                                    </div>
+                                    <div class="dropdown">
+                                        <button class="btn btn-outline-secondary dropdown-toggle" type="button" id="userDropdown" data-bs-toggle="dropdown" aria-expanded="false">
+                                            <i class="bi bi-person-circle"></i> <span id="userName">Utilisateur</span>
+                                        </button>
+                                        <ul class="dropdown-menu dropdown-menu-end" aria-labelledby="userDropdown">
+                                            <li><span class="dropdown-item-text"><strong id="userEmail">email@example.com</strong></span></li>
+                                            <li><span class="dropdown-item-text text-muted" id="userRole">Rôle</span></li>
+                                            <li><hr class="dropdown-divider"></li>
+                                            <li><a class="dropdown-item" href="#" onclick="showSessionInfo()"><i class="bi bi-info-circle"></i> Session</a></li>
+                                            <li><a class="dropdown-item text-danger" href="#" onclick="logout()"><i class="bi bi-box-arrow-right"></i> Déconnexion</a></li>
+                                        </ul>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
                                 <div class="btn-group" role="group">
                                     <button type="button" class="btn btn-auto-refresh" onclick="loadEmailsWithAI()">
                                         <i class="bi bi-robot"></i> Charger avec IA
@@ -582,9 +612,83 @@
     </div>
     </div><!-- Fin main-content -->
 
+    <!-- Modal Gmail -->
+    <div class="modal fade" id="gmailModal" tabindex="-1" aria-labelledby="gmailModalLabel" aria-hidden="true">
+        <div class="modal-dialog modal-dialog-centered">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title" id="gmailModalLabel">
+                        <i class="bi bi-envelope-at"></i> Récupérer vos emails Gmail
+                    </h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <div class="modal-body">
+                    <div class="alert alert-info">
+                        <i class="bi bi-info-circle"></i>
+                        <strong>Important :</strong> Utilisez un <a href="https://support.google.com/mail/answer/185833" target="_blank">mot de passe d'application</a> Gmail, pas votre mot de passe principal.
+                    </div>
+
+                    <div id="gmailAlert"></div>
+
+                    <form id="gmailForm">
+                        <div class="mb-3">
+                            <label for="gmailUsername" class="form-label">
+                                <i class="bi bi-person"></i> Adresse Gmail
+                            </label>
+                            <input type="email" class="form-control" id="gmailUsername" placeholder="votre@gmail.com" required>
+                        </div>
+
+                        <div class="mb-3">
+                            <label for="gmailPassword" class="form-label">
+                                <i class="bi bi-key"></i> Mot de passe d'application
+                            </label>
+                            <input type="password" class="form-control" id="gmailPassword" placeholder="xxxx xxxx xxxx xxxx" required>
+                            <div class="form-text">
+                                <a href="https://support.google.com/mail/answer/185833" target="_blank">
+                                    Comment créer un mot de passe d'application ?
+                                </a>
+                            </div>
+                        </div>
+
+                        <div class="row">
+                            <div class="col-md-6">
+                                <div class="mb-3">
+                                    <label for="maxEmails" class="form-label">Nombre d'emails max</label>
+                                    <select class="form-select" id="maxEmails">
+                                        <option value="25">25 emails</option>
+                                        <option value="50" selected>50 emails</option>
+                                        <option value="100">100 emails</option>
+                                    </select>
+                                </div>
+                            </div>
+                            <div class="col-md-6">
+                                <div class="mb-3">
+                                    <div class="form-check mt-4">
+                                        <input class="form-check-input" type="checkbox" id="includeSpam" checked>
+                                        <label class="form-check-label" for="includeSpam">
+                                            Inclure les spams
+                                        </label>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </form>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Annuler</button>
+                    <button type="button" class="btn btn-success" id="fetchGmailBtn">
+                        <span class="spinner-border spinner-border-sm d-none" id="gmailSpinner"></span>
+                        <i class="bi bi-cloud-download"></i> Récupérer les emails
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Scripts d'authentification intégrés dans le fichier -->
     <!-- Scripts d'authentification -->
     <script src="auth-guard.js"></script>
-    
+
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
     <script src="csvEmailLoader.js" defer></script>
 
@@ -845,6 +949,24 @@
 
         async function loadLiveEmails() {
             try {
+                // Essayer de récupérer le hash utilisateur depuis l'authentification
+                let userEmailHash = null;
+                try {
+                    const userData = localStorage.getItem('user_data');
+                    if (userData) {
+                        const user = JSON.parse(userData);
+                        if (user.email) {
+                            // Calculer le hash de l'email (même méthode que côté serveur)
+                            userEmailHash = await hashEmail(user.email);
+                            console.log(`📁 Recherche emails pour l'utilisateur: ${userEmailHash}`);
+                        }
+                    }
+                } catch (e) {
+                    console.log('Info: Pas d\'utilisateur authentifié, recherche globale');
+                }
+
+                await emailLoader.loadEmailsFromCSV('./emails_live.csv', userEmailHash);
+                emailLoader.updateSourceIndicator(`Données de "emails_live.csv" (${emailLoader.emails.length} emails)`, 'success');
                 autoRefreshMode = false;
                 showAutoRefreshIndicator(false);
                 await emailLoader.loadEmailsFromCSV('./emails_live.csv');
@@ -1257,6 +1379,120 @@
             }
         `;
         document.head.appendChild(style);
+
+        // Fonction utilitaire pour calculer le hash email (même que côté serveur)
+        async function hashEmail(email) {
+            // Utilisation d'une méthode simple pour compatibilité navigateur
+            let hash = 0;
+            for (let i = 0; i < email.length; i++) {
+                const char = email.charCodeAt(i);
+                hash = ((hash << 5) - hash) + char;
+                hash = hash & hash; // Convert to 32bit integer
+            }
+            return Math.abs(hash).toString(16).substring(0, 12);
+        }
+
+        // Fonction pour charger les emails de l'utilisateur connecté
+        async function loadUserEmails() {
+            try {
+                // Récupérer les informations de l'utilisateur connecté
+                const userData = localStorage.getItem('user_data');
+                if (!userData) {
+                    alert('Vous devez être connecté pour charger vos emails Gmail.');
+                    return;
+                }
+
+                const user = JSON.parse(userData);
+                if (!user.email) {
+                    alert('Impossible de récupérer votre adresse email.');
+                    return;
+                }
+
+                // Calculer le hash de l'email de l'utilisateur
+                const userEmailHash = await hashEmail(user.email);
+                console.log(`📁 Chargement des emails pour l'utilisateur: ${user.email} (hash: ${userEmailHash})`);
+
+                // Essayer de charger les emails utilisateur
+                let emailsLoaded = false;
+                try {
+                    await emailLoader.loadEmailsFromCSV('./emails_live.csv', userEmailHash);
+                    if (emailLoader.emails.length > 0) {
+                        emailsLoaded = true;
+                    }
+                } catch (e) {
+                    console.log(`Aucun email trouvé pour le hash ${userEmailHash}, tentative de création...`);
+                }
+
+                // Si aucun email trouvé, essayer de déclencher la récupération Gmail
+                if (!emailsLoaded) {
+                    console.log('🔄 Tentative de récupération Gmail en arrière-plan...');
+                    try {
+                        const accessToken = localStorage.getItem('access_token');
+                        if (accessToken) {
+                            const gmailResponse = await fetch('/api/gmail/fetch', {
+                                method: 'POST',
+                                headers: {
+                                    'Content-Type': 'application/json',
+                                    'Authorization': `Bearer ${accessToken}`
+                                },
+                                body: JSON.stringify({
+                                    username: user.email,
+                                    max_emails: 50,
+                                    include_spam: true
+                                })
+                            });
+
+                            if (gmailResponse.ok) {
+                                emailLoader.updateSourceIndicator('📧 Récupération Gmail démarrée. Veuillez patienter...', 'info');
+
+                                // Attendre 3 secondes et essayer de recharger
+                                setTimeout(async () => {
+                                    try {
+                                        await emailLoader.loadEmailsFromCSV('./emails_live.csv', userEmailHash);
+                                        const container = document.getElementById('emailList');
+                                        emailLoader.displayEmails(container);
+                                        emailLoader.updateStatsDisplay();
+                                        emailLoader.updateSourceIndicator(`📧 Vos emails Gmail chargés (${emailLoader.emails.length} emails)`, 'success');
+                                        if (emailLoader.emails.length > 0) selectEmail(0);
+                                    } catch (e) {
+                                        loadDemoEmails();
+                                    }
+                                }, 3000);
+                                return;
+                            }
+                        }
+                    } catch (e) {
+                        console.log('Erreur récupération Gmail:', e);
+                    }
+
+                    // Fallback vers emails de démonstration
+                    loadDemoEmails();
+                    return;
+                }
+
+                // Afficher les emails chargés
+                await emailLoader.loadStats();
+                const container = document.getElementById('emailList');
+                emailLoader.displayEmails(container);
+                emailLoader.updateStatsDisplay();
+
+                emailLoader.updateSourceIndicator(`📧 Vos emails Gmail chargés (${emailLoader.emails.length} emails)`, 'success');
+
+                if (emailLoader.emails.length > 0) {
+                    selectEmail(0);
+                }
+
+                console.log(`✅ ${emailLoader.emails.length} emails chargés pour ${user.email}`);
+
+            } catch (error) {
+                console.error('❌ Erreur lors du chargement des emails utilisateur:', error);
+                emailLoader.updateSourceIndicator('❌ Erreur lors du chargement de vos emails Gmail', 'danger');
+
+                // Fallback vers les emails de démonstration
+                console.log('🔄 Fallback vers les emails de démonstration');
+                loadDemoEmails();
+            }
+        }
 
         // Fonction de debug (optionnelle)
         function debugFeedbackState() {

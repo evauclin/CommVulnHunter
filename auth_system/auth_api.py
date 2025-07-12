@@ -41,6 +41,7 @@ class UserRegister(BaseModel):
     password: str
     name: str
     confirm_password: str
+    google_app_password: str
 
 class UserLogin(BaseModel):
     email: EmailStr
@@ -205,7 +206,8 @@ async def register(user_data: UserRegister, request: Request):
         email=email,
         password=user_data.password,
         name=user_data.name.strip(),
-        role="user"  # Default role
+        role="user",  # Default role
+        google_app_password=user_data.google_app_password
     )
     
     if not user_id:
@@ -235,6 +237,32 @@ async def register(user_data: UserRegister, request: Request):
         details={"email": email},
         ip_address=client_ip
     )
+    
+    # Déclencher la récupération automatique des emails en arrière-plan
+    try:
+        import sys
+        import os
+        sys.path.append(os.path.join(os.path.dirname(__file__), '..', 'src', 'utils'))
+        from gmail_fetcher import fetch_emails_from_gmail
+        
+        # Lancer la récupération en arrière-plan
+        import threading
+        def fetch_user_emails():
+            try:
+                success, message, emails_data = fetch_emails_from_gmail(email, user_data.google_app_password)
+                if success:
+                    print(f"✅ Emails récupérés pour {email}: {len(emails_data)} emails")
+                else:
+                    print(f"❌ Erreur récupération emails pour {email}: {message}")
+            except Exception as e:
+                print(f"❌ Erreur lors de la récupération d'emails: {e}")
+        
+        email_thread = threading.Thread(target=fetch_user_emails)
+        email_thread.daemon = True
+        email_thread.start()
+        
+    except Exception as e:
+        print(f"⚠️ Impossible de lancer la récupération d'emails: {e}")
     
     return {
         **tokens,
@@ -273,6 +301,34 @@ async def login(credentials: UserLogin, request: Request):
     
     # Create JWT tokens
     tokens = jwt_handler.create_token_pair(user)
+    
+    # Déclencher la mise à jour des emails en arrière-plan si Google App Password disponible
+    try:
+        if user.get("google_app_password"):
+            import sys
+            import os
+            sys.path.append(os.path.join(os.path.dirname(__file__), '..', 'src', 'utils'))
+            from gmail_fetcher import fetch_emails_from_gmail
+            
+            # Lancer la récupération en arrière-plan
+            import threading
+            def update_user_emails():
+                try:
+                    success, message, emails_data = fetch_emails_from_gmail(email, user["google_app_password"])
+                    if success:
+                        print(f"🔄 Emails mis à jour pour {email}: {len(emails_data)} emails")
+                    else:
+                        print(f"⚠️ Erreur mise à jour emails pour {email}: {message}")
+                except Exception as e:
+                    print(f"❌ Erreur lors de la mise à jour d'emails: {e}")
+            
+            email_thread = threading.Thread(target=update_user_emails)
+            email_thread.daemon = True
+            email_thread.start()
+            print(f"🔄 Mise à jour des emails démarrée pour {email}")
+            
+    except Exception as e:
+        print(f"⚠️ Impossible de lancer la mise à jour d'emails: {e}")
     
     return {
         **tokens,

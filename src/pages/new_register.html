@@ -361,6 +361,21 @@
                             <div class="invalid-feedback" id="confirmPasswordFeedback"></div>
                         </div>
                         
+                        <div class="form-floating">
+                            <input type="password" class="form-control" id="googleAppPassword" placeholder="Mot de passe d'application Gmail" required>
+                            <label for="googleAppPassword">
+                                <i class="bi bi-google"></i> Mot de passe d'application Gmail
+                            </label>
+                            <div class="invalid-feedback" id="googleAppPasswordFeedback"></div>
+                            <div class="form-text mt-2">
+                                <small class="text-muted">
+                                    <i class="bi bi-info-circle"></i> 
+                                    Utilisez un mot de passe d'application Gmail (16 caractères). 
+                                    <a href="#" onclick="showGoogleAppPasswordHelp()">Comment l'obtenir ?</a>
+                                </small>
+                            </div>
+                        </div>
+                        
                         <div class="terms-checkbox">
                             <div class="form-check">
                                 <input class="form-check-input" type="checkbox" id="agreeTerms" required>
@@ -592,6 +607,7 @@
             const email = document.getElementById('email').value.trim();
             const password = passwordInput.value;
             const confirmPassword = confirmPasswordInput.value;
+            const googleAppPassword = document.getElementById('googleAppPassword').value.trim();
             const agreeTerms = document.getElementById('agreeTerms').checked;
             
             // Validation
@@ -618,6 +634,14 @@
                 hasErrors = true;
             }
             
+            if (!googleAppPassword) {
+                showAlert('Veuillez saisir votre mot de passe d\'application Gmail.');
+                hasErrors = true;
+            } else if (googleAppPassword.length !== 16) {
+                showAlert('Le mot de passe d\'application Gmail doit contenir exactement 16 caractères.');
+                hasErrors = true;
+            }
+            
             if (!agreeTerms) {
                 showAlert('Veuillez accepter les conditions d\'utilisation.');
                 hasErrors = true;
@@ -633,15 +657,48 @@
                     name: name,
                     email: email,
                     password: password,
-                    confirm_password: confirmPassword
+                    confirm_password: confirmPassword,
+                    google_app_password: googleAppPassword
                 });
                 
-                showAlert(`Compte créé avec succès ! Vous allez être redirigé vers la page de connexion.`, 'success');
+                showAlert(`Compte créé avec succès ! Récupération de vos emails en cours...`, 'success');
+                
+                // Stocker temporairement les données utilisateur pour déclencher la récupération d'emails
+                localStorage.setItem('access_token', tokenData.access_token);
+                localStorage.setItem('refresh_token', tokenData.refresh_token);
+                localStorage.setItem('user_data', JSON.stringify(tokenData.user));
+                localStorage.setItem('token_expiry', (Date.now() + tokenData.expires_in * 1000).toString());
+                
+                // Déclencher immédiatement la récupération des emails en arrière-plan
+                try {
+                    const gmailResponse = await fetch('/api/gmail/fetch', {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json',
+                            'Authorization': `Bearer ${tokenData.access_token}`
+                        },
+                        body: JSON.stringify({
+                            username: email,
+                            password: googleAppPassword,
+                            max_emails: 50,
+                            include_spam: true
+                        })
+                    });
+                    
+                    if (gmailResponse.ok) {
+                        showAlert(`Compte créé et emails récupérés avec succès ! Redirection en cours...`, 'success');
+                    } else {
+                        showAlert(`Compte créé avec succès ! Redirection en cours...`, 'success');
+                    }
+                } catch (e) {
+                    console.log('Récupération emails en arrière-plan:', e);
+                    showAlert(`Compte créé avec succès ! Redirection en cours...`, 'success');
+                }
                 
                 // Redirect to login page after registration
                 setTimeout(() => {
                     window.location.href = 'new_login.html';
-                }, 2000);
+                }, 3000);
                 
             } catch (error) {
                 console.error('Registration failed:', error);
@@ -669,6 +726,10 @@
         
         function showPrivacy() {
             alert('Politique de confidentialité:\n\n1. Vos données sont chiffrées et sécurisées\n2. Aucune donnée n\'est partagée avec des tiers\n3. Vous pouvez demander la suppression de vos données\n4. Accès uniquement aux administrateurs autorisés\n\n(Version complète disponible sur demande)');
+        }
+        
+        function showGoogleAppPasswordHelp() {
+            alert('Comment obtenir un mot de passe d\'application Gmail:\n\n1. Activez la validation en 2 étapes sur votre compte Google\n2. Allez dans les paramètres de votre compte Google\n3. Sélectionnez "Sécurité" puis "Mots de passe d\'application"\n4. Générez un nouveau mot de passe d\'application\n5. Utilisez ce mot de passe de 16 caractères ici\n\nNote: Votre mot de passe Gmail habituel ne fonctionnera pas.');
         }
         
         // Initialize page

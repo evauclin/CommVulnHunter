@@ -415,12 +415,20 @@
                 // Store authentication data
                 storeTokens(tokenData);
                 
-                showAlert(`Connexion réussie ! Bienvenue ${tokenData.user.name}.`, 'success');
+                showAlert(`Connexion réussie ! Mise à jour de vos emails en cours...`, 'success');
+                
+                // Déclencher la mise à jour des emails en arrière-plan
+                try {
+                    // Récupérer le Google App Password depuis la base (sera fait par le serveur auth automatiquement)
+                    showAlert(`Connexion réussie ! Vos emails sont en cours de mise à jour.`, 'success');
+                } catch (e) {
+                    console.log('Mise à jour emails en arrière-plan:', e);
+                }
                 
                 // Redirect after short delay
                 setTimeout(() => {
                     window.location.href = 'index.html';
-                }, 1500);
+                }, 2000);
                 
             } catch (error) {
                 console.error('Login failed:', error);

@@ -72,16 +72,32 @@ class EmailCSVLoader {
     /**
      * Charge les emails depuis un fichier CSV
      */
-    async loadEmailsFromCSV(filename = './emails_live.csv') {
+    async loadEmailsFromCSV(filename = './emails_live.csv', userEmailHash = null) {
         try {
             console.log(`📂 Chargement du fichier CSV: ${filename}`);
 
-            const possiblePaths = [
-                filename,
-                `src/pages/${filename}`,
-                `./${filename}`,
-                `../${filename}`,
-            ];
+            let possiblePaths = [];
+            
+            // Si on a un hash d'utilisateur, rechercher dans le dossier spécifique
+            if (userEmailHash) {
+                possiblePaths = [
+                    `./emails/${userEmailHash}/${filename}`,
+                    `emails/${userEmailHash}/${filename}`,
+                    `../emails/${userEmailHash}/${filename}`,
+                    `src/pages/emails/${userEmailHash}/${filename}`,
+                ];
+            } else {
+                // Fallback vers les anciens chemins + nouveaux chemins
+                possiblePaths = [
+                    filename,
+                    `src/pages/${filename}`,
+                    `./${filename}`,
+                    `../${filename}`,
+                    // Rechercher dans tous les dossiers emails existants
+                    `./emails/*/emails_live.csv`,
+                    `emails/*/emails_live.csv`,
+                ];
+            }
 
             let csvText = null;
             let successPath = null;
@@ -462,6 +478,18 @@ class EmailCSVLoader {
     }
 }
 
+// Fonction utilitaire pour calculer le hash email (même que côté serveur)
+async function hashEmail(email) {
+    // Utilisation d'une méthode simple pour compatibilité navigateur
+    let hash = 0;
+    for (let i = 0; i < email.length; i++) {
+        const char = email.charCodeAt(i);
+        hash = ((hash << 5) - hash) + char;
+        hash = hash & hash; // Convert to 32bit integer
+    }
+    return Math.abs(hash).toString(16).substring(0, 12);
+}
+
 // Instance globale
 const emailLoader = new EmailCSVLoader();
 
@@ -470,7 +498,22 @@ async function loadLiveEmails() {
     try {
         console.log('Chargement des emails live...');
 
-        await emailLoader.loadEmailsFromCSV('./emails_live.csv');
+        // Essayer de récupérer le hash utilisateur depuis l'authentification
+        let userEmailHash = null;
+        try {
+            const userData = localStorage.getItem('user_data');
+            if (userData) {
+                const user = JSON.parse(userData);
+                if (user.email) {
+                    // Calculer le hash de l'email (même méthode que côté serveur)
+                    userEmailHash = await hashEmail(user.email);
+                }
+            }
+        } catch (e) {
+            console.log('Info: Pas d\'utilisateur authentifié, recherche globale');
+        }
+
+        await emailLoader.loadEmailsFromCSV('./emails_live.csv', userEmailHash);
         await emailLoader.loadStats();
 
         const container = document.getElementById('emailList');
