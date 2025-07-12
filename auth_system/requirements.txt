@@ -1,0 +1,40 @@
+# Authentication System Requirements
+
+# Core framework
+fastapi==0.104.1
+uvicorn[standard]==0.24.0
+
+# Database (sqlite3 inclus avec Python)
+
+# Password hashing
+bcrypt==4.1.2
+
+# JWT handling
+PyJWT==2.8.0
+
+# Email validation
+email-validator==2.1.0
+
+# CORS support (already included in FastAPI)
+# But explicitly listed for clarity
+# python-multipart==0.0.6
+
+# Data validation
+pydantic[email]==2.5.0
+
+# Type hints support
+typing-extensions==4.8.0
+
+# Security headers
+# Implemented directly in code
+
+# Rate limiting
+# Implemented with in-memory solution
+
+# Audit logging
+# Using built-in logging with JSON
+
+# Development dependencies (optional)
+# pytest==7.4.3
+# pytest-asyncio==0.21.1
+# httpx==0.25.2
