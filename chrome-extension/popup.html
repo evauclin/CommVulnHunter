@@ -2,20 +2,96 @@
 <html lang="fr">
 <head>
     <meta charset="UTF-8">
-    <title>Guardian Status</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Phishing Guardian</title>
     <link rel="stylesheet" href="popup.css">
 </head>
 <body>
+    <!-- En-tête -->
     <div class="header">
-        <h1>Phishing Guardian</h1>
-    </div>
-    <div class="content">
-        <div id="status-card" class="waiting">
-            <div id="status-icon" class="status-icon">?</div>
-            <div id="status-text" class="status-text">En attente...</div>
-            <div id="notification-content" class="notification-content" style="display: none;"></div>
+        <div class="header-content">
+            <div class="logo">🛡️</div>
+            <div class="header-text">
+                <h1>Phishing Guardian</h1>
+                <p class="subtitle">Protection IA contre le phishing</p>
+            </div>
         </div>
     </div>
+
+    <!-- Status principal -->
+    <div class="status-section">
+        <div id="status-card" class="status-card waiting">
+            <div class="status-header">
+                <div id="status-icon" class="status-icon">⏱️</div>
+                <div id="status-text" class="status-text">Initialisation...</div>
+            </div>
+            <div id="status-details" class="status-details">
+                En attente d'analyse...
+            </div>
+        </div>
+    </div>
+
+    <!-- Dernier scan -->
+    <div class="scan-section">
+        <h3>🔍 Dernière Analyse</h3>
+        <div id="last-scan" class="scan-card">
+            <div class="scan-info">
+                <div class="scan-subject">Aucune analyse récente</div>
+                <div class="scan-sender">-</div>
+                <div class="scan-time">-</div>
+            </div>
+            <div class="scan-result">
+                <div id="scan-status" class="scan-status unknown">?</div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Statistiques -->
+    <div class="stats-section">
+        <h3>📊 Statistiques</h3>
+        <div class="stats-grid">
+            <div class="stat-item">
+                <div class="stat-number" id="total-scanned">0</div>
+                <div class="stat-label">Analysés</div>
+            </div>
+            <div class="stat-item safe">
+                <div class="stat-number" id="safe-emails">0</div>
+                <div class="stat-label">Sûrs</div>
+            </div>
+            <div class="stat-item danger">
+                <div class="stat-number" id="phishing-detected">0</div>
+                <div class="stat-label">Phishing</div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Contrôles -->
+    <div class="controls-section">
+        <h3>⚙️ Contrôles</h3>
+        <div class="controls">
+            <button id="test-notification" class="btn btn-secondary">
+                🧪 Tester Notification
+            </button>
+            <button id="clear-data" class="btn btn-outline">
+                🗑️ Effacer Données
+            </button>
+        </div>
+    </div>
+
+    <!-- État de l'API -->
+    <div class="api-section">
+        <div class="api-status" id="api-status">
+            <div class="api-indicator" id="api-indicator">●</div>
+            <span id="api-text">API: Vérification...</span>
+        </div>
+    </div>
+
+    <!-- Footer -->
+    <div class="footer">
+        <div class="version">v3.0</div>
+        <div class="powered">Powered by IA</div>
+    </div>
+
     <script src="popup.js"></script>
 </body>
 </html>

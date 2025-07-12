@@ -1,21 +1,27 @@
 {
   "manifest_version": 3,
-  "name": "Guardian API (Gmail & Yahoo)",
-  "version": "2.2",
-  "description": "Analyse les notifications de Gmail et Yahoo avec une API.",
+  "name": "Phishing Guardian - Auto Mail Detector",
+  "version": "3.0",
+  "description": "Détecte automatiquement les nouveaux mails Gmail/Yahoo et analyse le phishing avec IA",
+
   "permissions": [
     "notifications",
     "storage",
     "scripting",
-    "tabs"
+    "tabs",
+    "activeTab"
   ],
+
   "host_permissions": [
     "https://mail.google.com/*",
-    "https://*.mail.yahoo.com/*"
+    "https://*.mail.yahoo.com/*",
+    "http://localhost:8000/*"
   ],
+
   "background": {
     "service_worker": "background.js"
   },
+
   "content_scripts": [
     {
       "matches": [
@@ -26,15 +32,21 @@
       "run_at": "document_start"
     }
   ],
+
   "action": {
-    "default_popup": "popup.html"
+    "default_popup": "popup.html",
+    "default_title": "Phishing Guardian"
   },
+
   "icons": {
-    "48": "icons/icon48.png"
+    "16": "icons/icon16.png",
+    "48": "icons/icon48.png",
+    "128": "icons/icon128.png"
   },
+
   "web_accessible_resources": [
     {
-      "resources": ["interceptor.js"],
+      "resources": ["mail-detector.js"],
       "matches": [
         "https://mail.google.com/*",
         "https://*.mail.yahoo.com/*"
