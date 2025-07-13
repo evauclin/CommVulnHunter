@@ -1,347 +1,119 @@
-/* popup.css - Style pour Phishing Guardian */
+/* ... (votre CSS existant) ... */
 
-* {
-    margin: 0;
-    padding: 0;
-    box-sizing: border-box;
-}
-
-body {
-    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
-    width: 380px;
-    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-    color: #333;
-    line-height: 1.4;
-}
-
-/* === EN-TÊTE === */
-.header {
-    background: rgba(255, 255, 255, 0.1);
-    backdrop-filter: blur(10px);
-    color: white;
-    padding: 20px;
-    text-align: center;
-}
-
-.header-content {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    gap: 12px;
-}
-
-.logo {
-    font-size: 32px;
-    filter: drop-shadow(0 2px 4px rgba(0,0,0,0.3));
-}
-
-.header-text h1 {
-    font-size: 18px;
-    font-weight: 600;
-    margin-bottom: 2px;
-}
-
-.subtitle {
-    font-size: 12px;
-    opacity: 0.9;
-    font-weight: 400;
-}
-
-/* === SECTIONS === */
-.status-section,
-.scan-section,
-.stats-section,
-.controls-section {
+/* === NOUVEAU : Section Historique === */
+.history-section {
     background: white;
-    margin: 0;
     padding: 20px;
     border-bottom: 1px solid #f0f0f0;
+    max-height: 300px; /* Limite la hauteur et ajoute un scroll */
+    overflow-y: auto;
 }
 
-.scan-section h3,
-.stats-section h3,
-.controls-section h3 {
+.history-section h3 {
     font-size: 14px;
     font-weight: 600;
     margin-bottom: 12px;
     color: #555;
 }
 
-/* === STATUS CARD === */
-.status-card {
-    background: #f8f9fa;
-    border-radius: 12px;
-    padding: 16px;
-    text-align: center;
-    border-left: 4px solid #ddd;
-    transition: all 0.3s ease;
-}
-
-.status-card.waiting {
-    border-left-color: #ffc107;
-}
-
-.status-card.safe {
-    border-left-color: #28a745;
-    background: #f8fff9;
-}
-
-.status-card.phishing {
-    border-left-color: #dc3545;
-    background: #fff8f8;
-}
-
-.status-card.error {
-    border-left-color: #fd7e14;
-    background: #fff9f5;
-}
-
-.status-header {
+#history-list {
     display: flex;
-    align-items: center;
-    justify-content: center;
-    gap: 10px;
-    margin-bottom: 8px;
+    flex-direction: column;
+    gap: 12px;
 }
 
-.status-icon {
-    font-size: 24px;
-}
-
-.status-text {
-    font-size: 16px;
-    font-weight: 600;
-}
-
-.status-details {
-    font-size: 13px;
-    color: #666;
-    line-height: 1.3;
-}
-
-/* === SCAN CARD === */
-.scan-card {
+.history-item {
     background: #f8f9fa;
     border-radius: 8px;
     padding: 12px;
+    border-left: 4px solid #ddd;
+    animation: slideIn 0.3s ease-out;
+}
+
+.history-item.safe { border-left-color: #28a745; }
+.history-item.phishing { border-left-color: #dc3545; }
+.history-item.error { border-left-color: #fd7e14; }
+
+.history-item-header {
     display: flex;
     justify-content: space-between;
     align-items: center;
-}
-
-.scan-info {
-    flex: 1;
+    margin-bottom: 8px;
 }
 
 .scan-subject {
     font-weight: 600;
     font-size: 14px;
-    margin-bottom: 4px;
     color: #333;
     word-break: break-word;
 }
 
-.scan-sender {
+.scan-status-icon {
+    font-size: 20px;
+}
+
+.scan-sender, .scan-time {
     font-size: 12px;
     color: #666;
-    margin-bottom: 2px;
 }
+.scan-sender { margin-bottom: 6px; }
 
-.scan-time {
-    font-size: 11px;
-    color: #999;
-}
-
-.scan-result {
-    margin-left: 12px;
-}
-
-.scan-status {
-    width: 32px;
-    height: 32px;
-    border-radius: 50%;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    font-weight: bold;
-    font-size: 16px;
-    color: white;
-}
-
-.scan-status.safe {
-    background: #28a745;
-}
-
-.scan-status.danger {
-    background: #dc3545;
-}
-
-.scan-status.unknown {
-    background: #6c757d;
-}
-
-/* === STATISTIQUES === */
-.stats-grid {
-    display: grid;
-    grid-template-columns: repeat(3, 1fr);
-    gap: 12px;
-}
-
-.stat-item {
-    background: #f8f9fa;
-    border-radius: 8px;
-    padding: 12px;
-    text-align: center;
-    border-top: 3px solid #ddd;
-}
-
-.stat-item.safe {
-    border-top-color: #28a745;
-}
-
-.stat-item.danger {
-    border-top-color: #dc3545;
-}
-
-.stat-number {
-    font-size: 20px;
-    font-weight: bold;
-    color: #333;
-    margin-bottom: 4px;
-}
-
-.stat-label {
-    font-size: 11px;
-    color: #666;
-    text-transform: uppercase;
-    letter-spacing: 0.5px;
-}
-
-/* === CONTRÔLES === */
-.controls {
+/* === NOUVEAU : Boutons de Feedback === */
+.feedback-actions {
+    margin-top: 10px;
+    padding-top: 10px;
+    border-top: 1px solid #e9ecef;
     display: flex;
     gap: 8px;
+    align-items: center;
 }
 
-.btn {
-    flex: 1;
-    padding: 10px 12px;
-    border: none;
-    border-radius: 6px;
+.feedback-actions p {
     font-size: 12px;
-    font-weight: 500;
-    cursor: pointer;
-    transition: all 0.2s ease;
-    text-align: center;
-}
-
-.btn-secondary {
-    background: #6c757d;
-    color: white;
-}
-
-.btn-secondary:hover {
-    background: #5a6268;
-    transform: translateY(-1px);
-}
-
-.btn-outline {
-    background: transparent;
     color: #6c757d;
-    border: 1px solid #dee2e6;
+    font-style: italic;
+    flex-grow: 1;
 }
 
-.btn-outline:hover {
-    background: #f8f9fa;
+.feedback-btn {
+    background: transparent;
+    border: 1px solid #ced4da;
+    color: #495057;
+    padding: 4px 10px;
+    font-size: 11px;
+    font-weight: 500;
+    border-radius: 16px;
+    cursor: pointer;
+    transition: all 0.2s;
+}
+
+.feedback-btn:hover {
+    background: #e9ecef;
     border-color: #adb5bd;
 }
 
-/* === API STATUS === */
-.api-section {
-    background: white;
-    padding: 12px 20px;
+.feedback-btn.correct:hover {
+    background-color: #e6f9e7;
+    border-color: #28a745;
+    color: #155724;
 }
 
-.api-status {
-    display: flex;
-    align-items: center;
-    gap: 8px;
+.feedback-btn.incorrect:hover {
+    background-color: #f8d7da;
+    border-color: #dc3545;
+    color: #721c24;
+}
+
+.feedback-thanks {
     font-size: 12px;
+    font-weight: 500;
+    color: #28a745;
+    text-align: center;
 }
 
-.api-indicator {
-    width: 8px;
-    height: 8px;
-    border-radius: 50%;
-    background: #ffc107;
-    animation: pulse 2s infinite;
-}
-
-.api-indicator.online {
-    background: #28a745;
-    animation: none;
-}
-
-.api-indicator.offline {
-    background: #dc3545;
-    animation: none;
-}
-
-@keyframes pulse {
-    0% { opacity: 1; }
-    50% { opacity: 0.5; }
-    100% { opacity: 1; }
-}
-
-/* === FOOTER === */
-.footer {
-    background: rgba(255, 255, 255, 0.1);
-    color: white;
-    padding: 12px 20px;
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    font-size: 11px;
-}
-
-.version {
-    font-weight: 600;
-}
-
-.powered {
-    opacity: 0.8;
-}
-
-/* === ANIMATIONS === */
-.status-card,
-.scan-card,
-.stat-item {
-    animation: slideIn 0.3s ease-out;
-}
-
-@keyframes slideIn {
-    from {
-        opacity: 0;
-        transform: translateY(10px);
-    }
-    to {
-        opacity: 1;
-        transform: translateY(0);
-    }
-}
-
-/* === RESPONSIVE === */
-@media (max-width: 400px) {
-    body {
-        width: 320px;
-    }
-
-    .controls {
-        flex-direction: column;
-    }
-
-    .stats-grid {
-        grid-template-columns: 1fr;
-        gap: 8px;
-    }
+.history-item-placeholder {
+    text-align: center;
+    color: #999;
+    font-size: 13px;
+    padding: 20px;
 }

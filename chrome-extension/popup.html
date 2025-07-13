@@ -2,12 +2,9 @@
 <html lang="fr">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Phishing Guardian</title>
     <link rel="stylesheet" href="popup.css">
 </head>
 <body>
-    <!-- En-tête -->
     <div class="header">
         <div class="header-content">
             <div class="logo">🛡️</div>
@@ -18,35 +15,17 @@
         </div>
     </div>
 
-    <!-- Status principal -->
-    <div class="status-section">
-        <div id="status-card" class="status-card waiting">
-            <div class="status-header">
-                <div id="status-icon" class="status-icon">⏱️</div>
-                <div id="status-text" class="status-text">Initialisation...</div>
-            </div>
-            <div id="status-details" class="status-details">
-                En attente d'analyse...
+    <!-- NOUVEAU : Section Historique -->
+    <div class="history-section">
+        <h3>📜 Historique d'Analyse</h3>
+        <div id="history-list">
+            <div class="history-item-placeholder">
+                <p>Aucune analyse récente.</p>
+                <p>La surveillance est active sur Gmail et Yahoo.</p>
             </div>
         </div>
     </div>
 
-    <!-- Dernier scan -->
-    <div class="scan-section">
-        <h3>🔍 Dernière Analyse</h3>
-        <div id="last-scan" class="scan-card">
-            <div class="scan-info">
-                <div class="scan-subject">Aucune analyse récente</div>
-                <div class="scan-sender">-</div>
-                <div class="scan-time">-</div>
-            </div>
-            <div class="scan-result">
-                <div id="scan-status" class="scan-status unknown">?</div>
-            </div>
-        </div>
-    </div>
-
-    <!-- Statistiques -->
     <div class="stats-section">
         <h3>📊 Statistiques</h3>
         <div class="stats-grid">
@@ -65,20 +44,14 @@
         </div>
     </div>
 
-    <!-- Contrôles -->
     <div class="controls-section">
         <h3>⚙️ Contrôles</h3>
         <div class="controls">
-            <button id="test-notification" class="btn btn-secondary">
-                🧪 Tester Notification
-            </button>
-            <button id="clear-data" class="btn btn-outline">
-                🗑️ Effacer Données
-            </button>
+            <button id="test-notification" class="btn btn-secondary">🧪 Analyser un mail de test</button>
+            <button id="clear-data" class="btn btn-outline">🗑️ Effacer Données</button>
         </div>
     </div>
 
-    <!-- État de l'API -->
     <div class="api-section">
         <div class="api-status" id="api-status">
             <div class="api-indicator" id="api-indicator">●</div>
@@ -86,9 +59,8 @@
         </div>
     </div>
 
-    <!-- Footer -->
     <div class="footer">
-        <div class="version">v3.0</div>
+        <div class="version">v3.1</div>
         <div class="powered">Powered by IA</div>
     </div>
 

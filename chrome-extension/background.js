@@ -1,33 +1,29 @@
-// background.js - Service Worker pour Phishing Guardian
+// background.js - Service Worker pour Phishing Guardian (v3.1 - Interception)
 console.log('[GUARDIAN BG] 🚀 Service Worker démarré');
 
-// === 1. INJECTION DU DÉTECTEUR DE MAILS ===
+// === 1. INJECTION DE L'INTERCEPTEUR DE NOTIFICATIONS ===
 chrome.tabs.onUpdated.addListener(async (tabId, changeInfo, tab) => {
-    // Vérifier que la page est complètement chargée et sur Gmail/Yahoo
+    // S'exécute quand un onglet Gmail ou Yahoo est chargé ou mis à jour
     if (changeInfo.status === 'complete' && tab.url &&
         (tab.url.startsWith("https://mail.google.com/") || tab.url.includes(".mail.yahoo.com/"))) {
 
         console.log(`[GUARDIAN BG] 📧 Page mail détectée: ${tab.url}`);
 
         try {
-            // Attendre que la page soit vraiment prête
-            await new Promise(resolve => setTimeout(resolve, 3000));
-
-            // Injecter le détecteur de mails
+            // Injecter le script intercepteur dans le "monde" de la page principale
             await chrome.scripting.executeScript({
-                target: { tabId: tabId },
-                files: ['mail-detector.js'],
-                world: 'MAIN'
+                target: { tabId: tabId, allFrames: true },
+                files: ['interceptor.js'],
+                world: 'MAIN' // Essentiel pour accéder à window.Notification
             });
-
-            console.log(`[GUARDIAN BG] ✅ Détecteur injecté avec succès sur tab ${tabId}`);
+            console.log(`[GUARDIAN BG] ✅ Intercepteur injecté avec succès sur tab ${tabId}`);
 
             // Notifier l'utilisateur que la protection est active
             await showNotification({
                 type: "basic",
                 iconUrl: "icons/icon48.png",
                 title: "🛡️ Protection Activée",
-                message: "Guardian surveille maintenant vos nouveaux mails",
+                message: "Guardian intercepte maintenant les notifications de nouveaux mails.",
                 priority: 1
             });
 
@@ -37,174 +33,147 @@ chrome.tabs.onUpdated.addListener(async (tabId, changeInfo, tab) => {
     }
 });
 
-// === 2. ÉCOUTE DES NOTIFICATIONS DE NOUVEAUX MAILS ===
+// === 2. ÉCOUTE DES MESSAGES (DU PONT) ===
+// ... (le reste de ce fichier est identique à la version précédente avec historique et feedback)
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
-    console.log(`[GUARDIAN BG] 📨 Message reçu:`, message.type, `de tab:`, sender.tab?.id);
+    console.log(`[GUARDIAN BG] 📨 Message reçu:`, message.type);
 
     if (message.type === 'NEW_MAIL_DETECTED') {
-        console.log(`[GUARDIAN BG] 🔍 Nouveau mail détecté:`, message.data);
         analyzeMail(message.data);
         sendResponse({ success: true, message: 'Mail en cours d\'analyse' });
-
-    } else if (message.type === 'PING') {
-        console.log(`[GUARDIAN BG] 🏓 Ping reçu du content script`);
-        sendResponse({ pong: true, timestamp: Date.now() });
-
     } else if (message.type === 'STATUS_REQUEST') {
-        // Demande de statut pour le popup
-        chrome.storage.local.get(['lastScan', 'statistics'], (result) => {
+        chrome.storage.local.get(['scanHistory', 'statistics'], (result) => {
             sendResponse(result);
         });
-        return true; // Réponse asynchrone
+        return true;
+    } else if (message.type === 'SUBMIT_FEEDBACK') {
+        submitFeedback(message.data);
+        sendResponse({ success: true, message: 'Feedback en cours d\'envoi' });
     }
-
     return true;
 });
+
 
 // === 3. ANALYSE DES MAILS AVEC L'API IA ===
 async function analyzeMail(mailData) {
     const textToAnalyze = `${mailData.subject || ''}\n${mailData.sender || ''}\n${mailData.preview || ''}`;
+    console.log(`[GUARDIAN BG] 🤖 Analyse IA en cours...`, textToAnalyze);
 
-    console.log(`[GUARDIAN BG] 🤖 Analyse IA en cours...`);
-    console.log(`[GUARDIAN BG] 📝 Texte à analyser:`, textToAnalyze);
+    const scanId = `scan_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`;
 
     try {
-        // Appel à votre API de détection de phishing
         const response = await fetch("http://localhost:8000/predict", {
             method: "POST",
-            headers: {
-                "Content-Type": "application/json",
-                "Accept": "application/json"
-            },
-            body: JSON.stringify({
-                text: textToAnalyze.trim()
-            })
+            headers: { "Content-Type": "application/json", "Accept": "application/json" },
+            body: JSON.stringify({ text: textToAnalyze.trim() })
         });
 
-        if (!response.ok) {
-            throw new Error(`Erreur API: ${response.status} ${response.statusText}`);
-        }
+        if (!response.ok) throw new Error(`Erreur API: ${response.status} ${response.statusText}`);
 
         const result = await response.json();
-        console.log(`[GUARDIAN BG] ✅ Réponse API:`, result);
-
         const isPhishing = result.prediction === 'phishing';
-        const confidence = result.confidence || 0;
 
-        // Sauvegarder le résultat
         const scanResult = {
+            id: scanId,
             timestamp: Date.now(),
             subject: mailData.subject || 'Sujet non disponible',
             sender: mailData.sender || 'Expéditeur inconnu',
             isPhishing: isPhishing,
-            confidence: confidence,
-            source: mailData.source || 'Détection auto'
+            confidence: result.confidence || 0,
+            feedbackSent: false
         };
 
-        await chrome.storage.local.set({
-            lastScan: scanResult
-        });
-
-        // Mettre à jour les statistiques
+        await updateHistory(scanResult);
         await updateStatistics(isPhishing);
 
-        // Créer la notification appropriée
         if (isPhishing) {
             await showPhishingAlert(scanResult);
-        } else {
-            await showSafeNotification(scanResult);
         }
-
-        console.log(`[GUARDIAN BG] 📊 Analyse terminée: ${isPhishing ? 'PHISHING DÉTECTÉ' : 'MAIL SÛR'}`);
 
     } catch (error) {
         console.error(`[GUARDIAN BG] ❌ Erreur lors de l'analyse:`, error);
-
-        // Sauvegarder l'erreur
         const errorResult = {
+            id: scanId,
             timestamp: Date.now(),
             subject: mailData.subject || 'Sujet non disponible',
             sender: mailData.sender || 'Expéditeur inconnu',
             isPhishing: false,
-            error: error.message,
-            source: mailData.source || 'Détection auto'
+            error: error.message
         };
-
-        await chrome.storage.local.set({ lastScan: errorResult });
+        await updateHistory(errorResult);
         await showErrorNotification(error.message);
     }
 }
 
-// === 4. NOTIFICATIONS ===
+// ... (le reste du fichier background.js - feedback, notifications, stats, init - reste identique)
+async function submitFeedback(feedbackData) {
+    console.log('[GUARDIAN BG] 💬 Envoi du feedback à l\'API...', feedbackData);
+    try {
+        const response = await fetch("http://localhost:8000/feedback", {
+            method: "POST",
+            headers: { "Content-Type": "application/json", "Accept": "application/json" },
+            body: JSON.stringify(feedbackData)
+        });
+        if (!response.ok) throw new Error(`Erreur API feedback: ${response.status}`);
+        const result = await response.json();
+        console.log('[GUARDIAN BG] ✅ Feedback envoyé avec succès:', result);
+
+        const { scanHistory = [] } = await chrome.storage.local.get('scanHistory');
+        const updatedHistory = scanHistory.map(item => {
+            if (item.id === feedbackData.scan_id) {
+                return { ...item, feedbackSent: true };
+            }
+            return item;
+        });
+        await chrome.storage.local.set({ scanHistory: updatedHistory });
+    } catch (error) {
+        console.error('[GUARDIAN BG] ❌ Erreur lors de l\'envoi du feedback:', error);
+    }
+}
 async function showPhishingAlert(scanResult) {
     await showNotification({
-        type: "basic",
-        iconUrl: "icons/icon48.png",
+        type: "basic", iconUrl: "icons/icon48.png",
         title: "🚨 ALERTE PHISHING !",
         message: `Mail suspect de: ${scanResult.sender}\nSujet: ${scanResult.subject.substring(0, 50)}...`,
-        priority: 2,
-        requireInteraction: true
+        priority: 2, requireInteraction: true
     });
 }
-
-async function showSafeNotification(scanResult) {
-    await showNotification({
-        type: "basic",
-        iconUrl: "icons/icon48.png",
-        title: "✅ Mail Analysé - Sûr",
-        message: `De: ${scanResult.sender}\nConfiance: ${Math.round(scanResult.confidence * 100)}%`,
-        priority: 1
-    });
-}
-
 async function showErrorNotification(errorMessage) {
     await showNotification({
-        type: "basic",
-        iconUrl: "icons/icon48.png",
+        type: "basic", iconUrl: "icons/icon48.png",
         title: "⚠️ Erreur d'Analyse",
         message: `Impossible d'analyser le mail: ${errorMessage}`,
         priority: 1
     });
 }
-
-// Fonction helper pour créer des notifications
 async function showNotification(options) {
     try {
-        const notificationId = await chrome.notifications.create(options);
-        console.log(`[GUARDIAN BG] 🔔 Notification créée: ${notificationId}`);
-        return notificationId;
+        await chrome.notifications.create(options);
     } catch (error) {
         console.error(`[GUARDIAN BG] ❌ Erreur création notification:`, error);
     }
 }
-
-// === 5. STATISTIQUES ===
+async function updateHistory(scanResult) {
+    const { scanHistory = [] } = await chrome.storage.local.get(['scanHistory']);
+    const newHistory = [scanResult, ...scanHistory];
+    const limitedHistory = newHistory.slice(0, 20);
+    await chrome.storage.local.set({ scanHistory: limitedHistory });
+    console.log(`[GUARDIAN BG] 📜 Historique mis à jour. Total: ${limitedHistory.length}`);
+}
 async function updateStatistics(isPhishing) {
     const { statistics = { totalScanned: 0, phishingDetected: 0, safeEmails: 0 } } =
         await chrome.storage.local.get(['statistics']);
-
     statistics.totalScanned++;
-    if (isPhishing) {
-        statistics.phishingDetected++;
-    } else {
-        statistics.safeEmails++;
-    }
-
+    if (isPhishing) statistics.phishingDetected++;
+    else statistics.safeEmails++;
     await chrome.storage.local.set({ statistics });
     console.log(`[GUARDIAN BG] 📈 Stats mises à jour:`, statistics);
 }
-
-// === 6. INITIALISATION ===
 chrome.runtime.onInstalled.addListener(async () => {
     console.log(`[GUARDIAN BG] 🎯 Extension installée/mise à jour`);
-
-    // Initialiser les statistiques
     await chrome.storage.local.set({
         statistics: { totalScanned: 0, phishingDetected: 0, safeEmails: 0 },
+        scanHistory: [],
         settings: { autoScan: true, notifications: true }
     });
-});
-
-chrome.runtime.onStartup.addListener(() => {
-    console.log(`[GUARDIAN BG] 🌅 Extension démarrée`);
 });
