@@ -71,6 +71,10 @@ class ChangePasswordRequest(BaseModel):
     new_password: str
     confirm_password: str
 
+class GmailValidationRequest(BaseModel):
+    email: EmailStr
+    password: str
+
 class UserResponse(BaseModel):
     id: int
     email: str
@@ -199,6 +203,30 @@ async def register(user_data: UserRegister, request: Request):
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Email already registered"
+        )
+    
+    # Validate Gmail credentials before creating user
+    try:
+        import imaplib
+        mail = imaplib.IMAP4_SSL("imap.gmail.com")
+        mail.login(email, user_data.google_app_password)
+        mail.logout()
+    except imaplib.IMAP4.error as e:
+        error_msg = str(e).lower()
+        if "authenticationfailed" in error_msg or "invalid credentials" in error_msg:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Identifiants Gmail invalides. Vérifiez votre email et mot de passe d'application Gmail."
+            )
+        else:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Erreur de connexion Gmail. Veuillez vérifier vos identifiants."
+            )
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Erreur lors de la validation Gmail. Veuillez réessayer."
         )
     
     # Create user
@@ -570,6 +598,77 @@ async def reset_password(reset_data: PasswordResetConfirm, request: Request):
     )
     
     return {"message": "Password reset successfully"}
+
+@auth_app.post("/auth/validate-gmail")
+async def validate_gmail_credentials(validation_data: GmailValidationRequest, request: Request):
+    """Validate Gmail credentials"""
+    client_ip = get_client_ip(request)
+    
+    # Normalize email
+    email = EmailValidator.normalize_email(validation_data.email)
+    
+    # Validate Gmail password length
+    if len(validation_data.password) != 16:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Gmail app password must be exactly 16 characters"
+        )
+    
+    try:
+        # Import gmail fetcher and test connection
+        import sys
+        import os
+        sys.path.append(os.path.join(os.path.dirname(__file__), '..', 'src', 'utils'))
+        from gmail_fetcher import fetch_emails_from_gmail
+        
+        # Test connection without fetching emails (by limiting to 1 email)
+        import imaplib
+        
+        # Quick test connection
+        mail = imaplib.IMAP4_SSL("imap.gmail.com")
+        mail.login(email, validation_data.password)
+        mail.logout()
+        
+        # Log validation attempt
+        audit_logger.log_event(
+            event_type="gmail_validation",
+            details={"email": email, "success": True},
+            ip_address=client_ip
+        )
+        
+        return {"valid": True, "message": "Gmail credentials are valid"}
+        
+    except imaplib.IMAP4.error as e:
+        # Log failed validation
+        audit_logger.log_event(
+            event_type="gmail_validation",
+            details={"email": email, "success": False, "error": str(e)},
+            ip_address=client_ip
+        )
+        
+        error_msg = str(e).lower()
+        if "authenticationfailed" in error_msg or "invalid credentials" in error_msg:
+            return JSONResponse(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                content={"valid": False, "message": "Identifiants Gmail invalides. Vérifiez votre email et mot de passe d'application."}
+            )
+        else:
+            return JSONResponse(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                content={"valid": False, "message": "Erreur de connexion Gmail. Veuillez réessayer."}
+            )
+    except Exception as e:
+        # Log failed validation
+        audit_logger.log_event(
+            event_type="gmail_validation",
+            details={"email": email, "success": False, "error": str(e)},
+            ip_address=client_ip
+        )
+        
+        return JSONResponse(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            content={"valid": False, "message": "Erreur lors de la validation. Veuillez réessayer."}
+        )
 
 # Admin endpoints
 @auth_app.get("/auth/admin/users")

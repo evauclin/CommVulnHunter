@@ -541,6 +541,64 @@
             return true;
         }
         
+        async function validateGmailCredentials() {
+            const email = document.getElementById('email').value.trim();
+            const googleAppPassword = document.getElementById('googleAppPassword').value.trim();
+            const googleAppPasswordField = document.getElementById('googleAppPassword');
+            const feedback = document.getElementById('googleAppPasswordFeedback');
+            
+            if (!email || !googleAppPassword) {
+                return false; // Must have both fields filled
+            }
+            
+            if (googleAppPassword.length !== 16) {
+                googleAppPasswordField.classList.add('is-invalid');
+                feedback.textContent = 'Le mot de passe d\'application Gmail doit contenir exactement 16 caractères';
+                feedback.style.color = '#dc3545';
+                return false;
+            }
+            
+            try {
+                // Show validation in progress
+                googleAppPasswordField.classList.remove('is-invalid', 'is-valid');
+                feedback.textContent = 'Validation des identifiants Gmail en cours...';
+                feedback.style.color = '#6c757d';
+                
+                // Call validation API
+                const response = await fetch(`${API_BASE_URL}/validate-gmail`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                        email: email,
+                        password: googleAppPassword
+                    })
+                });
+                
+                const result = await response.json();
+                
+                if (response.ok && result.valid) {
+                    googleAppPasswordField.classList.remove('is-invalid');
+                    googleAppPasswordField.classList.add('is-valid');
+                    feedback.textContent = 'Identifiants Gmail validés avec succès';
+                    feedback.style.color = '#28a745';
+                    return true;
+                } else {
+                    googleAppPasswordField.classList.add('is-invalid');
+                    feedback.textContent = result.message || 'Identifiants Gmail invalides. Vérifiez votre email et mot de passe d\'application.';
+                    feedback.style.color = '#dc3545';
+                    return false;
+                }
+            } catch (error) {
+                console.error('Gmail validation error:', error);
+                googleAppPasswordField.classList.add('is-invalid');
+                feedback.textContent = 'Impossible de valider les identifiants Gmail. Vérifiez votre connexion et réessayez.';
+                feedback.style.color = '#dc3545';
+                return false;
+            }
+        }
+        
         async function register(userData) {
             try {
                 const response = await fetch(`${API_BASE_URL}/register`, {
@@ -599,6 +657,17 @@
             }
         });
         
+        // Gmail password validation on blur
+        document.getElementById('googleAppPassword').addEventListener('blur', validateGmailCredentials);
+        
+        // Also validate when email changes (if gmail password is already filled)
+        document.getElementById('email').addEventListener('blur', () => {
+            const googleAppPassword = document.getElementById('googleAppPassword').value.trim();
+            if (googleAppPassword) {
+                validateGmailCredentials();
+            }
+        });
+        
         // Form submission
         registerForm.addEventListener('submit', async (e) => {
             e.preventDefault();
@@ -648,6 +717,13 @@
             }
             
             if (hasErrors) return;
+            
+            // Validate Gmail credentials before proceeding
+            const gmailValid = await validateGmailCredentials();
+            if (!gmailValid) {
+                showAlert('Les identifiants Gmail ne sont pas valides. Veuillez vérifier votre email et mot de passe d\'application avant de continuer.');
+                return;
+            }
             
             setLoading(true);
             alertContainer.innerHTML = '';
@@ -709,6 +785,15 @@
                     errorMessage = 'Cette adresse email est déjà utilisée.';
                 } else if (error.message.includes('Password validation failed')) {
                     errorMessage = 'Le mot de passe ne respecte pas les critères de sécurité.';
+                } else if (error.message.includes('Identifiants Gmail invalides') || error.message.includes('Gmail')) {
+                    errorMessage = 'Identifiants Gmail invalides. Veuillez vérifier votre email et mot de passe d\'application Gmail.';
+                    // Mark Gmail field as invalid
+                    const googleAppPasswordField = document.getElementById('googleAppPassword');
+                    const feedback = document.getElementById('googleAppPasswordFeedback');
+                    googleAppPasswordField.classList.add('is-invalid');
+                    googleAppPasswordField.classList.remove('is-valid');
+                    feedback.textContent = 'Identifiants Gmail invalides';
+                    feedback.style.color = '#dc3545';
                 } else if (error.message) {
                     errorMessage = error.message;
                 }
