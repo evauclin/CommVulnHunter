@@ -1,13 +1,12 @@
 {
   "manifest_version": 3,
-  "name": "Phishing Guardian - Auto Mail Detector",
-  "version": "3.1",
-  "description": "Détecte automatiquement les nouveaux mails Gmail/Yahoo et analyse le phishing avec IA",
+  "name": "Phishing Guardian (Gmail)",
+  "version": "5.2",
+  "description": "Analyse les nouveaux mails sur Gmail pour détecter le phishing.",
   "permissions": [
     "notifications",
     "storage",
-    "scripting",
-    "tabs"
+    "activeTab"
   ],
   "host_permissions": [
     "https://mail.google.com/*",
@@ -19,29 +18,21 @@
   "content_scripts": [
     {
       "matches": [
-        "https://mail.google.com/*",
-        "https://*.mail.yahoo.com/*"
+        "https://mail.google.com/*"
       ],
-      "js": ["content_bridge.js"],
-      "run_at": "document_start",
-      "all_frames": true
+      "js": [
+        "content-gmail.js"
+      ],
+      "run_at": "document_idle",
+      "all_frames": false
     }
   ],
   "action": {
-    "default_popup": "popup.html",
-    "default_title": "Phishing Guardian"
+    "default_popup": "popup.html"
   },
   "icons": {
     "16": "icons/icon16.png",
     "48": "icons/icon48.png",
     "128": "icons/icon128.png"
-  },
-  "web_accessible_resources": [
-    {
-      "resources": ["interceptor.js"],
-      "matches": [
-        "https://mail.google.com/*"
-      ]
-    }
-  ]
+  }
 }

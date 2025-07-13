@@ -1,119 +1,24 @@
-/* ... (votre CSS existant) ... */
-
-/* === NOUVEAU : Section Historique === */
-.history-section {
-    background: white;
-    padding: 20px;
-    border-bottom: 1px solid #f0f0f0;
-    max-height: 300px; /* Limite la hauteur et ajoute un scroll */
-    overflow-y: auto;
-}
-
-.history-section h3 {
-    font-size: 14px;
-    font-weight: 600;
-    margin-bottom: 12px;
-    color: #555;
-}
-
-#history-list {
-    display: flex;
-    flex-direction: column;
-    gap: 12px;
-}
-
-.history-item {
-    background: #f8f9fa;
-    border-radius: 8px;
-    padding: 12px;
-    border-left: 4px solid #ddd;
-    animation: slideIn 0.3s ease-out;
-}
-
-.history-item.safe { border-left-color: #28a745; }
-.history-item.phishing { border-left-color: #dc3545; }
-.history-item.error { border-left-color: #fd7e14; }
-
-.history-item-header {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    margin-bottom: 8px;
-}
-
-.scan-subject {
-    font-weight: 600;
-    font-size: 14px;
-    color: #333;
-    word-break: break-word;
-}
-
-.scan-status-icon {
-    font-size: 20px;
-}
-
-.scan-sender, .scan-time {
-    font-size: 12px;
-    color: #666;
-}
-.scan-sender { margin-bottom: 6px; }
-
-/* === NOUVEAU : Boutons de Feedback === */
-.feedback-actions {
-    margin-top: 10px;
-    padding-top: 10px;
-    border-top: 1px solid #e9ecef;
-    display: flex;
-    gap: 8px;
-    align-items: center;
-}
-
-.feedback-actions p {
-    font-size: 12px;
-    color: #6c757d;
-    font-style: italic;
-    flex-grow: 1;
-}
-
-.feedback-btn {
-    background: transparent;
-    border: 1px solid #ced4da;
-    color: #495057;
-    padding: 4px 10px;
-    font-size: 11px;
-    font-weight: 500;
-    border-radius: 16px;
-    cursor: pointer;
-    transition: all 0.2s;
-}
-
-.feedback-btn:hover {
-    background: #e9ecef;
-    border-color: #adb5bd;
-}
-
-.feedback-btn.correct:hover {
-    background-color: #e6f9e7;
-    border-color: #28a745;
-    color: #155724;
-}
-
-.feedback-btn.incorrect:hover {
-    background-color: #f8d7da;
-    border-color: #dc3545;
-    color: #721c24;
-}
-
-.feedback-thanks {
-    font-size: 12px;
-    font-weight: 500;
-    color: #28a745;
-    text-align: center;
-}
-
-.history-item-placeholder {
-    text-align: center;
-    color: #999;
-    font-size: 13px;
-    padding: 20px;
-}
+body { font-family: system-ui, sans-serif; width: 350px; margin: 0; background-color: #f4f6f8; color: #333; }
+.header { background: linear-gradient(135deg, #4c51bf, #667eea); color: white; padding: 16px; text-align: center; }
+.header h1 { margin: 0; font-size: 18px; font-weight: 600; }
+.logo { font-size: 24px; margin-bottom: 4px; }
+.stats { display: flex; justify-content: space-around; padding: 15px; background: white; border-bottom: 1px solid #e2e8f0; }
+.stat-item { text-align: center; }
+.stat-item div { font-size: 22px; font-weight: bold; }
+.stat-item.safe div { color: #38a169; }
+.stat-item.phishing div { color: #e53e3e; }
+.stat-item label { font-size: 12px; color: #718096; text-transform: uppercase; }
+.history-container { padding: 15px; }
+.history-container h3 { margin: 0 0 12px 0; font-size: 14px; color: #2D3748; }
+#history-list { max-height: 280px; overflow-y: auto; }
+.history-item { background: white; border-radius: 6px; padding: 12px; margin-bottom: 10px; border-left: 4px solid; box-shadow: 0 1px 3px rgba(0,0,0,0.05); }
+.history-item.safe { border-color: #48BB78; }
+.history-item.phishing { border-color: #F56565; }
+.history-item.error { border-color: #ED8936; }
+.mail-subject { font-weight: 600; font-size: 14px; margin-bottom: 4px; }
+.mail-sender { font-size: 12px; color: #718096; }
+.feedback { margin-top: 10px; padding-top: 10px; border-top: 1px solid #edf2f7; }
+.feedback-btn { border: 1px solid #cbd5e0; background: #f7fafc; border-radius: 4px; padding: 4px 10px; font-size: 11px; cursor: pointer; margin-right: 5px; }
+.feedback-btn:hover { background-color: #e2e8f0; }
+.feedback-thanks { font-size: 12px; color: #38a169; font-weight: 500; }
+.empty-state { color: #a0aec0; text-align: center; padding: 30px 0; font-size: 14px; }

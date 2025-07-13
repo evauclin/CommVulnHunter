@@ -1,3 +1,5 @@
+
+/*
 // mail-detector.js - Version corrigée avec debugging avancé
 (() => {
     'use strict';
@@ -273,4 +275,4 @@
     console.log(`✅ [GUARDIAN DETECTOR] ${serviceName} initialisé et actif`);
     console.log(`🔍 [GUARDIAN DETECTOR] Surveillance: titre, DOM, tests automatiques`);
 
-})();
+})();*/

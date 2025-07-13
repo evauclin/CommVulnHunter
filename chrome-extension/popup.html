@@ -2,68 +2,34 @@
 <html lang="fr">
 <head>
     <meta charset="UTF-8">
+    <title>Guardian</title>
     <link rel="stylesheet" href="popup.css">
 </head>
 <body>
     <div class="header">
-        <div class="header-content">
-            <div class="logo">🛡️</div>
-            <div class="header-text">
-                <h1>Phishing Guardian</h1>
-                <p class="subtitle">Protection IA contre le phishing</p>
-            </div>
+        <div class="logo">🛡️</div>
+        <h1>Phishing Guardian</h1>
+    </div>
+    <div class="stats">
+        <div class="stat-item">
+            <div id="total-scanned">0</div>
+            <label>Analysés</label>
+        </div>
+        <div class="stat-item safe">
+            <div id="safe-emails">0</div>
+            <label>Sûrs</label>
+        </div>
+        <div class="stat-item phishing">
+            <div id="phishing-detected">0</div>
+            <label>Phishing</label>
         </div>
     </div>
-
-    <!-- NOUVEAU : Section Historique -->
-    <div class="history-section">
-        <h3>📜 Historique d'Analyse</h3>
+    <div class="history-container">
+        <h3>📜 Historique Récent</h3>
         <div id="history-list">
-            <div class="history-item-placeholder">
-                <p>Aucune analyse récente.</p>
-                <p>La surveillance est active sur Gmail et Yahoo.</p>
-            </div>
+            <p class="empty-state">Aucune analyse récente.</p>
         </div>
     </div>
-
-    <div class="stats-section">
-        <h3>📊 Statistiques</h3>
-        <div class="stats-grid">
-            <div class="stat-item">
-                <div class="stat-number" id="total-scanned">0</div>
-                <div class="stat-label">Analysés</div>
-            </div>
-            <div class="stat-item safe">
-                <div class="stat-number" id="safe-emails">0</div>
-                <div class="stat-label">Sûrs</div>
-            </div>
-            <div class="stat-item danger">
-                <div class="stat-number" id="phishing-detected">0</div>
-                <div class="stat-label">Phishing</div>
-            </div>
-        </div>
-    </div>
-
-    <div class="controls-section">
-        <h3>⚙️ Contrôles</h3>
-        <div class="controls">
-            <button id="test-notification" class="btn btn-secondary">🧪 Analyser un mail de test</button>
-            <button id="clear-data" class="btn btn-outline">🗑️ Effacer Données</button>
-        </div>
-    </div>
-
-    <div class="api-section">
-        <div class="api-status" id="api-status">
-            <div class="api-indicator" id="api-indicator">●</div>
-            <span id="api-text">API: Vérification...</span>
-        </div>
-    </div>
-
-    <div class="footer">
-        <div class="version">v3.1</div>
-        <div class="powered">Powered by IA</div>
-    </div>
-
     <script src="popup.js"></script>
 </body>
 </html>

@@ -1,201 +1,77 @@
-// popup.js - Interface utilisateur pour Phishing Guardian
-document.addEventListener('DOMContentLoaded', () => {
-    console.log('[GUARDIAN POPUP] 🎨 Interface démarrée');
+// Affiche les données dès que le popup est ouvert
+document.addEventListener('DOMContentLoaded', refreshUI);
 
-    const historyList = document.getElementById('history-list');
-    const totalScannedEl = document.getElementById('total-scanned');
-    const safeEmailsEl = document.getElementById('safe-emails');
-    const phishingDetectedEl = document.getElementById('phishing-detected');
-    const testBtn = document.getElementById('test-notification');
-    const clearBtn = document.getElementById('clear-data');
-    const apiIndicator = document.getElementById('api-indicator');
-    const apiText = document.getElementById('api-text');
+// Met à jour l'interface quand le stockage change
+chrome.storage.onChanged.addListener(refreshUI);
 
-    // === NOUVEAU : Affichage de l'historique ===
-    function renderHistory(history = []) {
-        historyList.innerHTML = ''; // Vider la liste
+function refreshUI() {
+    chrome.runtime.sendMessage({ type: 'STATUS_REQUEST' })
+        .then(data => {
+            if (data) {
+                renderStats(data.statistics);
+                renderHistory(data.scanHistory);
+            }
+        });
+}
 
-        if (history.length === 0) {
-            historyList.innerHTML = `
-                <div class="history-item-placeholder">
-                    <p>Aucune analyse récente.</p>
-                    <p>La surveillance est active sur Gmail et Yahoo.</p>
+function renderStats(stats = { totalScanned: 0, phishingDetected: 0, safeEmails: 0 }) {
+    document.getElementById('total-scanned').textContent = stats.totalScanned;
+    document.getElementById('safe-emails').textContent = stats.safeEmails;
+    document.getElementById('phishing-detected').textContent = stats.phishingDetected;
+}
+
+function renderHistory(history = []) {
+    const list = document.getElementById('history-list');
+    if (history.length === 0) {
+        list.innerHTML = `<p class="empty-state">Aucune analyse récente.</p>`;
+        return;
+    }
+    list.innerHTML = ''; // Vider la liste
+
+    history.forEach(item => {
+        const div = document.createElement('div');
+        const statusClass = item.error ? 'error' : item.isPhishing ? 'phishing' : 'safe';
+        div.className = `history-item ${statusClass}`;
+
+        let feedbackHTML = `<div class="feedback-thanks">Merci pour votre retour !</div>`;
+        if (!item.feedbackSent && !item.error) {
+            feedbackHTML = `
+                <div class="feedback" data-id="${item.id}" data-prediction="${item.isPhishing ? 'phishing' : 'safe'}">
+                    <span>L'analyse est correcte ?</span>
+                    <button class="feedback-btn" data-feedback="correct">Oui</button>
+                    <button class="feedback-btn" data-feedback="incorrect">Non</button>
                 </div>`;
-            return;
         }
 
-        history.forEach(item => {
-            const itemDiv = document.createElement('div');
-            itemDiv.className = 'history-item';
-            itemDiv.dataset.scanId = item.id;
-
-            let statusClass = 'unknown';
-            let statusIcon = '❓';
-            if (item.error) {
-                statusClass = 'error';
-                statusIcon = '⚠️';
-            } else if (item.isPhishing) {
-                statusClass = 'phishing';
-                statusIcon = '🚨';
-            } else {
-                statusClass = 'safe';
-                statusIcon = '✅';
-            }
-            itemDiv.classList.add(statusClass);
-
-            const timeAgo = formatTimeAgo(item.timestamp);
-
-            itemDiv.innerHTML = `
-                <div class="history-item-header">
-                    <h4 class="scan-subject">${item.subject.substring(0, 40)}${item.subject.length > 40 ? '...' : ''}</h4>
-                    <span class="scan-status-icon">${statusIcon}</span>
-                </div>
-                <p class="scan-sender">De: ${item.sender}</p>
-                <p class="scan-time">${timeAgo}</p>
-                <div class="feedback-actions">
-                    ${item.feedbackSent ? 
-                        `<p class="feedback-thanks">🙏 Merci pour votre retour !</p>` :
-                        item.error ? 
-                        `<p><i>Erreur d'analyse.</i></p>` :
-                        `
-                        <p>Cette prédiction était-elle correcte ?</p>
-                        <button class="feedback-btn correct" data-feedback="correct">Oui</button>
-                        <button class="feedback-btn incorrect" data-feedback="incorrect">Non</button>
-                        `
-                    }
-                </div>
-            `;
-            historyList.appendChild(itemDiv);
-        });
-
-        // Attacher les écouteurs d'événements pour le feedback
-        attachFeedbackListeners();
-    }
-
-    function attachFeedbackListeners() {
-        document.querySelectorAll('.feedback-btn').forEach(button => {
-            button.addEventListener('click', (e) => {
-                const button = e.target;
-                const itemDiv = button.closest('.history-item');
-                const scanId = itemDiv.dataset.scanId;
-                const feedbackType = button.dataset.feedback;
-
-                // Trouver l'item dans les données locales pour envoyer toutes les infos
-                chrome.storage.local.get('scanHistory', (result) => {
-                    const scanItem = result.scanHistory.find(item => item.id === scanId);
-                    if (!scanItem) return;
-
-                    const originalPrediction = scanItem.isPhishing ? 'phishing' : 'safe';
-
-                    // L'utilisateur est d'accord ("oui") si le feedback est "correct".
-                    // L'utilisateur n'est pas d'accord ("non") si le feedback est "incorrect".
-                    // On ne change pas la prédiction, on enregistre juste si l'utilisateur était d'accord.
-                    const userFeedback = feedbackType; // 'correct' ou 'incorrect'
-
-                    const feedbackPayload = {
-                        scan_id: scanId,
-                        user_feedback: userFeedback,
-                        original_prediction: originalPrediction,
-                        subject: scanItem.subject,
-                        sender: scanItem.sender
-                    };
-
-                    // Envoyer le feedback via le background script
-                    chrome.runtime.sendMessage({ type: 'SUBMIT_FEEDBACK', data: feedbackPayload });
-
-                    // Mettre à jour l'UI instantanément
-                    const feedbackContainer = button.closest('.feedback-actions');
-                    feedbackContainer.innerHTML = `<p class="feedback-thanks">🙏 Merci pour votre retour !</p>`;
-                });
-            });
-        });
-    }
-
-
-    // === GESTION DES STATISTIQUES ===
-    function updateStatistics(stats) {
-        if (!stats) stats = { totalScanned: 0, safeEmails: 0, phishingDetected: 0 };
-        totalScannedEl.textContent = stats.totalScanned || 0;
-        safeEmailsEl.textContent = stats.safeEmails || 0;
-        phishingDetectedEl.textContent = stats.phishingDetected || 0;
-    }
-
-    // === CHARGEMENT INITIAL DES DONNÉES ===
-    async function loadData() {
-        const data = await chrome.runtime.sendMessage({ type: 'STATUS_REQUEST' });
-        if (data) {
-            renderHistory(data.scanHistory);
-            updateStatistics(data.statistics);
-        }
-    }
-
-    // === ÉVÉNEMENTS ===
-    testBtn.addEventListener('click', () => {
-        chrome.runtime.sendMessage({
-            type: 'NEW_MAIL_DETECTED',
-            data: {
-                subject: `[TEST] ${Math.random() > 0.5 ? 'Gagnez un iPhone !' : 'Réunion importante'}`,
-                sender: 'test@guardian-demo.com',
-                preview: 'Ceci est un test du système de détection Guardian.'
-            }
-        });
+        div.innerHTML = `
+            <div class="mail-subject">${item.subject.substring(0, 50)}</div>
+            <div class="mail-sender">De: ${item.sender}</div>
+            ${feedbackHTML}
+        `;
+        list.appendChild(div);
     });
 
-    clearBtn.addEventListener('click', () => {
-        if (confirm('Effacer toutes les statistiques et l\'historique ?')) {
-            chrome.storage.local.clear(() => {
-                // Réinitialiser avec des valeurs par défaut
-                chrome.storage.local.set({
-                    statistics: { totalScanned: 0, phishingDetected: 0, safeEmails: 0 },
-                    scanHistory: []
-                }, () => {
-                    loadData();
-                    console.log('Données effacées et réinitialisées.');
-                });
-            });
+    // Attacher les gestionnaires d'événements
+    list.querySelectorAll('.feedback-btn').forEach(button => {
+        button.addEventListener('click', handleFeedbackClick);
+    });
+}
+
+function handleFeedbackClick(e) {
+    const feedbackDiv = e.target.parentElement;
+    const scanId = feedbackDiv.dataset.id;
+    const feedback = e.target.dataset.feedback;
+
+    chrome.runtime.sendMessage({
+        type: 'SUBMIT_FEEDBACK',
+        data: {
+            scan_id: scanId,
+            user_feedback: feedback,
+            original_prediction: feedbackDiv.dataset.prediction,
+            subject: e.target.closest('.history-item').querySelector('.mail-subject').textContent,
+            sender: e.target.closest('.history-item').querySelector('.mail-sender').textContent.replace('De: ', '')
         }
     });
 
-    // === ACTUALISATION AUTOMATIQUE ===
-    chrome.storage.onChanged.addListener((changes, namespace) => {
-        if (namespace === 'local' && (changes.scanHistory || changes.statistics)) {
-            console.log('[GUARDIAN POPUP] 🔄 Données mises à jour, rechargement...');
-            loadData();
-        }
-    });
-
-    // === Fonctions utilitaires ===
-    function formatTimeAgo(timestamp) {
-        const now = new Date();
-        const past = new Date(timestamp);
-        const diffInSeconds = Math.floor((now - past) / 1000);
-
-        const minutes = Math.floor(diffInSeconds / 60);
-        if (minutes < 1) return "À l'instant";
-        if (minutes < 60) return `Il y a ${minutes} min`;
-
-        const hours = Math.floor(minutes / 60);
-        if (hours < 24) return `Il y a ${hours}h`;
-
-        const days = Math.floor(hours / 24);
-        return `Il y a ${days}j`;
-    }
-
-    async function testAPI() {
-        apiText.textContent = 'API: Test en cours...';
-        try {
-            const response = await fetch('http://localhost:8000/health');
-            if (response.ok) {
-                apiIndicator.classList.add('online');
-                apiText.textContent = 'API: ✅ Connectée';
-            } else { throw new Error(); }
-        } catch (error) {
-            apiIndicator.classList.add('offline');
-            apiText.textContent = 'API: ❌ Déconnectée';
-        }
-    }
-
-    // Initialisation
-    loadData();
-    testAPI();
-});
+    feedbackDiv.innerHTML = `<div class="feedback-thanks">Merci !</div>`;
+}
