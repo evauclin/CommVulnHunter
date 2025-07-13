@@ -938,7 +938,6 @@
 
         async function loadLiveEmails() {
             try {
-                console.log('🔄 Chargement CSV brut demandé...');
                 autoRefreshMode = false;
                 showAutoRefreshIndicator(false);
                 
@@ -949,26 +948,22 @@
                     if (userData) {
                         const user = JSON.parse(userData);
                         if (user.email) {
-                            console.log(`🔍 Email utilisateur: "${user.email}"`);
                             userEmailHash = await hashEmailForDirectory(user.email);
-                            console.log(`📁 Hash calculé: ${userEmailHash}`);
                         }
                     }
                 } catch (e) {
-                    console.log('Info: Pas d\'utilisateur authentifié');
+                    // Pas d'utilisateur authentifié
                 }
 
                 // Essayer de charger le fichier spécifique à l'utilisateur
-                let csvPath = userEmailHash ? `pages/emails/${userEmailHash}/emails_live.csv` : 'emails_live.csv';
-                console.log(`🎯 Tentative de chargement: ${csvPath}`);
+                let csvPath = userEmailHash ? `emails/${userEmailHash}/emails_live.csv` : 'emails_live.csv';
                 
                 await emailLoader.loadEmailsFromCSV(csvPath);
                 emailLoader.updateSourceIndicator(`📊 Données CSV brutes (${emailLoader.emails.length} emails)`, 'success');
                 loadAndUpdate();
                 
-                console.log(`✅ ${emailLoader.emails.length} emails chargés depuis CSV brut`);
             } catch (error) {
-                console.error('❌ Erreur chargement CSV brut:', error);
+                console.error('Erreur chargement CSV brut:', error);
                 emailLoader.updateSourceIndicator(`❌ Erreur: ${error.message}`, 'danger');
                 alert(`Erreur de chargement du fichier CSV. Assurez-vous d'utiliser un serveur local et que le fichier 'emails_live.csv' est présent.`);
             }
@@ -987,16 +982,11 @@
         }
 
         function loadAndUpdate() {
-            console.log(`🔧 loadAndUpdate: emailLoader.emails.length = ${emailLoader.emails.length}`);
             applyFiltersAndSearch();
             emailLoader.updateStatsDisplay();
             updateEmailDisplayWithFeedback();
-            console.log(`🔧 loadAndUpdate: filteredEmails.length = ${filteredEmails.length}`);
             if (filteredEmails.length > 0) {
-                console.log(`🔧 loadAndUpdate: Sélection du premier email`);
                 selectEmail(0);
-            } else {
-                console.log(`🔧 loadAndUpdate: Aucun email à sélectionner`);
             }
         }
 
@@ -1014,8 +1004,6 @@
 
         function applyFiltersAndSearch() {
             let emails = emailLoader.emails;
-            console.log(`🔧 applyFiltersAndSearch: emailLoader.emails.length =`, emailLoader.emails.length);
-            console.log(`🔧 applyFiltersAndSearch: currentFilter =`, currentFilter);
 
             if (currentFilter !== 'ALL') {
                 if (currentFilter === 'WITH_FEEDBACK') {
@@ -1043,9 +1031,7 @@
             }
 
             filteredEmails = emails;
-            console.log(`🔧 applyFiltersAndSearch: filteredEmails.length =`, filteredEmails.length);
             const container = document.getElementById('emailList');
-            console.log(`🔧 applyFiltersAndSearch: container =`, container);
             emailLoader.displayEmails(container, filteredEmails);
             updateEmailDisplayWithFeedback();
 

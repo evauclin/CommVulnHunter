@@ -74,8 +74,6 @@ class EmailCSVLoader {
      */
     async loadEmailsFromCSV(filename = './emails_live.csv') {
         try {
-            console.log(`📂 Chargement du fichier CSV: ${filename}`);
-            
             const response = await fetch(filename);
             if (!response.ok) {
                 throw new Error(`Impossible de charger le fichier ${filename}`);
@@ -85,14 +83,10 @@ class EmailCSVLoader {
             this.emails = this.parseCSV(csvText);
             this.currentSource = 'csv_live';
 
-            console.log(`✅ ${this.emails.length} emails chargés depuis: ${filename}`);
-            console.log(`🔧 Premier email:`, this.emails[0]);
-            console.log(`🔧 Headers CSV détectés:`, Object.keys(this.emails[0] || {}));
-            this.updateSourceIndicator(`📊 Emails CSV chargés (${this.emails.length}) depuis ${filename}`, 'success');
+            this.updateSourceIndicator(`📊 Emails CSV chargés (${this.emails.length})`, 'success');
 
             return this.emails;
         } catch (error) {
-            console.warn(`⚠️ Erreur chargement CSV: ${error.message}`);
             throw error;
         }
     }
@@ -330,21 +324,12 @@ class EmailCSVLoader {
     displayEmails(container, emails = null) {
         const emailsToDisplay = emails || this.emails;
 
-        console.log(`🔧 displayEmails DÉTAILLÉ:`);
-        console.log(`🔧   - container:`, container);
-        console.log(`🔧   - container.id:`, container ? container.id : 'NO CONTAINER');
-        console.log(`🔧   - emailsToDisplay:`, emailsToDisplay);
-        console.log(`🔧   - emailsToDisplay.length:`, emailsToDisplay.length);
-        console.log(`🔧   - this.emails.length:`, this.emails.length);
-        console.log(`🔧   - Premiers emails:`, emailsToDisplay.slice(0, 2));
-
         if (!container) {
-            console.error('❌ Container not found for displaying emails');
+            console.error('Container not found for displaying emails');
             return;
         }
 
         if (emailsToDisplay.length === 0) {
-            console.log('🔧 Aucun email à afficher, insertion du message vide');
             container.innerHTML = `
                 <div class="text-center p-4 text-muted">
                     <i class="bi bi-inbox" style="font-size: 3rem; opacity: 0.3;"></i>
@@ -393,10 +378,7 @@ class EmailCSVLoader {
             `;
         });
 
-        console.log(`🔧 displayEmails: HTML généré, longueur = ${html.length} caractères`);
-        console.log(`🔧 displayEmails: Injection du HTML dans le container...`);
         container.innerHTML = html;
-        console.log(`🔧 displayEmails: TERMINÉ - HTML injecté avec succès`);
     }
 
     /**
@@ -537,17 +519,16 @@ function selectEmail(index) {
     if (email) {
         const formatted = emailLoader.formatEmailForDisplay(email);
 
-        // SAUVEGARDER LES DONNÉES RAW POUR LE ML (CORRIGÉ)
+        // Sauvegarder les données pour le ML
         if (typeof currentEmailData !== 'undefined') {
             currentEmailData = {
                 id: email.id || `email_${index}`,
-                from: email.from || '',  // DONNÉES RAW
-                subject: email.subject || '',  // DONNÉES RAW
-                body: email.body || '',  // DONNÉES RAW
+                from: email.from || '',
+                subject: email.subject || '',
+                body: email.body || '',
                 type: email.type || 'unknown',
-                fullText: `From: ${email.from || ''} Subject: ${email.subject || ''} Body: ${email.body || ''}`  // DONNÉES RAW
+                fullText: `From: ${email.from || ''} Subject: ${email.subject || ''} Body: ${email.body || ''}`
             };
-            console.log('📧 currentEmailData RAW sauvegardé:', currentEmailData);
         }
 
         const elements = {
