@@ -75,11 +75,13 @@ class EmailCSVLoader {
     async loadEmailsFromCSV(filename = './emails_live.csv', userEmailHash = null) {
         try {
             console.log(`📂 Chargement du fichier CSV: ${filename}`);
+            console.log(`🔧 loadEmailsFromCSV: userEmailHash reçu: ${userEmailHash}`);
 
             let possiblePaths = [];
             
             // Si on a un hash d'utilisateur, rechercher dans le dossier spécifique
             if (userEmailHash) {
+                console.log(`🎯 Utilisation du hash utilisateur: ${userEmailHash}`);
                 possiblePaths = [
                     `./emails/${userEmailHash}/${filename}`,
                     `emails/${userEmailHash}/${filename}`,
@@ -124,6 +126,8 @@ class EmailCSVLoader {
             this.currentSource = 'csv_live';
 
             console.log(`✅ ${this.emails.length} emails chargés depuis: ${successPath}`);
+            console.log(`🔧 Premier email:`, this.emails[0]);
+            console.log(`🔧 Headers CSV détectés:`, Object.keys(this.emails[0] || {}));
             this.updateSourceIndicator(`📊 Emails CSV chargés (${this.emails.length}) depuis ${successPath}`, 'success');
 
             return this.emails;
@@ -366,6 +370,10 @@ class EmailCSVLoader {
     displayEmails(container, emails = null) {
         const emailsToDisplay = emails || this.emails;
 
+        console.log(`🔧 displayEmails: container =`, container);
+        console.log(`🔧 displayEmails: emailsToDisplay.length =`, emailsToDisplay.length);
+        console.log(`🔧 displayEmails: this.emails.length =`, this.emails.length);
+
         if (!container) {
             console.error('Container not found for displaying emails');
             return;
@@ -478,17 +486,7 @@ class EmailCSVLoader {
     }
 }
 
-// Fonction utilitaire pour calculer le hash email (même que côté serveur)
-async function hashEmail(email) {
-    // Utilisation d'une méthode simple pour compatibilité navigateur
-    let hash = 0;
-    for (let i = 0; i < email.length; i++) {
-        const char = email.charCodeAt(i);
-        hash = ((hash << 5) - hash) + char;
-        hash = hash & hash; // Convert to 32bit integer
-    }
-    return Math.abs(hash).toString(16).substring(0, 12);
-}
+// Hash function moved to hashUtils.js - using centralized implementation
 
 // Instance globale
 const emailLoader = new EmailCSVLoader();
@@ -506,13 +504,17 @@ async function loadLiveEmails() {
                 const user = JSON.parse(userData);
                 if (user.email) {
                     // Calculer le hash de l'email (même méthode que côté serveur)
-                    userEmailHash = await hashEmail(user.email);
+                    console.log(`🔧 csvEmailLoader: Calcul hash pour email "${user.email}"`);
+                    console.log(`🔧 csvEmailLoader: hashEmailForDirectory exists: ${typeof hashEmailForDirectory}`);
+                    userEmailHash = await hashEmailForDirectory(user.email);
+                    console.log(`🔧 csvEmailLoader: Hash calculé: ${userEmailHash}`);
                 }
             }
         } catch (e) {
             console.log('Info: Pas d\'utilisateur authentifié, recherche globale');
         }
 
+        console.log(`🔧 csvEmailLoader: Appel loadEmailsFromCSV avec userEmailHash: ${userEmailHash}`);
         await emailLoader.loadEmailsFromCSV('./emails_live.csv', userEmailHash);
         await emailLoader.loadStats();
 

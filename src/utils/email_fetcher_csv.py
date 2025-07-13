@@ -106,9 +106,8 @@ def process_email(mail, email_id, email_type):
 def generate_email_id(from_addr, subject, date_str):
     """Génère un ID unique pour l'email"""
     import hashlib
-
     content = f"{from_addr}-{subject}-{date_str}"
-    return hashlib.md5(content.encode()).hexdigest()[:12]
+    return hashlib.sha256(content.encode('utf-8')).hexdigest()[:12]
 
 
 def decode_header_text(header_value):
