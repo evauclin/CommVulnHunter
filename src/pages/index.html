@@ -938,29 +938,38 @@
 
         async function loadLiveEmails() {
             try {
-                // Essayer de récupérer le hash utilisateur depuis l'authentification
+                console.log('🔄 Chargement CSV brut demandé...');
+                autoRefreshMode = false;
+                showAutoRefreshIndicator(false);
+                
+                // Essayer de charger directement le fichier avec le hash utilisateur
                 let userEmailHash = null;
                 try {
                     const userData = localStorage.getItem('user_data');
                     if (userData) {
                         const user = JSON.parse(userData);
                         if (user.email) {
-                            console.log(`🔍 Email utilisateur depuis localStorage: "${user.email}"`);
-                            // Calculer le hash de l'email (même méthode que côté serveur)
+                            console.log(`🔍 Email utilisateur: "${user.email}"`);
                             userEmailHash = await hashEmailForDirectory(user.email);
-                            console.log(`📁 Hash calculé pour l'utilisateur: ${userEmailHash}`);
+                            console.log(`📁 Hash calculé: ${userEmailHash}`);
                         }
                     }
                 } catch (e) {
-                    console.log('Info: Pas d\'utilisateur authentifié, recherche globale');
+                    console.log('Info: Pas d\'utilisateur authentifié');
                 }
 
-                await emailLoader.loadEmailsFromCSV('./emails_live.csv', userEmailHash);
+                // Essayer de charger le fichier spécifique à l'utilisateur
+                let csvPath = userEmailHash ? `pages/emails/${userEmailHash}/emails_live.csv` : 'emails_live.csv';
+                console.log(`🎯 Tentative de chargement: ${csvPath}`);
+                
+                await emailLoader.loadEmailsFromCSV(csvPath);
                 emailLoader.updateSourceIndicator(`📊 Données CSV brutes (${emailLoader.emails.length} emails)`, 'success');
-                autoRefreshMode = false;
-                showAutoRefreshIndicator(false);
                 loadAndUpdate();
+                
+                console.log(`✅ ${emailLoader.emails.length} emails chargés depuis CSV brut`);
             } catch (error) {
+                console.error('❌ Erreur chargement CSV brut:', error);
+                emailLoader.updateSourceIndicator(`❌ Erreur: ${error.message}`, 'danger');
                 alert(`Erreur de chargement du fichier CSV. Assurez-vous d'utiliser un serveur local et que le fichier 'emails_live.csv' est présent.`);
             }
         }
@@ -969,7 +978,7 @@
             try {
                 autoRefreshMode = false;
                 showAutoRefreshIndicator(false);
-                await emailLoader.loadEmailsFromCSV('./emails_demo.csv');
+                await emailLoader.loadEmailsFromCSV('emails_demo.csv');
                 emailLoader.updateSourceIndicator(`📝 Données de démonstration (${emailLoader.emails.length} emails)`, 'primary');
                 loadAndUpdate();
             } catch (error) {
@@ -978,10 +987,17 @@
         }
 
         function loadAndUpdate() {
+            console.log(`🔧 loadAndUpdate: emailLoader.emails.length = ${emailLoader.emails.length}`);
             applyFiltersAndSearch();
             emailLoader.updateStatsDisplay();
             updateEmailDisplayWithFeedback();
-            if (filteredEmails.length > 0) selectEmail(0);
+            console.log(`🔧 loadAndUpdate: filteredEmails.length = ${filteredEmails.length}`);
+            if (filteredEmails.length > 0) {
+                console.log(`🔧 loadAndUpdate: Sélection du premier email`);
+                selectEmail(0);
+            } else {
+                console.log(`🔧 loadAndUpdate: Aucun email à sélectionner`);
+            }
         }
 
         async function refreshEmails() {
@@ -1337,6 +1353,17 @@
             localStorage.removeItem('userEmailHash');
             sessionStorage.removeItem('userEmailHash');
             
+            // SIMULATION TEMPORAIRE D'AUTHENTIFICATION POUR TEST
+            // TODO: Retirer quand l'auth JWT fonctionne
+            if (!localStorage.getItem('user_data')) {
+                console.log('🔧 SIMULATION: Pas d\'auth détectée, simulation pour farinesfari@gmail.com');
+                localStorage.setItem('user_data', JSON.stringify({
+                    email: 'farinesfari@gmail.com',
+                    name: 'Test User',
+                    role: 'user'
+                }));
+            }
+            
             // Test du hash pour vérifier la cohérence - Version 4.0 (dynamique)
             console.log(`🔧 hashEmailForDirectory function exists: ${typeof hashEmailForDirectory}`);
             
@@ -1348,16 +1375,10 @@
                     if (user.email) {
                         const testHash = await hashEmailForDirectory(user.email);
                         console.log(`🧪 Test hash cohérence pour "${user.email}": ${testHash}`);
-                        
-                        // Test de base avec un email connu pour validation
-                        const knownTestHash = await hashEmailForDirectory('test@example.com');
-                        console.log(`🧪 Test hash de référence pour "test@example.com": ${knownTestHash}`);
                     }
                 }
             } catch (e) {
-                console.log('🔧 Test de hash basique sans utilisateur connecté');
-                const basicTestHash = await hashEmailForDirectory('test@example.com');
-                console.log(`🧪 Test hash de base: ${basicTestHash}`);
+                console.log('🔧 Erreur lors du test de hash:', e);
             }
             
             loadEmailsWithAI();

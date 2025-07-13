@@ -72,63 +72,23 @@ class EmailCSVLoader {
     /**
      * Charge les emails depuis un fichier CSV
      */
-    async loadEmailsFromCSV(filename = './emails_live.csv', userEmailHash = null) {
+    async loadEmailsFromCSV(filename = './emails_live.csv') {
         try {
             console.log(`📂 Chargement du fichier CSV: ${filename}`);
-            console.log(`🔧 loadEmailsFromCSV: userEmailHash reçu: ${userEmailHash}`);
-
-            let possiblePaths = [];
             
-            // Si on a un hash d'utilisateur, rechercher dans le dossier spécifique
-            if (userEmailHash) {
-                console.log(`🎯 Utilisation du hash utilisateur: ${userEmailHash}`);
-                possiblePaths = [
-                    `./emails/${userEmailHash}/${filename}`,
-                    `emails/${userEmailHash}/${filename}`,
-                    `../emails/${userEmailHash}/${filename}`,
-                    `src/pages/emails/${userEmailHash}/${filename}`,
-                ];
-            } else {
-                // Fallback vers les anciens chemins + nouveaux chemins
-                possiblePaths = [
-                    filename,
-                    `src/pages/${filename}`,
-                    `./${filename}`,
-                    `../${filename}`,
-                    // Rechercher dans tous les dossiers emails existants
-                    `./emails/*/emails_live.csv`,
-                    `emails/*/emails_live.csv`,
-                ];
+            const response = await fetch(filename);
+            if (!response.ok) {
+                throw new Error(`Impossible de charger le fichier ${filename}`);
             }
-
-            let csvText = null;
-            let successPath = null;
-
-            for (const path of possiblePaths) {
-                try {
-                    console.log(`🔍 Tentative de chargement: ${path}`);
-                    const response = await fetch(path);
-                    if (response.ok) {
-                        csvText = await response.text();
-                        successPath = path;
-                        break;
-                    }
-                } catch (e) {
-                    console.log(`⚠️ Échec pour: ${path}`);
-                }
-            }
-
-            if (!csvText) {
-                throw new Error(`Fichier ${filename} non trouvé dans les chemins: ${possiblePaths.join(', ')}`);
-            }
-
+            
+            const csvText = await response.text();
             this.emails = this.parseCSV(csvText);
             this.currentSource = 'csv_live';
 
-            console.log(`✅ ${this.emails.length} emails chargés depuis: ${successPath}`);
+            console.log(`✅ ${this.emails.length} emails chargés depuis: ${filename}`);
             console.log(`🔧 Premier email:`, this.emails[0]);
             console.log(`🔧 Headers CSV détectés:`, Object.keys(this.emails[0] || {}));
-            this.updateSourceIndicator(`📊 Emails CSV chargés (${this.emails.length}) depuis ${successPath}`, 'success');
+            this.updateSourceIndicator(`📊 Emails CSV chargés (${this.emails.length}) depuis ${filename}`, 'success');
 
             return this.emails;
         } catch (error) {
@@ -370,16 +330,21 @@ class EmailCSVLoader {
     displayEmails(container, emails = null) {
         const emailsToDisplay = emails || this.emails;
 
-        console.log(`🔧 displayEmails: container =`, container);
-        console.log(`🔧 displayEmails: emailsToDisplay.length =`, emailsToDisplay.length);
-        console.log(`🔧 displayEmails: this.emails.length =`, this.emails.length);
+        console.log(`🔧 displayEmails DÉTAILLÉ:`);
+        console.log(`🔧   - container:`, container);
+        console.log(`🔧   - container.id:`, container ? container.id : 'NO CONTAINER');
+        console.log(`🔧   - emailsToDisplay:`, emailsToDisplay);
+        console.log(`🔧   - emailsToDisplay.length:`, emailsToDisplay.length);
+        console.log(`🔧   - this.emails.length:`, this.emails.length);
+        console.log(`🔧   - Premiers emails:`, emailsToDisplay.slice(0, 2));
 
         if (!container) {
-            console.error('Container not found for displaying emails');
+            console.error('❌ Container not found for displaying emails');
             return;
         }
 
         if (emailsToDisplay.length === 0) {
+            console.log('🔧 Aucun email à afficher, insertion du message vide');
             container.innerHTML = `
                 <div class="text-center p-4 text-muted">
                     <i class="bi bi-inbox" style="font-size: 3rem; opacity: 0.3;"></i>
@@ -428,7 +393,10 @@ class EmailCSVLoader {
             `;
         });
 
+        console.log(`🔧 displayEmails: HTML généré, longueur = ${html.length} caractères`);
+        console.log(`🔧 displayEmails: Injection du HTML dans le container...`);
         container.innerHTML = html;
+        console.log(`🔧 displayEmails: TERMINÉ - HTML injecté avec succès`);
     }
 
     /**
@@ -492,48 +460,6 @@ class EmailCSVLoader {
 const emailLoader = new EmailCSVLoader();
 
 // Fonctions globales pour compatibilité
-async function loadLiveEmails() {
-    try {
-        console.log('Chargement des emails live...');
-
-        // Essayer de récupérer le hash utilisateur depuis l'authentification
-        let userEmailHash = null;
-        try {
-            const userData = localStorage.getItem('user_data');
-            if (userData) {
-                const user = JSON.parse(userData);
-                if (user.email) {
-                    // Calculer le hash de l'email (même méthode que côté serveur)
-                    console.log(`🔧 csvEmailLoader: Calcul hash pour email "${user.email}"`);
-                    console.log(`🔧 csvEmailLoader: hashEmailForDirectory exists: ${typeof hashEmailForDirectory}`);
-                    userEmailHash = await hashEmailForDirectory(user.email);
-                    console.log(`🔧 csvEmailLoader: Hash calculé: ${userEmailHash}`);
-                }
-            }
-        } catch (e) {
-            console.log('Info: Pas d\'utilisateur authentifié, recherche globale');
-        }
-
-        console.log(`🔧 csvEmailLoader: Appel loadEmailsFromCSV avec userEmailHash: ${userEmailHash}`);
-        await emailLoader.loadEmailsFromCSV('./emails_live.csv', userEmailHash);
-        await emailLoader.loadStats();
-
-        const container = document.getElementById('emailList');
-        emailLoader.displayEmails(container);
-        emailLoader.updateStatsDisplay();
-
-        console.log('Emails live chargés avec succès');
-
-        if (emailLoader.emails.length > 0) {
-            selectEmail(0);
-        }
-
-    } catch (error) {
-        console.warn('Erreur chargement emails live:', error);
-        console.warn('Fallback vers emails de démo');
-        loadDemoEmails();
-    }
-}
 
 async function loadDemoEmails() {
     try {

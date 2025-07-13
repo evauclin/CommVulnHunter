@@ -248,9 +248,11 @@ def generate_csv_files(emails_data, username=None):
         # Hash de l'email pour le nom du dossier - Normalisation identique à JavaScript
         normalized_email = username.strip().lower()
         email_hash = hashlib.sha256(normalized_email.encode('utf-8')).hexdigest()[:12]
-        output_dir = os.path.join("src", "pages", "emails", email_hash)
+        # Utiliser le chemin monté dans le volume Docker
+        output_dir = os.path.join("/shared", "data", "emails", email_hash)
     else:
-        output_dir = "src/pages"
+        # Utiliser le chemin monté dans le volume Docker
+        output_dir = "/shared/data"
     
     os.makedirs(output_dir, exist_ok=True)
 

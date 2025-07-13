@@ -632,6 +632,7 @@ async def validate_gmail_credentials(validation_data: GmailValidationRequest, re
         # Log validation attempt
         audit_logger.log_event(
             event_type="gmail_validation",
+            user_id=None,  # Pas d'utilisateur connecté lors de la validation
             details={"email": email, "success": True},
             ip_address=client_ip
         )
@@ -642,6 +643,7 @@ async def validate_gmail_credentials(validation_data: GmailValidationRequest, re
         # Log failed validation
         audit_logger.log_event(
             event_type="gmail_validation",
+            user_id=None,  # Pas d'utilisateur connecté lors de la validation
             details={"email": email, "success": False, "error": str(e)},
             ip_address=client_ip
         )
@@ -661,6 +663,7 @@ async def validate_gmail_credentials(validation_data: GmailValidationRequest, re
         # Log failed validation
         audit_logger.log_event(
             event_type="gmail_validation",
+            user_id=None,  # Pas d'utilisateur connecté lors de la validation
             details={"email": email, "success": False, "error": str(e)},
             ip_address=client_ip
         )
