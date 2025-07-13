@@ -1,5 +1,3 @@
-version: '3.8'
-
 services:
   # API ML existante
   fastapi:
@@ -10,7 +8,16 @@ services:
       - "8000:80"
     environment:
       - PYTHONUNBUFFERED=1
+    volumes:
+      # Monter la structure de dossiers pour clients spécifiques
+      - ./src/pages/emails:/shared/data/emails:ro
     restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "python", "-c", "import requests; requests.get('http://localhost:80/health', timeout=5)"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 40s
 
   # Nouveau service d'authentification
   auth:
@@ -22,12 +29,9 @@ services:
     environment:
       - PYTHONUNBUFFERED=1
     volumes:
-      # Monter le dossier src/pages pour accéder aux CSV
-      - ./src/pages:/shared/data:ro  # ro = read-only
-      # Monter aussi le fichier CSV directement si nécessaire
-      - ./emails_live.csv:/app/emails_live.csv:ro
+      # Monter le dossier src/pages en lecture-écriture pour créer les fichiers
+      - ./src/pages:/shared/data
       - auth_data:/app/auth_system/data
-      - emails_data:/app/src/pages/emails
     restart: unless-stopped
     healthcheck:
       test: ["CMD", "python", "-c", "import requests; requests.get('http://localhost:9000/auth/health')"]
@@ -49,6 +53,6 @@ services:
     restart: unless-stopped
     volumes:
       - ./src/pages:/shared/data:ro
-      # Permettre à nginx de servir les fichiers CSV aussi
-      - ./emails_live.csv:/usr/share/nginx/html/emails_live.csv:ro
-      - emails_data:/usr/share/nginx/html/pages/emails
+
+volumes:
+  auth_data:

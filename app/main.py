@@ -116,28 +116,67 @@ def clean_input_field(text: str) -> str:
     return cleaned.strip()
 
 
-def get_raw_email_from_csv(email_id: str) -> dict:
-    """Récupère les données brutes d'un email depuis le fichier CSV"""
-    print(f"🔍 Recherche du fichier CSV pour email ID: {email_id}")
+def get_raw_email_from_csv(email_id: str, client_id: str = None) -> dict:
+    """Récupère les données brutes d'un email depuis le fichier CSV organisé par client"""
+    print(f"🔍 Recherche du fichier CSV pour email ID: {email_id}, client: {client_id}")
 
-    # Essayer plusieurs emplacements possibles (volume partagé en priorité)
-    possible_paths = [
+    # Construire les chemins possibles en fonction du client_id
+    possible_paths = []
+    
+    if client_id:
+        # Chemins spécifiques au client (PRIORITÉ ABSOLUE)
+        possible_paths.extend([
+            Path(f"/shared/data/emails/{client_id}/emails_live.csv"),  # Volume partagé avec client
+            Path(f"/app/emails/{client_id}/emails_live.csv"),          # Dans le container avec client
+            Path(f"/shared/data/{client_id}/emails_live.csv"),        # Alternative
+            Path(f"./src/pages/emails/{client_id}/emails_live.csv"),  # Dossier src/pages avec client
+            Path(f"./emails/{client_id}/emails_live.csv"),            # Dossier local avec client
+        ])
+        print(f"🔍 Mode client spécifique: recherche pour client {client_id}")
+    else:
+        print(f"🔍 Mode global: pas de client spécifique")
+    
+    # Chemins de fallback (globaux) - ajoutés après client-specific ou si pas de client_id
+    possible_paths.extend([
         Path("/shared/data/emails_live.csv"),  # Volume partagé Docker
         Path("./emails_live.csv"),             # Répertoire courant
         Path("./src/pages/emails_live.csv"),   # Dossier src/pages
         Path("/app/emails_live.csv"),          # Dans le container
-    ]
+    ])
 
     csv_path = None
+    found_files = []
+    
     for path in possible_paths:
         print(f"🔍 Vérification: {path} - Existe: {path.exists()}")
         if path.exists():
-            csv_path = path
-            print(f"✅ Fichier trouvé: {csv_path}")
-            break
+            found_files.append(path)
+            # Vérifier si c'est un fichier client spécifique
+            is_client_file = client_id and f"/{client_id}/" in str(path)
+            
+            if is_client_file:
+                try:
+                    temp_df = pd.read_csv(path)
+                    if email_id in temp_df['id'].values:
+                        csv_path = path
+                        print(f"✅ Fichier client trouvé avec l'email ID: {csv_path}")
+                        break
+                    else:
+                        print(f"⚠️ Email ID {email_id} non trouvé dans le fichier client {path}, continuons...")
+                        continue
+                except Exception as e:
+                    print(f"⚠️ Erreur lecture fichier client {path}: {e}")
+                    continue
+            else:
+                # Pour les fichiers globaux, prendre le premier trouvé seulement si on n'a pas trouvé de fichier client
+                if csv_path is None:
+                    csv_path = path
+                    print(f"✅ Fichier global trouvé: {csv_path}")
+                    break
 
     if csv_path is None:
-        print(f"❌ Aucun fichier CSV trouvé")
+        print(f"❌ Aucun fichier CSV trouvé avec l'email ID {email_id}")
+        print(f"📁 Fichiers trouvés: {[str(f) for f in found_files]}")
         # Lister le contenu des dossiers pour debug
         for check_dir in ["/shared", "/shared/data", ".", "./src", "./src/pages"]:
             try:
@@ -148,7 +187,7 @@ def get_raw_email_from_csv(email_id: str) -> dict:
             except:
                 print(f"📁 Impossible de lire {check_dir}")
 
-        raise HTTPException(status_code=404, detail=f"Fichier emails_live.csv non trouvé dans: {[str(p) for p in possible_paths]}")
+        raise HTTPException(status_code=404, detail=f"Email ID {email_id} non trouvé dans les fichiers CSV disponibles")
 
     try:
         df = pd.read_csv(csv_path)
@@ -414,6 +453,7 @@ class TextInput(BaseModel):
 
 class EmailIDInput(BaseModel):
     email_id: str
+    client_id: Optional[str] = None
 
 
 class TextInputAdaptive(BaseModel):
@@ -1028,7 +1068,7 @@ def predict_by_email_id(item: EmailIDInput):
 
     try:
         # Récupérer les données brutes depuis le CSV
-        email_data = get_raw_email_from_csv(item.email_id)
+        email_data = get_raw_email_from_csv(item.email_id, item.client_id)
 
         # Créer le texte combiné avec les données BRUTES
         raw_text = f"From: {email_data['from']}\nSubject: {email_data['subject']}\nBody: {email_data['body']}"
@@ -1591,8 +1631,10 @@ async def fetch_gmail_emails(request: GmailFetchRequest, background_tasks: Backg
             success, message, emails_data = fetch_emails_from_gmail(request.username, request.password)
             if success:
                 print(f"✅ Emails récupérés avec succès: {len(emails_data)} emails")
-                # Hash de l'email pour identifier le dossier
-                email_hash = hashlib.md5(request.username.encode()).hexdigest()[:12]
+                # Hash de l'email pour identifier le dossier - Normalisation identique à JavaScript
+                import hashlib
+                normalized_email = request.username.strip().lower()
+                email_hash = hashlib.sha256(normalized_email.encode('utf-8')).hexdigest()[:12]
                 print(f"📁 Emails sauvegardés dans: src/pages/emails/{email_hash}")
             else:
                 print(f"❌ Erreur récupération emails: {message}")

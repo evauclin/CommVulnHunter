@@ -92,9 +92,9 @@
         .feedback-section { background: rgba(255,255,255,0.1); border-radius: 10px; padding: 15px; margin-top: 15px; }
         .feedback-message { margin-top: 10px; }
         
-        /* Masquer le contenu initial jusqu'à vérification d'authentification */
+        /* Contenu visible pour debug - authentification désactivée */
         .main-content {
-            visibility: hidden;
+            visibility: visible;
         }
 
         .auth-loading {
@@ -262,24 +262,24 @@
                         console.log('[AUTH] Loading supprimé');
                     }
                     removeAuthLoading(loadingDiv);
-                });
 
-                // Si DOMContentLoaded est déjà passé
-                if (document.readyState === 'complete' || document.readyState === 'interactive') {
-                    const mainContent = document.querySelector('.main-content');
-                    if (mainContent) {
-                        mainContent.style.visibility = 'visible';
-                        console.log('[AUTH] Contenu principal affiché');
-                    } else {
-                        console.error('[AUTH] Élément .main-content non trouvé !');
-                    }
+                    // Si DOMContentLoaded est déjà passé
+                    if (document.readyState === 'complete' || document.readyState === 'interactive') {
+                        const mainContent = document.querySelector('.main-content');
+                        if (mainContent) {
+                            mainContent.style.visibility = 'visible';
+                            console.log('[AUTH] Contenu principal affiché');
+                        } else {
+                            console.error('[AUTH] Élément .main-content non trouvé !');
+                        }
 
-                    // Initialiser l'interface utilisateur
-                    if (typeof initializeUserInterface === 'function') {
-                        initializeUserInterface();
-                        console.log('[AUTH] Interface utilisateur initialisée');
+                        // Initialiser l'interface utilisateur
+                        if (typeof initializeUserInterface === 'function') {
+                            initializeUserInterface();
+                            console.log('[AUTH] Interface utilisateur initialisée');
+                        }
+                        removeAuthLoading(loadingDiv);
                     }
-                    removeAuthLoading(loadingDiv);
                 }
 
                 // Afficher le contenu immédiatement
@@ -347,16 +347,19 @@
                             <div class="col-md-6 text-end">
                                 <div class="d-flex align-items-center justify-content-end gap-3">
                                     <div class="btn-group" role="group">
-                                        <button type="button" class="btn btn-success" onclick="loadUserEmails()">
-                                            <i class="bi bi-cloud-download"></i> Gmail CSV
+                                        <button type="button" class="btn btn-auto-refresh btn-sm" onclick="loadEmailsWithAI()">
+                                            <i class="bi bi-robot"></i> Charger avec IA
                                         </button>
-                                        <button type="button" class="btn btn-primary" onclick="loadDemoEmails()">
+                                        <button type="button" class="btn btn-success btn-sm" onclick="loadLiveEmails()">
+                                            <i class="bi bi-cloud-download"></i> CSV Brut
+                                        </button>
+                                        <button type="button" class="btn btn-primary btn-sm" onclick="loadDemoEmails()">
                                             <i class="bi bi-file-text"></i> Demo
                                         </button>
-                                        <button type="button" class="btn btn-secondary" onclick="refreshEmails()">
+                                        <button type="button" class="btn btn-secondary btn-sm" onclick="refreshEmails()">
                                             <i class="bi bi-arrow-clockwise"></i> Refresh
                                         </button>
-                                        <button type="button" class="btn btn-info" onclick="checkMLStatus()">
+                                        <button type="button" class="btn btn-info btn-sm" onclick="checkMLStatus()">
                                             <i class="bi bi-activity"></i> Vérifier ML
                                         </button>
                                     </div>
@@ -375,26 +378,11 @@
                                 </div>
                             </div>
                         </div>
-                                <div class="btn-group" role="group">
-                                    <button type="button" class="btn btn-auto-refresh" onclick="loadEmailsWithAI()">
-                                        <i class="bi bi-robot"></i> Charger avec IA
-                                    </button>
-                                    <button type="button" class="btn btn-success" onclick="loadLiveEmails()">
-                                        <i class="bi bi-cloud-download"></i> CSV Brut
-                                    </button>
-                                    <button type="button" class="btn btn-primary" onclick="loadDemoEmails()">
-                                        <i class="bi bi-file-text"></i> Demo
-                                    </button>
-                                    <button type="button" class="btn btn-info" onclick="checkMLStatus()">
-                                        <i class="bi bi-activity"></i> Vérifier ML
-                                    </button>
-                                </div>
-                            </div>
-                        </div>
                     </div>
                 </div>
             </div>
         </div>
+
 
         <!-- ✅ MODIFIÉ: Indicateur de Fine-tuning avec timer -->
         <div id="finetuningIndicator" class="finetuning-indicator" style="display: none;">
@@ -687,9 +675,10 @@
 
     <!-- Scripts d'authentification intégrés dans le fichier -->
     <!-- Scripts d'authentification -->
-    <script src="auth-guard.js"></script>
+    <!-- <script src="auth-guard.js"></script> --> <!-- Disabled: file not found -->
 
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
+    <script src="hashUtils.js"></script>
     <script src="csvEmailLoader.js" defer></script>
 
     <script defer>
@@ -956,9 +945,10 @@
                     if (userData) {
                         const user = JSON.parse(userData);
                         if (user.email) {
+                            console.log(`🔍 Email utilisateur depuis localStorage: "${user.email}"`);
                             // Calculer le hash de l'email (même méthode que côté serveur)
-                            userEmailHash = await hashEmail(user.email);
-                            console.log(`📁 Recherche emails pour l'utilisateur: ${userEmailHash}`);
+                            userEmailHash = await hashEmailForDirectory(user.email);
+                            console.log(`📁 Hash calculé pour l'utilisateur: ${userEmailHash}`);
                         }
                     }
                 } catch (e) {
@@ -966,11 +956,9 @@
                 }
 
                 await emailLoader.loadEmailsFromCSV('./emails_live.csv', userEmailHash);
-                emailLoader.updateSourceIndicator(`Données de "emails_live.csv" (${emailLoader.emails.length} emails)`, 'success');
+                emailLoader.updateSourceIndicator(`📊 Données CSV brutes (${emailLoader.emails.length} emails)`, 'success');
                 autoRefreshMode = false;
                 showAutoRefreshIndicator(false);
-                await emailLoader.loadEmailsFromCSV('./emails_live.csv');
-                emailLoader.updateSourceIndicator(`📊 Données CSV brutes (${emailLoader.emails.length} emails)`, 'success');
                 loadAndUpdate();
             } catch (error) {
                 alert(`Erreur de chargement du fichier CSV. Assurez-vous d'utiliser un serveur local et que le fichier 'emails_live.csv' est présent.`);
@@ -1010,6 +998,8 @@
 
         function applyFiltersAndSearch() {
             let emails = emailLoader.emails;
+            console.log(`🔧 applyFiltersAndSearch: emailLoader.emails.length =`, emailLoader.emails.length);
+            console.log(`🔧 applyFiltersAndSearch: currentFilter =`, currentFilter);
 
             if (currentFilter !== 'ALL') {
                 if (currentFilter === 'WITH_FEEDBACK') {
@@ -1037,7 +1027,10 @@
             }
 
             filteredEmails = emails;
-            emailLoader.displayEmails(document.getElementById('emailList'), filteredEmails);
+            console.log(`🔧 applyFiltersAndSearch: filteredEmails.length =`, filteredEmails.length);
+            const container = document.getElementById('emailList');
+            console.log(`🔧 applyFiltersAndSearch: container =`, container);
+            emailLoader.displayEmails(container, filteredEmails);
             updateEmailDisplayWithFeedback();
 
             const feedbackCount = filteredEmails.filter(email => {
@@ -1128,19 +1121,30 @@
         async function checkMLStatus() {
             const statusElement = document.getElementById('mlStatus');
             const analyzeBtn = document.getElementById('analyzeBtn');
+            
+            console.log('🔍 [DEBUG] Début checkMLStatus - URL:', mlApiUrl);
             statusElement.innerHTML = '<i class="bi bi-arrow-clockwise spin"></i> Vérification du modèle ML...';
 
             try {
-                const response = await fetch(`${mlApiUrl}/health`, { mode: 'cors', signal: AbortSignal.timeout(5000) });
+                console.log('🔍 [DEBUG] Tentative de connexion au service ML...');
+                const response = await fetch(`${mlApiUrl}/health`, { 
+                    mode: 'cors', 
+                    signal: AbortSignal.timeout(5000)
+                });
+
+                console.log('🔍 [DEBUG] Réponse reçue:', response.status, response.ok);
 
                 if (response.ok) {
                     mlStatusOnline = true;
                     const data = await response.json();
+                    console.log('🔍 [DEBUG] Données ML reçues:', data);
                     updateMLStatusForTraining(data.is_finetuning_running || false);
+                    console.log('✅ [DEBUG] Modèle ML en ligne et opérationnel');
                 } else {
                     throw new Error(`HTTP ${response.status}`);
                 }
             } catch (error) {
+                console.error('❌ [DEBUG] Erreur checkMLStatus:', error);
                 mlStatusOnline = false;
                 statusElement.innerHTML = `<i class="bi bi-circle-fill text-danger"></i> Modèle ML: <strong>Hors ligne</strong><br><small>${error.name === 'AbortError' ? 'Timeout' : 'Erreur connexion'}</small>`;
                 statusElement.className = 'ml-status offline';
@@ -1167,10 +1171,25 @@
             analyzeBtn.disabled = true;
             resultDiv.innerHTML = `<div class="text-info"><div class="spinner-border spinner-border-sm me-2"></div><strong>Analyse IA en cours...</strong></div>`;
 
+            // Récupérer le hash de l'utilisateur
+            let clientId = null;
+            try {
+                const userData = localStorage.getItem('user_data');
+                if (userData) {
+                    const user = JSON.parse(userData);
+                    if (user.email) {
+                        clientId = await hashEmailForDirectory(user.email);
+                        console.log(`📁 Analyse ML pour client: ${clientId}`);
+                    }
+                }
+            } catch (e) {
+                console.log('Info: Pas de client_id, analyse globale');
+            }
+
             try {
                 const response = await fetch(`${mlApiUrl}/predict/email-id`, {
                     method: 'POST', mode: 'cors', headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ email_id: emailId }),
+                    body: JSON.stringify({ email_id: emailId, client_id: clientId }),
                     signal: AbortSignal.timeout(30000)
                 });
                 if (!response.ok) throw new Error(`API Error ${response.status}: ${await response.text()}`);
@@ -1311,13 +1330,43 @@
             }
         }
 
-        document.addEventListener('DOMContentLoaded', () => {
+        document.addEventListener('DOMContentLoaded', async () => {
             console.log('🚀 Initialisation du dashboard ML avec cycle de vie et timer...');
+            
+            // Clear any cached hash values
+            localStorage.removeItem('userEmailHash');
+            sessionStorage.removeItem('userEmailHash');
+            
+            // Test du hash pour vérifier la cohérence - Version 4.0 (dynamique)
+            console.log(`🔧 hashEmailForDirectory function exists: ${typeof hashEmailForDirectory}`);
+            
+            // Test dynamique avec l'utilisateur connecté s'il existe
+            try {
+                const userData = localStorage.getItem('user_data');
+                if (userData) {
+                    const user = JSON.parse(userData);
+                    if (user.email) {
+                        const testHash = await hashEmailForDirectory(user.email);
+                        console.log(`🧪 Test hash cohérence pour "${user.email}": ${testHash}`);
+                        
+                        // Test de base avec un email connu pour validation
+                        const knownTestHash = await hashEmailForDirectory('test@example.com');
+                        console.log(`🧪 Test hash de référence pour "test@example.com": ${knownTestHash}`);
+                    }
+                }
+            } catch (e) {
+                console.log('🔧 Test de hash basique sans utilisateur connecté');
+                const basicTestHash = await hashEmailForDirectory('test@example.com');
+                console.log(`🧪 Test hash de base: ${basicTestHash}`);
+            }
+            
             loadEmailsWithAI();
             console.log('🚀 Initialisation du dashboard ML...');
 
             // Vérifier l'authentification
-            if (!requireAuth()) {
+            if (!checkAuth()) {
+                console.log('❌ Non authentifié, redirection...');
+                window.location.href = 'new_login.html';
                 return;
             }
 
@@ -1328,8 +1377,10 @@
             loadLiveEmails();
 
             // Vérifier le statut ML
+            console.log('🔄 [DEBUG] Démarrage de la vérification ML...');
             checkMLStatus();
 
+            // Intervalles pour le monitoring continu
             setInterval(checkFinetuningStatus, 5000);
 
             document.querySelectorAll('input[name="satisfaction"]').forEach(input => input.addEventListener('change', e => e.target.checked && handleFeedback(e.target.value)));
@@ -1380,17 +1431,7 @@
         `;
         document.head.appendChild(style);
 
-        // Fonction utilitaire pour calculer le hash email (même que côté serveur)
-        async function hashEmail(email) {
-            // Utilisation d'une méthode simple pour compatibilité navigateur
-            let hash = 0;
-            for (let i = 0; i < email.length; i++) {
-                const char = email.charCodeAt(i);
-                hash = ((hash << 5) - hash) + char;
-                hash = hash & hash; // Convert to 32bit integer
-            }
-            return Math.abs(hash).toString(16).substring(0, 12);
-        }
+        // Hash function moved to hashUtils.js - using centralized implementation
 
         // Fonction pour charger les emails de l'utilisateur connecté
         async function loadUserEmails() {
@@ -1409,7 +1450,7 @@
                 }
 
                 // Calculer le hash de l'email de l'utilisateur
-                const userEmailHash = await hashEmail(user.email);
+                const userEmailHash = await hashEmailForDirectory(user.email);
                 console.log(`📁 Chargement des emails pour l'utilisateur: ${user.email} (hash: ${userEmailHash})`);
 
                 // Essayer de charger les emails utilisateur
