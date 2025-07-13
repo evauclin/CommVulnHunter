@@ -991,13 +991,141 @@
         }
 
         async function refreshEmails() {
-            if (autoRefreshMode) {
-                await refreshEmailsWithML();
-            } else {
-                if (emailLoader.currentSource === 'csv_live') {
-                    await loadLiveEmails();
-                } else {
-                    await loadDemoEmails();
+            console.log('🔄 Refresh avec prédictions ML pour tous les emails...');
+            emailLoader.updateSourceIndicator('🔄 Chargement et analyse ML de tous les emails...', 'info');
+            
+            try {
+                // Étape 1: Charger d'abord les emails depuis le CSV
+                let userEmailHash = null;
+                try {
+                    const userData = localStorage.getItem('user_data');
+                    if (userData) {
+                        const user = JSON.parse(userData);
+                        if (user.email) {
+                            userEmailHash = await hashEmailForDirectory(user.email);
+                        }
+                    }
+                } catch (e) {
+                    console.log('Pas d\'utilisateur authentifié, mode global');
+                }
+
+                // Construire le bon chemin CSV
+                let csvPath = userEmailHash ? `emails/${userEmailHash}/emails_live.csv` : 'emails_live.csv';
+                
+                // Charger les emails depuis le CSV
+                await emailLoader.loadEmailsFromCSV(csvPath);
+                console.log(`📊 ${emailLoader.emails.length} emails chargés depuis ${csvPath}`);
+                
+                if (emailLoader.emails.length === 0) {
+                    emailLoader.updateSourceIndicator('⚠️ Aucun email trouvé', 'warning');
+                    return;
+                }
+
+                // Étape 2: Faire des prédictions ML pour chaque email
+                emailLoader.updateSourceIndicator(`🧠 Analyse ML en cours pour ${emailLoader.emails.length} emails...`, 'info');
+                
+                let successCount = 0;
+                let errorCount = 0;
+
+                for (let i = 0; i < emailLoader.emails.length; i++) {
+                    const email = emailLoader.emails[i];
+                    const emailId = email.id || `email_${i}`;
+                    
+                    try {
+                        console.log(`🧠 Analyse ML ${i + 1}/${emailLoader.emails.length}: ${emailId}`);
+                        
+                        const response = await fetch(`${mlApiUrl}/predict/email-id`, {
+                            method: 'POST',
+                            mode: 'cors',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ 
+                                email_id: emailId, 
+                                client_id: userEmailHash 
+                            }),
+                            signal: AbortSignal.timeout(15000) // 15 secondes par email
+                        });
+
+                        if (response.ok) {
+                            const result = await response.json();
+                            
+                            // Mettre à jour le type de l'email basé sur la prédiction
+                            const newType = result.prediction === 'phishing' ? 'SPAM' : 'IMPORTANT';
+                            const oldType = email.type;
+                            
+                            emailLoader.emails[i].type = newType;
+                            emailLoader.emails[i].ml_probability = result.probability;
+                            emailLoader.emails[i].ml_confidence = result.confidence;
+                            emailLoader.emails[i].language_detected = result.language_detected;
+                            
+                            if (newType !== oldType) {
+                                console.log(`   🔄 ${emailId}: ${oldType} → ${newType} (conf: ${result.confidence})`);
+                            } else {
+                                console.log(`   ✅ ${emailId}: ${newType} confirmé (conf: ${result.confidence})`);
+                            }
+                            
+                            successCount++;
+                        } else {
+                            console.warn(`   ⚠️ ${emailId}: Erreur HTTP ${response.status}`);
+                            errorCount++;
+                        }
+                    } catch (error) {
+                        console.error(`   ❌ ${emailId}: ${error.message}`);
+                        errorCount++;
+                    }
+                    
+                    // Mise à jour progressive de l'interface
+                    if ((i + 1) % 5 === 0 || i === emailLoader.emails.length - 1) {
+                        const processed = i + 1;
+                        const remaining = emailLoader.emails.length - processed;
+                        emailLoader.updateSourceIndicator(
+                            `🧠 Analyse ML: ${processed}/${emailLoader.emails.length} traités (${remaining} restants)`, 
+                            'info'
+                        );
+                        
+                        // Rafraîchir l'affichage par petits groupes
+                        const container = document.getElementById('emailList');
+                        emailLoader.displayEmails(container);
+                        emailLoader.updateStatsDisplay();
+                        updateEmailDisplayWithFeedback();
+                    }
+                }
+
+                // Étape 3: Affichage final
+                console.log(`✅ Analyse ML terminée: ${successCount} succès, ${errorCount} erreurs`);
+                
+                const container = document.getElementById('emailList');
+                emailLoader.displayEmails(container);
+                emailLoader.updateStatsDisplay();
+                updateEmailDisplayWithFeedback();
+                
+                if (emailLoader.emails.length > 0) {
+                    selectEmail(0);
+                }
+                
+                // Message de statut final
+                const statusMessage = errorCount > 0 
+                    ? `🧠 Analyse ML terminée: ${successCount}/${emailLoader.emails.length} emails analysés (${errorCount} erreurs)`
+                    : `🧠 Analyse ML terminée: ${emailLoader.emails.length} emails analysés avec succès`;
+                    
+                emailLoader.updateSourceIndicator(statusMessage, successCount > 0 ? 'success' : 'warning');
+                
+            } catch (error) {
+                console.error('❌ Erreur lors du refresh avec ML:', error);
+                emailLoader.updateSourceIndicator(`❌ Erreur: ${error.message}`, 'danger');
+                
+                // Fallback: essayer de charger sans ML
+                try {
+                    if (autoRefreshMode) {
+                        await refreshEmailsWithML();
+                    } else {
+                        if (emailLoader.currentSource === 'csv_live') {
+                            await loadLiveEmails();
+                        } else {
+                            await loadDemoEmails();
+                        }
+                    }
+                } catch (fallbackError) {
+                    console.error('❌ Fallback également échoué:', fallbackError);
                 }
             }
         }
