@@ -561,16 +561,7 @@ function selectEmail(index) {
             }
         }
 
-        // Reset analysis
-        const analysisResult = document.getElementById('analysisResult');
-        if (analysisResult) analysisResult.textContent = '';
-
-        document.querySelectorAll('input[name="satisfaction"]').forEach(input => {
-            input.checked = false;
-            input.disabled = true;
-        });
-
-        // Réinitialiser l'analyse
+        // Reset analysis - DÉLÉGUÉ au script principal
         if (typeof resetAnalysisAndFeedback === 'function') {
             resetAnalysisAndFeedback();
         }
