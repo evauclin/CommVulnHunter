@@ -574,19 +574,17 @@
                                 <div class="mb-2">
                                     <strong><i class="bi bi-star"></i> Êtes-vous satisfait de l'analyse ?</strong>
                                 </div>
+                                <div id="feedbackInstruction" class="alert alert-info alert-sm py-2 mb-3" style="font-size: 0.85rem;">
+                                    <i class="bi bi-info-circle me-1"></i>
+                                    <strong>Sélectionnez votre feedback :</strong> L'analyse IA se fera automatiquement avant d'enregistrer votre évaluation.
+                                </div>
                                 <div class="d-flex gap-3 justify-content-center">
-                                    <div class="form-check">
-                                        <input class="form-check-input" type="radio" name="satisfaction" id="satisfactionYes" value="yes" disabled>
-                                        <label class="form-check-label" for="satisfactionYes">
-                                            <i class="bi bi-hand-thumbs-up text-success"></i> Correcte
-                                        </label>
-                                    </div>
-                                    <div class="form-check">
-                                        <input class="form-check-input" type="radio" name="satisfaction" id="satisfactionNo" value="no" disabled>
-                                        <label class="form-check-label" for="satisfactionNo">
-                                            <i class="bi bi-hand-thumbs-down text-danger"></i> Incorrecte
-                                        </label>
-                                    </div>
+                                    <button type="button" class="btn btn-success" onclick="sendFeedbackDirect('yes')">
+                                        <i class="bi bi-hand-thumbs-up"></i> Correcte
+                                    </button>
+                                    <button type="button" class="btn btn-danger" onclick="sendFeedbackDirect('no')">
+                                        <i class="bi bi-hand-thumbs-down"></i> Incorrecte
+                                    </button>
                                 </div>
                                 <small class="text-muted d-block mt-2 text-center">
                                     Votre feedback nous aide à améliorer le modèle
@@ -1244,8 +1242,14 @@
             document.getElementById('analysisResult').innerHTML = '';
             document.querySelectorAll('input[name="satisfaction"]').forEach(input => {
                 input.checked = false;
-                input.disabled = true;
+                // ✅ MODIFIÉ: Ne plus désactiver les boutons
+                // input.disabled = true;
             });
+            // ✅ NOUVEAU: Réafficher l'instruction quand on reset
+            const feedbackInstruction = document.getElementById('feedbackInstruction');
+            if (feedbackInstruction) {
+                feedbackInstruction.style.display = 'block';
+            }
         }
 
         async function checkMLStatus() {
@@ -1352,6 +1356,11 @@
                     <div><small class="text-muted">Langue: ${data.language_detected || 'en'}</small></div>
                 </div>
             `;
+            // ✅ NOUVEAU: Masquer l'instruction et activer les boutons
+            const feedbackInstruction = document.getElementById('feedbackInstruction');
+            if (feedbackInstruction) {
+                feedbackInstruction.style.display = 'none';
+            }
             document.querySelectorAll('input[name="satisfaction"]').forEach(input => input.disabled = false);
         }
 
@@ -1359,10 +1368,27 @@
             if (!currentEmailData || !currentAnalysisResult) return;
 
             try {
+                // Récupérer le client_id de la même manière que pour l'analyse
+                let clientId = null;
+                try {
+                    const userData = localStorage.getItem('user_data');
+                    if (userData) {
+                        const user = JSON.parse(userData);
+                        if (user.email) {
+                            clientId = await hashEmailForDirectory(user.email);
+                        }
+                    }
+                } catch (e) {
+                    console.log('Info: Pas de client_id pour le feedback, envoi global');
+                }
+
                 const feedbackData = {
-                    email_id: currentEmailData.id, predicted_class: currentAnalysisResult.prediction,
-                    predicted_probability: currentAnalysisResult.probability, user_satisfaction: satisfaction,
-                    language_detected: currentAnalysisResult.language_detected
+                    email_id: currentEmailData.id, 
+                    predicted_class: currentAnalysisResult.prediction,
+                    predicted_probability: currentAnalysisResult.probability, 
+                    user_satisfaction: satisfaction,
+                    language_detected: currentAnalysisResult.language_detected,
+                    client_id: clientId
                 };
                 showFeedbackMessage('Envoi du feedback...', 'info');
 
@@ -1430,6 +1456,79 @@
             if (confirm(confirmMessage)) {
                 sendFeedback(satisfaction);
             } else {
+                document.querySelectorAll('input[name="satisfaction"]').forEach(input => input.checked = false);
+            }
+        }
+
+        // ✅ NOUVEAU: Analyser puis envoyer feedback automatiquement
+        async function analyzeEmailThenSendFeedback(satisfaction) {
+            if (!mlStatusOnline) {
+                alert('Le modèle ML n\'est pas disponible. Impossible d\'envoyer le feedback.');
+                document.querySelectorAll('input[name="satisfaction"]').forEach(input => input.checked = false);
+                return;
+            }
+
+            const resultDiv = document.getElementById('analysisResult');
+            resultDiv.innerHTML = `<div class="text-info"><div class="spinner-border spinner-border-sm me-2"></div><strong>Analyse IA en cours pour feedback...</strong></div>`;
+
+            try {
+                // Récupérer le hash de l'utilisateur
+                let clientId = null;
+                try {
+                    const userData = localStorage.getItem('user_data');
+                    if (userData) {
+                        const user = JSON.parse(userData);
+                        if (user.email) {
+                            clientId = await hashEmailForDirectory(user.email);
+                        }
+                    }
+                } catch (e) {
+                    console.log('Info: Pas de client_id, analyse globale');
+                }
+
+                const response = await fetch(`${mlApiUrl}/predict/email-id`, {
+                    method: 'POST', mode: 'cors', headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ email_id: currentEmailData.id, client_id: clientId }),
+                    signal: AbortSignal.timeout(30000)
+                });
+                
+                if (!response.ok) throw new Error(`API Error ${response.status}: ${await response.text()}`);
+
+                const data = await response.json();
+                
+                // Stocker le résultat pour l'envoi du feedback
+                const confidence = Math.round((data.probability || 0) * 100);
+                const isSpam = data.prediction === 'phishing' || data.prediction === 'spam';
+
+                currentAnalysisResult = {
+                    prediction: data.prediction, probability: data.probability, confidence: confidence,
+                    language_detected: data.language_detected || 'en', isSpam: isSpam, timestamp: new Date().toISOString()
+                };
+
+                // Afficher le résultat
+                document.getElementById('analysisResult').innerHTML = `
+                    <div class="analysis-result ${isSpam ? 'text-danger' : 'text-success'}">
+                        <div class="d-flex align-items-center mb-2">
+                            <i class="bi bi-${isSpam ? 'shield-x' : 'shield-check'} me-2"></i>
+                            <strong>${isSpam ? 'SPAM/PHISHING détecté' : 'Email LÉGITIME'}</strong>
+                        </div>
+                        <div class="mb-1"><small>Confiance: <strong>${confidence}%</strong></small></div>
+                        <div><small class="text-muted">Langue: ${data.language_detected || 'en'}</small></div>
+                    </div>
+                `;
+
+                // Masquer l'instruction
+                const feedbackInstruction = document.getElementById('feedbackInstruction');
+                if (feedbackInstruction) {
+                    feedbackInstruction.style.display = 'none';
+                }
+
+                // Envoyer automatiquement le feedback
+                await sendFeedback(satisfaction);
+
+            } catch (error) {
+                console.error('❌ Erreur lors de l\'analyse pour feedback:', error);
+                alert(`Erreur lors de l'analyse: ${error.message}`);
                 document.querySelectorAll('input[name="satisfaction"]').forEach(input => input.checked = false);
             }
         }
@@ -1518,7 +1617,7 @@
             // Intervalles pour le monitoring continu
             setInterval(checkFinetuningStatus, 5000);
 
-            document.querySelectorAll('input[name="satisfaction"]').forEach(input => input.addEventListener('change', e => e.target.checked && handleFeedback(e.target.value)));
+            // ✅ SIMPLIFIÉ: Plus d'event listeners complexes - utilisation directe des boutons onclick
             document.querySelectorAll('input[name="viewMode"]').forEach(input => input.addEventListener('change', updateBodyDisplay));
 
             console.log('✅ Système de feedback et fine-tuning avec cycle de vie initialisé');
@@ -1676,7 +1775,61 @@
             console.log('  currentEmailData:', currentEmailData);
             console.log('  currentAnalysisResult:', currentAnalysisResult);
             console.log('  mlStatusOnline:', mlStatusOnline);
+            
+            // Test des event listeners
+            const inputs = document.querySelectorAll('input[name="satisfaction"]');
+            console.log('🔍 Inputs satisfaction trouvés:', inputs.length);
+            inputs.forEach(input => {
+                console.log(`  - ${input.id}: enabled=${!input.disabled}, checked=${input.checked}`);
+            });
         }
+        
+        // ✅ NOUVEAU: Functions pour gérer les événements
+        function handleSatisfactionChange(e) {
+            console.log('🎯 handleSatisfactionChange déclenché:', e.target.id, 'valeur:', e.target.value, 'checked:', e.target.checked);
+            if (e.target.checked) {
+                handleFeedback(e.target.value);
+            }
+        }
+        
+        function handleSatisfactionClick(e) {
+            console.log('🖱️ handleSatisfactionClick déclenché:', e.target.id, 'valeur:', e.target.value);
+            // Laisser l'événement change gérer la logique
+        }
+        
+        // ✅ NOUVEAU: Fonction de test direct du feedback
+        function testFeedback(satisfaction) {
+            console.log('🧪 TEST DIRECT du feedback avec:', satisfaction);
+            handleFeedback(satisfaction);
+        }
+        
+        // ✅ NOUVEAU: Fonction directe pour les boutons de feedback 
+        async function sendFeedbackDirect(satisfaction) {
+            console.log('🎯 Bouton de feedback cliqué:', satisfaction);
+            
+            if (!currentEmailData) {
+                alert('Veuillez sélectionner un email d\'abord.');
+                return;
+            }
+
+            if (!mlStatusOnline) {
+                alert('Le modèle ML n\'est pas disponible. Impossible d\'envoyer le feedback.');
+                return;
+            }
+
+            // Si pas d'analyse ML précédente, analyser d'abord puis envoyer feedback
+            if (!currentAnalysisResult) {
+                await analyzeEmailThenSendFeedback(satisfaction);
+            } else {
+                // Si analyse déjà faite, envoyer directement le feedback avec confirmation
+                handleFeedback(satisfaction);
+            }
+        }
+
+        // ✅ NOUVEAU: Exposer les fonctions de test globalement pour debug
+        window.testFeedback = testFeedback;
+        window.debugFeedbackState = debugFeedbackState;
+        window.sendFeedbackDirect = sendFeedbackDirect;
     </script>
 </body>
 </html>

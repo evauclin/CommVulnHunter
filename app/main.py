@@ -484,6 +484,7 @@ class FeedbackByIdInput(BaseModel):
     predicted_probability: float
     user_satisfaction: str
     language_detected: str
+    client_id: Optional[str] = None
 
 
 
@@ -1299,8 +1300,10 @@ def get_feedbacks():
 async def save_feedback_by_id(feedback: FeedbackByIdInput, background_tasks: BackgroundTasks):
     """Save user feedback using email ID to get complete email data"""
     try:
+        print(f"🔍 Feedback reçu pour email_id: {feedback.email_id}, client_id: {feedback.client_id}")
+        
         # Récupérer les données complètes comme pour l'analyse
-        email_data = get_raw_email_from_csv(feedback.email_id)
+        email_data = get_raw_email_from_csv(feedback.email_id, feedback.client_id)
 
         # Créer le texte complet (même méthode que l'analyse)
         complete_text = f"From: {email_data['from']}\nSubject: {email_data['subject']}\nBody: {email_data['body']}"
@@ -1318,7 +1321,14 @@ async def save_feedback_by_id(feedback: FeedbackByIdInput, background_tasks: Bac
         if not save_feedback_to_csv(feedback_data):
             raise HTTPException(status_code=500, detail="Erreur sauvegarde feedback")
 
-        print(f"📝 Feedback enregistré avec données complètes: {feedback.user_satisfaction}")
+        # ✅ NOUVEAU: Logs détaillés pour debugging
+        print(f"\n📤 === FEEDBACK REÇU ===")
+        print(f"📧 Email ID: {feedback.email_id}")
+        print(f"👤 Client ID: {feedback.client_id}")
+        print(f"🤖 Prédiction: {feedback.predicted_class} (prob: {feedback.predicted_probability:.4f})")
+        print(f"😊 Satisfaction utilisateur: {feedback.user_satisfaction}")
+        print(f"🌍 Langue détectée: {feedback.language_detected}")
+        print(f"💾 Feedback sauvegardé avec succès")
 
         # ✅ AMÉLIORÉ: Déclencher le fine-tuning pour feedbacks négatifs
         auto_triggered = False
@@ -1356,6 +1366,8 @@ async def save_feedback_by_id(feedback: FeedbackByIdInput, background_tasks: Bac
 
     except Exception as e:
         print(f"❌ Erreur feedback par ID: {e}")
+        import traceback
+        print(f"❌ Stack trace complète: {traceback.format_exc()}")
         raise HTTPException(status_code=500, detail=f"Erreur: {e}")
 @app.get("/feedbacks/stats", summary="Feedback statistics")
 def get_feedback_stats():
