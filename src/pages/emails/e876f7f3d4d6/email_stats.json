@@ -1,0 +1,174 @@
+{
+  "total_emails": 67,
+  "important_emails": 50,
+  "spam_emails": 17,
+  "generated_at": "2025-07-14T13:39:44.053578",
+  "domains": {
+    "youtube.com": {
+      "total": 1,
+      "spam": 0,
+      "important": 1
+    },
+    "yahoo.com": {
+      "total": 6,
+      "spam": 0,
+      "important": 6
+    },
+    "meteojob.com": {
+      "total": 2,
+      "spam": 0,
+      "important": 2
+    },
+    "email.mango": {
+      "total": 1,
+      "spam": 0,
+      "important": 1
+    },
+    "emails.hellowork.com": {
+      "total": 2,
+      "spam": 0,
+      "important": 2
+    },
+    "marketing.ryanairemail.com": {
+      "total": 1,
+      "spam": 0,
+      "important": 1
+    },
+    "gmail.com": {
+      "total": 9,
+      "spam": 0,
+      "important": 9
+    },
+    "location-etudiant.fr": {
+      "total": 2,
+      "spam": 0,
+      "important": 2
+    },
+    "myges.fr": {
+      "total": 15,
+      "spam": 0,
+      "important": 15
+    },
+    "mkt.getyourguide.com": {
+      "total": 1,
+      "spam": 0,
+      "important": 1
+    },
+    "k.aroma-zone.com": {
+      "total": 1,
+      "spam": 0,
+      "important": 1
+    },
+    "mail.anthropic.com": {
+      "total": 1,
+      "spam": 0,
+      "important": 1
+    },
+    "service-mail.dazn.com": {
+      "total": 2,
+      "spam": 0,
+      "important": 2
+    },
+    "google.com": {
+      "total": 1,
+      "spam": 0,
+      "important": 1
+    },
+    "newsletter.letudiant.fr": {
+      "total": 1,
+      "spam": 0,
+      "important": 1
+    },
+    "news.intermarche.com": {
+      "total": 1,
+      "spam": 0,
+      "important": 1
+    },
+    "email.alphorm.com": {
+      "total": 1,
+      "spam": 0,
+      "important": 1
+    },
+    "pdffiller.com": {
+      "total": 1,
+      "spam": 0,
+      "important": 1
+    },
+    "e.govoyages.com": {
+      "total": 1,
+      "spam": 0,
+      "important": 1
+    },
+    "kvEajcmC.us": {
+      "total": 1,
+      "spam": 1,
+      "important": 0
+    },
+    "mGrIv.fr": {
+      "total": 1,
+      "spam": 1,
+      "important": 0
+    },
+    "GkjeGHsqa.us": {
+      "total": 1,
+      "spam": 1,
+      "important": 0
+    },
+    "hello.redis.io": {
+      "total": 2,
+      "spam": 2,
+      "important": 0
+    },
+    "G4dSDoBKG4dSDoBK.fr": {
+      "total": 1,
+      "spam": 1,
+      "important": 0
+    },
+    "qlik.com": {
+      "total": 3,
+      "spam": 3,
+      "important": 0
+    },
+    "SUVlsUos.us": {
+      "total": 1,
+      "spam": 1,
+      "important": 0
+    },
+    "news.aslairlines.fr": {
+      "total": 1,
+      "spam": 1,
+      "important": 0
+    },
+    "GJhu1Df.GJhu1Df.GJhu1Df.fr": {
+      "total": 1,
+      "spam": 1,
+      "important": 0
+    },
+    "86NBc3tC86NBc3tC.fr": {
+      "total": 1,
+      "spam": 1,
+      "important": 0
+    },
+    "gekxLzIB.us": {
+      "total": 1,
+      "spam": 1,
+      "important": 0
+    },
+    "PpKnL.fr": {
+      "total": 1,
+      "spam": 1,
+      "important": 0
+    },
+    "Ld6ZtM86Ld6ZtM86.ca": {
+      "total": 1,
+      "spam": 1,
+      "important": 0
+    },
+    "privaterelay.appleid.com": {
+      "total": 1,
+      "spam": 1,
+      "important": 0
+    }
+  },
+  "success_rate": 74.63
+}
