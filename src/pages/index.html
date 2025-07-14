@@ -347,9 +347,6 @@
                             <div class="col-md-6 text-end">
                                 <div class="d-flex align-items-center justify-content-end gap-3">
                                     <div class="btn-group" role="group">
-                                        <button type="button" class="btn btn-auto-refresh btn-sm" onclick="loadEmailsWithAI()">
-                                            <i class="bi bi-robot"></i> Charger avec IA
-                                        </button>
                                         <button type="button" class="btn btn-success btn-sm" onclick="loadLiveEmails()">
                                             <i class="bi bi-cloud-download"></i> CSV Brut
                                         </button>
@@ -876,6 +873,7 @@
                 if (finetuningStatus) { // Si on perd la connexion pendant le FT
                     stopFinetuningTimer();
                     showFinetuningIndicator(false);
+                    finetuningStatus = false;
                 }
             }
         }
@@ -1594,7 +1592,6 @@
                 console.log('🔧 Erreur lors du test de hash:', e);
             }
             
-            loadEmailsWithAI();
             console.log('🚀 Initialisation du dashboard ML...');
 
             // Vérifier l'authentification
