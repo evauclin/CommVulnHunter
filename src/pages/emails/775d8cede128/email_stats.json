@@ -1,0 +1,29 @@
+{
+  "total_emails": 20,
+  "important_emails": 20,
+  "spam_emails": 0,
+  "generated_at": "2025-07-14T15:21:23.664878",
+  "domains": {
+    "google.com": {
+      "total": 1,
+      "spam": 0,
+      "important": 1
+    },
+    "webcamassist.com": {
+      "total": 4,
+      "spam": 0,
+      "important": 4
+    },
+    "accounts.google.com": {
+      "total": 11,
+      "spam": 0,
+      "important": 11
+    },
+    "webcamaccount.com": {
+      "total": 4,
+      "spam": 0,
+      "important": 4
+    }
+  },
+  "success_rate": 100.0
+}

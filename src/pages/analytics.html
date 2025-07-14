@@ -1,0 +1,1299 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Analytics Dashboard - CommVulnHunter</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+        body {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+        }
+
+        .analytics-container {
+            padding: 20px;
+        }
+
+        .card {
+            backdrop-filter: blur(10px);
+            background: rgba(255, 255, 255, 0.95);
+            border: none;
+            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.1);
+            border-radius: 15px;
+            margin-bottom: 20px;
+        }
+
+        .card-header {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border-radius: 15px 15px 0 0 !important;
+            padding: 15px 20px;
+        }
+
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+            gap: 20px;
+            margin-bottom: 30px;
+        }
+
+        .stat-card {
+            background: white;
+            border-radius: 12px;
+            padding: 20px;
+            text-align: center;
+            box-shadow: 0 4px 15px rgba(0, 0, 0, 0.1);
+            transition: transform 0.3s ease;
+        }
+
+        .stat-card:hover {
+            transform: translateY(-5px);
+        }
+
+        .stat-icon {
+            font-size: 2.5rem;
+            margin-bottom: 10px;
+        }
+
+        .stat-value {
+            font-size: 2rem;
+            font-weight: bold;
+            margin-bottom: 5px;
+        }
+
+        .stat-label {
+            color: #666;
+            font-size: 0.9rem;
+        }
+
+        .chart-container {
+            position: relative;
+            height: 400px;
+            margin: 20px 0;
+        }
+
+        .comparison-table {
+            background: white;
+            border-radius: 12px;
+            overflow: hidden;
+            box-shadow: 0 4px 15px rgba(0, 0, 0, 0.1);
+        }
+
+        .table {
+            margin: 0;
+        }
+
+        .table th {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border: none;
+            padding: 15px;
+        }
+
+        .table td {
+            padding: 12px 15px;
+            border-color: #e9ecef;
+        }
+
+        .accuracy-badge {
+            padding: 5px 10px;
+            border-radius: 20px;
+            font-size: 0.8rem;
+            font-weight: bold;
+        }
+
+        .accuracy-high { background: #d4edda; color: #155724; }
+        .accuracy-medium { background: #fff3cd; color: #856404; }
+        .accuracy-low { background: #f8d7da; color: #721c24; }
+
+        .confusion-matrix {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 10px;
+            max-width: 400px;
+            margin: 0 auto;
+        }
+
+        .matrix-cell {
+            background: white;
+            border: 2px solid #e9ecef;
+            border-radius: 8px;
+            padding: 15px;
+            text-align: center;
+            transition: all 0.3s ease;
+        }
+
+        .matrix-cell:hover {
+            border-color: #667eea;
+            transform: scale(1.05);
+        }
+
+        .matrix-header {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            font-weight: bold;
+        }
+
+        .matrix-value {
+            font-size: 1.5rem;
+            font-weight: bold;
+            margin-bottom: 5px;
+        }
+
+        .matrix-label {
+            font-size: 0.8rem;
+            color: #666;
+        }
+
+        .filter-controls {
+            background: rgba(255, 255, 255, 0.9);
+            border-radius: 12px;
+            padding: 15px;
+            margin-bottom: 20px;
+        }
+
+        .loading-overlay {
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: rgba(255, 255, 255, 0.8);
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            z-index: 1000;
+            border-radius: 15px;
+        }
+
+        .email-sample {
+            background: #f8f9fa;
+            border-left: 4px solid #667eea;
+            padding: 10px;
+            margin: 5px 0;
+            border-radius: 0 8px 8px 0;
+            font-size: 0.85rem;
+        }
+
+        .divergence-item {
+            border: 1px solid #dee2e6;
+            border-radius: 8px;
+            padding: 15px;
+            margin-bottom: 10px;
+            background: white;
+        }
+
+        .divergence-item:hover {
+            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+        }
+
+        .prediction-change {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .prediction-arrow {
+            color: #ff9800;
+            font-weight: bold;
+        }
+
+        @media (max-width: 768px) {
+            .chart-container {
+                height: 300px;
+            }
+
+            .stats-grid {
+                grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="analytics-container">
+        <!-- Header -->
+        <div class="row mb-4">
+            <div class="col-12">
+                <div class="card">
+                    <div class="card-header">
+                        <div class="d-flex justify-content-between align-items-center">
+                            <div>
+                                <h2 class="mb-0">
+                                    <i class="bi bi-bar-chart"></i> Analytics Dashboard
+                                </h2>
+                                <p class="mb-0 opacity-75">Analyse comparative : Gmail vs Prédictions IA</p>
+                            </div>
+                            <div>
+                                <button class="btn btn-light" onclick="refreshAnalytics()">
+                                    <i class="bi bi-arrow-clockwise"></i> Actualiser
+                                </button>
+                                <button class="btn btn-outline-light" onclick="exportAnalytics()">
+                                    <i class="bi bi-download"></i> Exporter
+                                </button>
+                                <a href="index.html" class="btn btn-outline-light">
+                                    <i class="bi bi-arrow-left"></i> Retour
+                                </a>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Filtres -->
+        <div class="filter-controls">
+            <div class="row align-items-center">
+                <div class="col-md-4">
+                    <label class="form-label">Source des données:</label>
+                    <select class="form-select" id="dataSource" onchange="updateAnalytics()">
+                        <option value="user">Mes emails</option>
+                        <option value="demo">Données de démonstration</option>
+                        <option value="global" selected>Toutes les données</option>
+                    </select>
+                </div>
+                <div class="col-md-4">
+                    <label class="form-label">Période:</label>
+                    <select class="form-select" id="timePeriod" onchange="updateAnalytics()">
+                        <option value="all" selected>Toute la période</option>
+                        <option value="7days">7 derniers jours</option>
+                        <option value="30days">30 derniers jours</option>
+                    </select>
+                </div>
+                <div class="col-md-4">
+                    <label class="form-label">Type d'analyse:</label>
+                    <select class="form-select" id="analysisType" onchange="updateAnalytics()">
+                        <option value="comparison" selected>Comparaison Gmail vs IA</option>
+                        <option value="accuracy">Précision du modèle</option>
+                        <option value="trends">Tendances temporelles</option>
+                    </select>
+                </div>
+            </div>
+        </div>
+
+        <!-- Statistiques principales -->
+        <div class="stats-grid">
+            <div class="stat-card">
+                <div class="stat-icon text-primary">
+                    <i class="bi bi-envelope"></i>
+                </div>
+                <div class="stat-value" id="totalEmails">0</div>
+                <div class="stat-label">Emails analysés</div>
+            </div>
+
+            <div class="stat-card">
+                <div class="stat-icon text-success">
+                    <i class="bi bi-check-circle"></i>
+                </div>
+                <div class="stat-value" id="accuracyRate">0%</div>
+                <div class="stat-label">Précision globale</div>
+            </div>
+
+            <div class="stat-card">
+                <div class="stat-icon text-warning">
+                    <i class="bi bi-arrow-left-right"></i>
+                </div>
+                <div class="stat-value" id="changedPredictions">0</div>
+                <div class="stat-label">Prédictions modifiées</div>
+            </div>
+
+            <div class="stat-card">
+                <div class="stat-icon text-info">
+                    <i class="bi bi-brain"></i>
+                </div>
+                <div class="stat-value" id="modelConfidence">0%</div>
+                <div class="stat-label">Confiance moyenne</div>
+            </div>
+        </div>
+
+        <!-- Graphiques principaux -->
+        <div class="row">
+            <!-- Graphique de comparaison -->
+            <div class="col-lg-6">
+                <div class="card">
+                    <div class="card-header">
+                        <h5 class="mb-0">
+                            <i class="bi bi-pie-chart"></i> Distribution Gmail vs IA
+                        </h5>
+                    </div>
+                    <div class="card-body">
+                        <div class="chart-container">
+                            <canvas id="comparisonChart"></canvas>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Matrice de confusion -->
+            <div class="col-lg-6">
+                <div class="card">
+                    <div class="card-header">
+                        <h5 class="mb-0">
+                            <i class="bi bi-grid-3x3"></i> Matrice de Confusion
+                        </h5>
+                    </div>
+                    <div class="card-body">
+                        <div class="confusion-matrix" id="confusionMatrix">
+                            <!-- Sera rempli dynamiquement -->
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Graphique des tendances -->
+        <div class="row">
+            <div class="col-12">
+                <div class="card">
+                    <div class="card-header">
+                        <h5 class="mb-0">
+                            <i class="bi bi-graph-up"></i> Évolution de la Précision
+                        </h5>
+                    </div>
+                    <div class="card-body">
+                        <div class="chart-container">
+                            <canvas id="trendsChart"></canvas>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Tableau détaillé -->
+        <div class="row">
+            <div class="col-12">
+                <div class="card">
+                    <div class="card-header">
+                        <h5 class="mb-0">
+                            <i class="bi bi-table"></i> Analyse Détaillée par Domaine
+                        </h5>
+                    </div>
+                    <div class="card-body">
+                        <div class="comparison-table">
+                            <table class="table table-hover">
+                                <thead>
+                                    <tr>
+                                        <th>Domaine</th>
+                                        <th>Total Emails</th>
+                                        <th>Gmail Classification</th>
+                                        <th>IA Classification</th>
+                                        <th>Concordance</th>
+                                        <th>Confiance IA</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="domainAnalysisTable">
+                                    <!-- Sera rempli dynamiquement -->
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Détails des différences -->
+        <div class="row">
+            <div class="col-12">
+                <div class="card">
+                    <div class="card-header">
+                        <h5 class="mb-0">
+                            <i class="bi bi-exclamation-triangle"></i> Emails avec Divergences
+                        </h5>
+                    </div>
+                    <div class="card-body">
+                        <div id="divergencesList">
+                            <!-- Sera rempli dynamiquement -->
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
+    <script>
+        // Variables globales
+        let emailData = [];
+        let charts = {};
+
+        // Configuration des couleurs
+        const colors = {
+            primary: '#667eea',
+            secondary: '#764ba2',
+            success: '#28a745',
+            danger: '#dc3545',
+            warning: '#ffc107',
+            info: '#17a2b8'
+        };
+
+        // Configuration de l'API
+        const getApiUrl = () => {
+            const hostname = window.location.hostname;
+            if (hostname === 'localhost' || hostname === '127.0.0.1') {
+                return 'http://localhost:8000';
+            }
+            return `http://${hostname}:8000`;
+        };
+
+        const mlApiUrl = getApiUrl();
+
+        // Fonction pour obtenir le hash utilisateur
+        async function getUserEmailHash() {
+            try {
+                const userData = localStorage.getItem('user_data');
+                if (userData) {
+                    const user = JSON.parse(userData);
+                    if (user.email && typeof hashEmailForDirectory === 'function') {
+                        return await hashEmailForDirectory(user.email);
+                    }
+                }
+            } catch (e) {
+                console.log('Pas d\'utilisateur connecté pour analytics');
+            }
+            return null;
+        }
+
+        // Données simulées pour la démonstration
+        const simulatedData = {
+            emails: [
+                {
+                    id: 'demo_1',
+                    domain: 'gmail.com',
+                    from: 'alice@gmail.com',
+                    subject: 'Réunion importante',
+                    body: 'Nous avons une réunion importante demain.',
+                    gmailType: 'IMPORTANT',
+                    aiType: 'IMPORTANT',
+                    confidence: 0.92,
+                    date: '2025-01-10'
+                },
+                {
+                    id: 'demo_2',
+                    domain: 'gmail.com',
+                    from: 'spam@fake.com',
+                    subject: 'URGENT: Gagnez 1000€ maintenant !!!',
+                    body: 'Félicitations ! Vous avez été sélectionné pour gagner 1000€.',
+                    gmailType: 'SPAM',
+                    aiType: 'SPAM',
+                    confidence: 0.88,
+                    date: '2025-01-11'
+                },
+                {
+                    id: 'demo_3',
+                    domain: 'yahoo.com',
+                    from: 'promo@yahoo.com',
+                    subject: 'Offre spéciale',
+                    body: 'Profitez de notre offre spéciale limitée.',
+                    gmailType: 'IMPORTANT',
+                    aiType: 'SPAM',
+                    confidence: 0.75,
+                    date: '2025-01-12'
+                },
+                {
+                    id: 'demo_4',
+                    domain: 'outlook.com',
+                    from: 'newsletter@outlook.com',
+                    subject: 'Newsletter mensuelle',
+                    body: 'Voici votre newsletter mensuelle avec les dernières nouvelles.',
+                    gmailType: 'SPAM',
+                    aiType: 'IMPORTANT',
+                    confidence: 0.65,
+                    date: '2025-01-13'
+                },
+                {
+                    id: 'demo_5',
+                    domain: 'corporate.fr',
+                    from: 'admin@corporate.fr',
+                    subject: 'Rapport mensuel',
+                    body: 'Veuillez trouver ci-joint le rapport mensuel.',
+                    gmailType: 'IMPORTANT',
+                    aiType: 'IMPORTANT',
+                    confidence: 0.95,
+                    date: '2025-01-14'
+                }
+            ],
+            trends: [
+                { date: '2025-01-01', accuracy: 0.82 },
+                { date: '2025-01-08', accuracy: 0.85 },
+                { date: '2025-01-15', accuracy: 0.88 },
+                { date: '2025-01-22', accuracy: 0.86 },
+                { date: '2025-01-29', accuracy: 0.90 },
+                { date: '2025-02-05', accuracy: 0.92 },
+                { date: '2025-02-12', accuracy: 0.94 }
+            ]
+        };
+
+        // Initialisation
+        document.addEventListener('DOMContentLoaded', function() {
+            console.log('🔄 Initialisation du dashboard analytics...');
+            loadData();
+        });
+
+        async function loadData() {
+            try {
+                showLoading(true);
+
+                // Essayer de charger les données réelles d'abord
+                await loadRealData();
+
+                if (emailData.length === 0) {
+                    console.log('📊 Utilisation des données simulées');
+                    emailData = simulatedData.emails;
+                }
+
+                createCharts();
+                updateStatistics();
+                updateTables();
+
+            } catch (error) {
+                console.error('❌ Erreur lors du chargement des données:', error);
+                // Fallback vers les données simulées
+                emailData = simulatedData.emails;
+                createCharts();
+                updateStatistics();
+                updateTables();
+            } finally {
+                showLoading(false);
+            }
+        }
+
+        async function loadRealData() {
+            try {
+                const userEmailHash = await getUserEmailHash();
+                console.log('📁 Chargement des données pour utilisateur:', userEmailHash || 'global');
+
+                // Construire le chemin CSV approprié
+                let csvPath = userEmailHash ? `emails/${userEmailHash}/emails_live.csv` : 'emails_live.csv';
+
+                // Essayer de charger le fichier CSV
+                const response = await fetch(csvPath);
+                if (!response.ok) {
+                    // Essayer les chemins alternatifs
+                    const fallbackPaths = [
+                        'emails_live.csv',
+                        './emails_live.csv',
+                        'src/pages/emails_live.csv'
+                    ];
+
+                    let loaded = false;
+                    for (const path of fallbackPaths) {
+                        try {
+                            const fallbackResponse = await fetch(path);
+                            if (fallbackResponse.ok) {
+                                const csvText = await fallbackResponse.text();
+                                emailData = parseCSVToEmailData(csvText);
+                                loaded = true;
+                                console.log(`✅ Données chargées depuis: ${path}`);
+                                break;
+                            }
+                        } catch (e) {
+                            continue;
+                        }
+                    }
+
+                    if (!loaded) {
+                        throw new Error('Aucun fichier CSV trouvé');
+                    }
+                } else {
+                    const csvText = await response.text();
+                    emailData = parseCSVToEmailData(csvText);
+                    console.log(`✅ Données chargées depuis: ${csvPath}`);
+                }
+
+                // Enrichir avec des prédictions ML si possible
+                await enrichWithMLPredictions();
+
+            } catch (error) {
+                console.log('⚠️ Impossible de charger les données réelles:', error.message);
+                throw error;
+            }
+        }
+
+        function parseCSVToEmailData(csvText) {
+            const lines = csvText.trim().split('\n');
+            if (lines.length < 2) return [];
+
+            const headers = parseCSVLine(lines[0]);
+            const emails = [];
+
+            for (let i = 1; i < lines.length; i++) {
+                const values = parseCSVLine(lines[i]);
+                if (values.length === headers.length) {
+                    const email = {};
+                    headers.forEach((header, index) => {
+                        email[header.trim()] = values[index] || '';
+                    });
+
+                    // Convertir en format analytics
+                    const analyticsEmail = {
+                        id: email.id || `email_${i}`,
+                        domain: extractDomain(email.from || ''),
+                        from: email.from || '',
+                        subject: email.subject || '',
+                        body: email.body || '',
+                        gmailType: email.type || 'IMPORTANT',
+                        aiType: email.type || 'IMPORTANT', // Sera enrichi plus tard
+                        confidence: 0.8, // Valeur par défaut
+                        date: email.date || new Date().toISOString().split('T')[0]
+                    };
+
+                    emails.push(analyticsEmail);
+                }
+            }
+
+            return emails;
+        }
+
+        function parseCSVLine(line) {
+            const result = [];
+            let current = '';
+            let inQuotes = false;
+            let i = 0;
+
+            while (i < line.length) {
+                const char = line[i];
+                const nextChar = line[i + 1];
+
+                if (char === '"') {
+                    if (inQuotes && nextChar === '"') {
+                        current += '"';
+                        i += 2;
+                    } else {
+                        inQuotes = !inQuotes;
+                        i++;
+                    }
+                } else if (char === ',' && !inQuotes) {
+                    result.push(current);
+                    current = '';
+                    i++;
+                } else {
+                    current += char;
+                    i++;
+                }
+            }
+
+            result.push(current);
+            return result;
+        }
+
+        function extractDomain(email) {
+            try {
+                const match = email.match(/@([^>]+)/);
+                return match ? match[1].trim() : 'unknown';
+            } catch {
+                return 'unknown';
+            }
+        }
+
+        async function enrichWithMLPredictions() {
+            console.log('🧠 Enrichissement avec prédictions ML...');
+
+            for (let i = 0; i < Math.min(emailData.length, 10); i++) { // Limiter pour éviter les timeouts
+                const email = emailData[i];
+                try {
+                    const userEmailHash = await getUserEmailHash();
+                    const response = await fetch(`${mlApiUrl}/predict/email-id`, {
+                        method: 'POST',
+                        mode: 'cors',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            email_id: email.id,
+                            client_id: userEmailHash
+                        }),
+                        signal: AbortSignal.timeout(5000)
+                    });
+
+                    if (response.ok) {
+                        const result = await response.json();
+                        email.aiType = result.prediction === 'phishing' ? 'SPAM' : 'IMPORTANT';
+                        email.confidence = result.probability || 0.8;
+                    }
+                } catch (error) {
+                    console.log(`⚠️ Prédiction ML échouée pour ${email.id}:`, error.message);
+                    // Garder les valeurs par défaut
+                }
+            }
+        }
+
+        function createCharts() {
+            createComparisonChart();
+            createTrendsChart();
+            createConfusionMatrix();
+        }
+
+        function createComparisonChart() {
+            const ctx = document.getElementById('comparisonChart').getContext('2d');
+
+            // Calculer les données
+            const gmailStats = calculateStats(emailData, 'gmailType');
+            const aiStats = calculateStats(emailData, 'aiType');
+
+            if (charts.comparison) {
+                charts.comparison.destroy();
+            }
+
+            charts.comparison = new Chart(ctx, {
+                type: 'doughnut',
+                data: {
+                    labels: ['IMPORTANT (Gmail)', 'SPAM (Gmail)', 'IMPORTANT (IA)', 'SPAM (IA)'],
+                    datasets: [{
+                        data: [gmailStats.important, gmailStats.spam, aiStats.important, aiStats.spam],
+                        backgroundColor: [
+                            colors.success,
+                            colors.danger,
+                            colors.primary,
+                            colors.warning
+                        ],
+                        borderWidth: 2,
+                        borderColor: '#ffffff'
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: {
+                        legend: {
+                            position: 'bottom',
+                            labels: {
+                                padding: 20,
+                                usePointStyle: true
+                            }
+                        },
+                        tooltip: {
+                            callbacks: {
+                                label: function(context) {
+                                    const total = context.dataset.data.reduce((a, b) => a + b, 0);
+                                    const percentage = ((context.raw / total) * 100).toFixed(1);
+                                    return `${context.label}: ${context.raw} (${percentage}%)`;
+                                }
+                            }
+                        }
+                    }
+                }
+            });
+        }
+
+        function createTrendsChart() {
+            const ctx = document.getElementById('trendsChart').getContext('2d');
+
+            if (charts.trends) {
+                charts.trends.destroy();
+            }
+
+            charts.trends = new Chart(ctx, {
+                type: 'line',
+                data: {
+                    labels: simulatedData.trends.map(t => new Date(t.date).toLocaleDateString('fr-FR')),
+                    datasets: [{
+                        label: 'Précision du modèle IA',
+                        data: simulatedData.trends.map(t => t.accuracy * 100),
+                        borderColor: colors.primary,
+                        backgroundColor: colors.primary + '20',
+                        borderWidth: 3,
+                        fill: true,
+                        tension: 0.4,
+                        pointBackgroundColor: colors.primary,
+                        pointBorderColor: '#ffffff',
+                        pointBorderWidth: 2,
+                        pointRadius: 6
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: {
+                        legend: {
+                            display: false
+                        }
+                    },
+                    scales: {
+                        y: {
+                            beginAtZero: false,
+                            min: 70,
+                            max: 100,
+                            ticks: {
+                                callback: function(value) {
+                                    return value + '%';
+                                }
+                            },
+                            grid: {
+                                color: '#e9ecef'
+                            }
+                        },
+                        x: {
+                            grid: {
+                                display: false
+                            }
+                        }
+                    },
+                    elements: {
+                        point: {
+                            hoverRadius: 8
+                        }
+                    }
+                }
+            });
+        }
+
+        function createConfusionMatrix() {
+            const matrix = calculateConfusionMatrix(emailData);
+            const container = document.getElementById('confusionMatrix');
+
+            container.innerHTML = `
+                <div class="matrix-cell matrix-header"></div>
+                <div class="matrix-cell matrix-header">IA: IMPORTANT</div>
+                <div class="matrix-cell matrix-header">IA: SPAM</div>
+
+                <div class="matrix-cell matrix-header">Gmail: IMPORTANT</div>
+                <div class="matrix-cell">
+                    <div class="matrix-value text-success">${matrix.truePositive}</div>
+                    <div class="matrix-label">Vrais Positifs</div>
+                </div>
+                <div class="matrix-cell">
+                    <div class="matrix-value text-danger">${matrix.falseNegative}</div>
+                    <div class="matrix-label">Faux Négatifs</div>
+                </div>
+
+                <div class="matrix-cell matrix-header">Gmail: SPAM</div>
+                <div class="matrix-cell">
+                    <div class="matrix-value text-warning">${matrix.falsePositive}</div>
+                    <div class="matrix-label">Faux Positifs</div>
+                </div>
+                <div class="matrix-cell">
+                    <div class="matrix-value text-success">${matrix.trueNegative}</div>
+                    <div class="matrix-label">Vrais Négatifs</div>
+                </div>
+            `;
+        }
+
+        function updateStatistics() {
+            const stats = calculateDetailedStats(emailData);
+
+            document.getElementById('totalEmails').textContent = stats.total;
+            document.getElementById('accuracyRate').textContent = (stats.accuracy * 100).toFixed(1) + '%';
+            document.getElementById('changedPredictions').textContent = stats.changed;
+            document.getElementById('modelConfidence').textContent = (stats.avgConfidence * 100).toFixed(1) + '%';
+        }
+
+        function updateTables() {
+            updateDomainAnalysisTable();
+            updateDivergencesList();
+        }
+
+        function updateDomainAnalysisTable() {
+            const domainStats = calculateDomainStats(emailData);
+            const tbody = document.getElementById('domainAnalysisTable');
+
+            tbody.innerHTML = Object.entries(domainStats)
+                .sort(([,a], [,b]) => b.total - a.total)
+                .slice(0, 10)
+                .map(([domain, stats]) => `
+                    <tr>
+                        <td><strong>${domain}</strong></td>
+                        <td>${stats.total}</td>
+                        <td>
+                            <span class="badge bg-success">${stats.gmail.important}</span>
+                            <span class="badge bg-danger">${stats.gmail.spam}</span>
+                        </td>
+                        <td>
+                            <span class="badge bg-primary">${stats.ai.important}</span>
+                            <span class="badge bg-warning">${stats.ai.spam}</span>
+                        </td>
+                        <td>
+                            <span class="accuracy-badge ${getAccuracyClass(stats.accuracy)}">
+                                ${(stats.accuracy * 100).toFixed(1)}%
+                            </span>
+                        </td>
+                        <td>${(stats.avgConfidence * 100).toFixed(1)}%</td>
+                    </tr>
+                `).join('');
+        }
+
+        function updateDivergencesList() {
+            const divergences = findDivergences(emailData);
+            const container = document.getElementById('divergencesList');
+
+            if (divergences.length === 0) {
+                container.innerHTML = '<p class="text-muted">Aucune divergence trouvée.</p>';
+                return;
+            }
+
+            container.innerHTML = divergences.slice(0, 10).map(email => `
+                <div class="divergence-item">
+                    <div class="d-flex justify-content-between align-items-start">
+                        <div class="flex-grow-1">
+                            <div class="fw-bold mb-2">${email.domain}</div>
+                            <div class="mb-2">
+                                <strong>De:</strong> ${truncateText(email.from, 50)}<br>
+                                <strong>Sujet:</strong> ${truncateText(email.subject, 80)}
+                            </div>
+                            <div class="prediction-change">
+                                <span class="badge ${email.gmailType === 'IMPORTANT' ? 'bg-success' : 'bg-danger'}">
+                                    Gmail: ${email.gmailType}
+                                </span>
+                                <span class="prediction-arrow">→</span>
+                                <span class="badge ${email.aiType === 'IMPORTANT' ? 'bg-primary' : 'bg-warning'}">
+                                    IA: ${email.aiType}
+                                </span>
+                            </div>
+                            <div class="email-sample mt-2">
+                                ${truncateText(email.body, 150)}
+                            </div>
+                        </div>
+                        <div class="text-end ms-3">
+                            <div class="text-muted small">Confiance IA</div>
+                            <div class="fw-bold">${(email.confidence * 100).toFixed(1)}%</div>
+                        </div>
+                    </div>
+                </div>
+            `).join('');
+        }
+
+        // Fonctions utilitaires
+        function calculateStats(emails, typeField) {
+            const stats = { important: 0, spam: 0 };
+            emails.forEach(email => {
+                if (email[typeField] === 'IMPORTANT') stats.important++;
+                else stats.spam++;
+            });
+            return stats;
+        }
+
+        function calculateDetailedStats(emails) {
+            const total = emails.length;
+            let correct = 0;
+            let changed = 0;
+            let totalConfidence = 0;
+
+            emails.forEach(email => {
+                if (email.gmailType === email.aiType) correct++;
+                else changed++;
+                totalConfidence += email.confidence || 0.8;
+            });
+
+            return {
+                total,
+                accuracy: total > 0 ? correct / total : 0,
+                changed,
+                avgConfidence: total > 0 ? totalConfidence / total : 0
+            };
+        }
+
+        function calculateConfusionMatrix(emails) {
+            const matrix = {
+                truePositive: 0,  // Gmail: IMPORTANT, IA: IMPORTANT
+                falsePositive: 0, // Gmail: SPAM, IA: IMPORTANT
+                trueNegative: 0,  // Gmail: SPAM, IA: SPAM
+                falseNegative: 0  // Gmail: IMPORTANT, IA: SPAM
+            };
+
+            emails.forEach(email => {
+                if (email.gmailType === 'IMPORTANT' && email.aiType === 'IMPORTANT') {
+                    matrix.truePositive++;
+                } else if (email.gmailType === 'SPAM' && email.aiType === 'IMPORTANT') {
+                    matrix.falsePositive++;
+                } else if (email.gmailType === 'SPAM' && email.aiType === 'SPAM') {
+                    matrix.trueNegative++;
+                } else if (email.gmailType === 'IMPORTANT' && email.aiType === 'SPAM') {
+                    matrix.falseNegative++;
+                }
+            });
+
+            return matrix;
+        }
+
+        function calculateDomainStats(emails) {
+            const domainStats = {};
+
+            emails.forEach(email => {
+                const domain = email.domain || 'unknown';
+
+                if (!domainStats[domain]) {
+                    domainStats[domain] = {
+                        total: 0,
+                        gmail: { important: 0, spam: 0 },
+                        ai: { important: 0, spam: 0 },
+                        correct: 0,
+                        totalConfidence: 0
+                    };
+                }
+
+                const stats = domainStats[domain];
+                stats.total++;
+                stats.gmail[email.gmailType.toLowerCase()]++;
+                stats.ai[email.aiType.toLowerCase()]++;
+                stats.totalConfidence += email.confidence || 0.8;
+
+                if (email.gmailType === email.aiType) {
+                    stats.correct++;
+                }
+            });
+
+            // Calculer les moyennes
+            Object.values(domainStats).forEach(stats => {
+                stats.accuracy = stats.total > 0 ? stats.correct / stats.total : 0;
+                stats.avgConfidence = stats.total > 0 ? stats.totalConfidence / stats.total : 0;
+            });
+
+            return domainStats;
+        }
+
+        function findDivergences(emails) {
+            return emails.filter(email => email.gmailType !== email.aiType);
+        }
+
+        function getAccuracyClass(accuracy) {
+            if (accuracy >= 0.9) return 'accuracy-high';
+            if (accuracy >= 0.7) return 'accuracy-medium';
+            return 'accuracy-low';
+        }
+
+        function truncateText(text, maxLength) {
+            if (!text) return '';
+            if (text.length <= maxLength) return text;
+            return text.substring(0, maxLength) + '...';
+        }
+
+        function showLoading(show) {
+            const containers = document.querySelectorAll('.chart-container, .comparison-table');
+            containers.forEach(container => {
+                const existingOverlay = container.querySelector('.loading-overlay');
+                if (existingOverlay) {
+                    existingOverlay.remove();
+                }
+
+                if (show) {
+                    const overlay = document.createElement('div');
+                    overlay.className = 'loading-overlay';
+                    overlay.innerHTML = `
+                        <div class="text-center">
+                            <div class="spinner-border text-primary" role="status">
+                                <span class="visually-hidden">Chargement...</span>
+                            </div>
+                            <div class="mt-2">Analyse en cours...</div>
+                        </div>
+                    `;
+                    container.appendChild(overlay);
+                }
+            });
+        }
+
+        // Fonctions d'interaction
+        async function updateAnalytics() {
+            console.log('🔄 Mise à jour des analytics...');
+            showLoading(true);
+
+            try {
+                // Recharger les données selon les filtres
+                await loadData();
+
+                console.log('✅ Analytics mis à jour');
+            } catch (error) {
+                console.error('❌ Erreur mise à jour analytics:', error);
+            } finally {
+                showLoading(false);
+            }
+        }
+
+        async function refreshAnalytics() {
+            console.log('🔄 Rafraîchissement des analytics...');
+
+            // Animation de loading sur les stats
+            document.querySelectorAll('.stat-value').forEach(el => {
+                el.innerHTML = '<i class="bi bi-arrow-clockwise" style="animation: spin 1s linear infinite;"></i>';
+            });
+
+            try {
+                await loadData();
+                console.log('✅ Analytics rafraîchis');
+            } catch (error) {
+                console.error('❌ Erreur rafraîchissement:', error);
+            }
+        }
+
+        function exportAnalytics() {
+            try {
+                const stats = calculateDetailedStats(emailData);
+                const domainStats = calculateDomainStats(emailData);
+                const matrix = calculateConfusionMatrix(emailData);
+
+                const exportData = {
+                    generated_at: new Date().toISOString(),
+                    summary: {
+                        total_emails: stats.total,
+                        accuracy_rate: stats.accuracy,
+                        changed_predictions: stats.changed,
+                        average_confidence: stats.avgConfidence
+                    },
+                    domain_analysis: domainStats,
+                    confusion_matrix: matrix,
+                    trends: simulatedData.trends,
+                    divergences: findDivergences(emailData).slice(0, 20)
+                };
+
+                const blob = new Blob([JSON.stringify(exportData, null, 2)], { type: 'application/json' });
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = `analytics_report_${new Date().toISOString().split('T')[0]}.json`;
+                document.body.appendChild(a);
+                a.click();
+                document.body.removeChild(a);
+                URL.revokeObjectURL(url);
+
+                console.log('📥 Rapport exporté avec succès');
+            } catch (error) {
+                console.error('❌ Erreur export:', error);
+                alert('Erreur lors de l\'export du rapport');
+            }
+        }
+
+        // Fonction pour générer un rapport automatique
+        function generateAutoReport() {
+            const stats = calculateDetailedStats(emailData);
+            const matrix = calculateConfusionMatrix(emailData);
+            const topDomains = Object.entries(calculateDomainStats(emailData))
+                .sort(([,a], [,b]) => b.total - a.total)
+                .slice(0, 5);
+
+            let report = `📊 RAPPORT D'ANALYSE AUTOMATIQUE\n`;
+            report += `=====================================\n\n`;
+            report += `📈 RÉSUMÉ EXÉCUTIF:\n`;
+            report += `• ${stats.total} emails analysés\n`;
+            report += `• Précision globale: ${(stats.accuracy * 100).toFixed(1)}%\n`;
+            report += `• ${stats.changed} prédictions modifiées par l'IA\n`;
+            report += `• Confiance moyenne: ${(stats.avgConfidence * 100).toFixed(1)}%\n\n`;
+
+            report += `🎯 PERFORMANCE DU MODÈLE:\n`;
+            report += `• Vrais positifs: ${matrix.truePositive}\n`;
+            report += `• Vrais négatifs: ${matrix.trueNegative}\n`;
+            report += `• Faux positifs: ${matrix.falsePositive}\n`;
+            report += `• Faux négatifs: ${matrix.falseNegative}\n\n`;
+
+            if (topDomains.length > 0) {
+                report += `🏆 TOP 5 DOMAINES:\n`;
+                topDomains.forEach(([domain, domainStats], index) => {
+                    report += `${index + 1}. ${domain}: ${domainStats.total} emails (${(domainStats.accuracy * 100).toFixed(1)}% précision)\n`;
+                });
+            }
+
+            return report;
+        }
+
+        // Fonction pour afficher le rapport
+        function showAutoReport() {
+            const report = generateAutoReport();
+
+            // Créer une modal pour afficher le rapport
+            const modal = document.createElement('div');
+            modal.className = 'modal fade';
+            modal.innerHTML = `
+                <div class="modal-dialog modal-lg">
+                    <div class="modal-content">
+                        <div class="modal-header">
+                            <h5 class="modal-title">📊 Rapport d'Analyse Automatique</h5>
+                            <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                        </div>
+                        <div class="modal-body">
+                            <pre style="white-space: pre-wrap; font-family: monospace; background: #f8f9fa; padding: 20px; border-radius: 8px;">${report}</pre>
+                        </div>
+                        <div class="modal-footer">
+                            <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Fermer</button>
+                            <button type="button" class="btn btn-primary" onclick="copyToClipboard('${report.replace(/'/g, "\\'")}')">Copier</button>
+                        </div>
+                    </div>
+                </div>
+            `;
+
+            document.body.appendChild(modal);
+            const bsModal = new bootstrap.Modal(modal);
+            bsModal.show();
+
+            // Nettoyer après fermeture
+            modal.addEventListener('hidden.bs.modal', () => {
+                document.body.removeChild(modal);
+            });
+        }
+
+        function copyToClipboard(text) {
+            navigator.clipboard.writeText(text).then(() => {
+                alert('Rapport copié dans le presse-papiers!');
+            }).catch(() => {
+                alert('Impossible de copier le rapport');
+            });
+        }
+
+        // Intégration avec hashUtils.js si disponible
+        if (typeof hashEmailForDirectory === 'undefined') {
+            window.hashEmailForDirectory = async function(email) {
+                // Fallback simple si hashUtils.js n'est pas disponible
+                const encoder = new TextEncoder();
+                const data = encoder.encode(email.toLowerCase().trim());
+                const hashBuffer = await crypto.subtle.digest('SHA-256', data);
+                const hashArray = Array.from(new Uint8Array(hashBuffer));
+                return hashArray.map(b => b.toString(16).padStart(2, '0')).join('').substring(0, 12);
+            };
+        }
+
+        // Ajouter les styles CSS pour l'animation
+        const style = document.createElement('style');
+        style.textContent = `
+            @keyframes spin {
+                from { transform: rotate(0deg); }
+                to { transform: rotate(360deg); }
+            }
+
+            .fade-in {
+                animation: fadeIn 0.5s ease-in;
+            }
+
+            @keyframes fadeIn {
+                from { opacity: 0; transform: translateY(20px); }
+                to { opacity: 1; transform: translateY(0); }
+            }
+
+            .chart-container canvas {
+                transition: all 0.3s ease;
+            }
+
+            .table tr {
+                transition: background-color 0.3s ease;
+            }
+
+            .table tr:hover {
+                background-color: rgba(102, 126, 234, 0.1);
+            }
+
+            .matrix-cell:hover {
+                cursor: pointer;
+            }
+
+            .divergence-item {
+                transition: all 0.3s ease;
+            }
+
+            .divergence-item:hover {
+                transform: translateX(5px);
+            }
+        `;
+        document.head.appendChild(style);
+
+        // Ajout d'un bouton pour le rapport automatique dans le header
+        document.addEventListener('DOMContentLoaded', function() {
+            const headerButtons = document.querySelector('.card-header .d-flex > div:last-child');
+            if (headerButtons) {
+                headerButtons.insertAdjacentHTML('beforeend', `
+                    <button class="btn btn-outline-light ms-2" onclick="showAutoReport()">
+                        <i class="bi bi-file-text"></i> Rapport
+                    </button>
+                `);
+            }
+        });
+
+        console.log('🎉 Dashboard Analytics initialisé avec succès!');
+    </script>
+</body>
+</html>
