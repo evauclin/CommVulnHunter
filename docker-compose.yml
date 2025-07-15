@@ -10,7 +10,7 @@ services:
       - PYTHONUNBUFFERED=1
     volumes:
       # Monter la structure de dossiers pour clients spécifiques
-      - ./src/pages/emails:/shared/data/emails:ro
+      - ./src/pages/emails:/shared/data/emails
     restart: unless-stopped
     healthcheck:
       test: ["CMD", "python", "-c", "import requests; requests.get('http://localhost:80/health', timeout=5)"]
@@ -53,6 +53,7 @@ services:
     restart: unless-stopped
     volumes:
       - ./src/pages:/shared/data:ro
+      - ./src/pages/emails:/shared/data/emails
 
 volumes:
   auth_data:

@@ -943,12 +943,18 @@
                     const userData = localStorage.getItem('user_data');
                     if (userData) {
                         const user = JSON.parse(userData);
-                        if (user.email) {
+                        // Utiliser le hash fourni par le backend (email_hash)
+                        if (user.email_hash) {
+                            userEmailHash = user.email_hash;
+                            console.log(`📁 Utilisation du hash backend pour ${user.email}: ${userEmailHash}`);
+                        } else if (user.email) {
+                            // Fallback vers le calcul local si le hash n'est pas disponible
                             userEmailHash = await hashEmailForDirectory(user.email);
+                            console.log(`📁 Fallback hash local pour ${user.email}: ${userEmailHash}`);
                         }
                     }
                 } catch (e) {
-                    // Pas d'utilisateur authentifié
+                    console.log('Pas d\'utilisateur authentifié, mode global');
                 }
 
                 // Essayer de charger le fichier spécifique à l'utilisateur
@@ -997,8 +1003,14 @@
                     const userData = localStorage.getItem('user_data');
                     if (userData) {
                         const user = JSON.parse(userData);
-                        if (user.email) {
+                        // Utiliser le hash fourni par le backend (email_hash)
+                        if (user.email_hash) {
+                            userEmailHash = user.email_hash;
+                            console.log(`📁 Utilisation du hash backend pour ${user.email}: ${userEmailHash}`);
+                        } else if (user.email) {
+                            // Fallback vers le calcul local si le hash n'est pas disponible
                             userEmailHash = await hashEmailForDirectory(user.email);
+                            console.log(`📁 Fallback hash local pour ${user.email}: ${userEmailHash}`);
                         }
                     }
                 } catch (e) {
@@ -1309,9 +1321,14 @@
                 const userData = localStorage.getItem('user_data');
                 if (userData) {
                     const user = JSON.parse(userData);
-                    if (user.email) {
+                    // Utiliser le hash fourni par le backend (email_hash)
+                    if (user.email_hash) {
+                        clientId = user.email_hash;
+                        console.log(`📁 Analyse ML pour client (backend hash): ${clientId}`);
+                    } else if (user.email) {
+                        // Fallback vers le calcul local si le hash n'est pas disponible
                         clientId = await hashEmailForDirectory(user.email);
-                        console.log(`📁 Analyse ML pour client: ${clientId}`);
+                        console.log(`📁 Analyse ML pour client (fallback hash): ${clientId}`);
                     }
                 }
             } catch (e) {
@@ -1372,7 +1389,11 @@
                     const userData = localStorage.getItem('user_data');
                     if (userData) {
                         const user = JSON.parse(userData);
-                        if (user.email) {
+                        // Utiliser le hash fourni par le backend (email_hash)
+                        if (user.email_hash) {
+                            clientId = user.email_hash;
+                        } else if (user.email) {
+                            // Fallback vers le calcul local si le hash n'est pas disponible
                             clientId = await hashEmailForDirectory(user.email);
                         }
                     }
@@ -1476,7 +1497,11 @@
                     const userData = localStorage.getItem('user_data');
                     if (userData) {
                         const user = JSON.parse(userData);
-                        if (user.email) {
+                        // Utiliser le hash fourni par le backend (email_hash)
+                        if (user.email_hash) {
+                            clientId = user.email_hash;
+                        } else if (user.email) {
+                            // Fallback vers le calcul local si le hash n'est pas disponible
                             clientId = await hashEmailForDirectory(user.email);
                         }
                     }
@@ -1571,7 +1596,8 @@
                 localStorage.setItem('user_data', JSON.stringify({
                     email: 'farinesfari@gmail.com',
                     name: 'Test User',
-                    role: 'user'
+                    role: 'user',
+                    email_hash: '40a478aac913'  // Hash préalculé pour farinesfari@gmail.com
                 }));
             }
             
@@ -1680,9 +1706,16 @@
                     return;
                 }
 
-                // Calculer le hash de l'email de l'utilisateur
-                const userEmailHash = await hashEmailForDirectory(user.email);
-                console.log(`📁 Chargement des emails pour l'utilisateur: ${user.email} (hash: ${userEmailHash})`);
+                // Utiliser le hash fourni par le backend ou calculer localement
+                let userEmailHash;
+                if (user.email_hash) {
+                    userEmailHash = user.email_hash;
+                    console.log(`📁 Chargement des emails pour l'utilisateur: ${user.email} (hash backend: ${userEmailHash})`);
+                } else {
+                    // Fallback vers le calcul local si le hash n'est pas disponible
+                    userEmailHash = await hashEmailForDirectory(user.email);
+                    console.log(`📁 Chargement des emails pour l'utilisateur: ${user.email} (hash fallback: ${userEmailHash})`);
+                }
 
                 // Essayer de charger les emails utilisateur
                 let emailsLoaded = false;
