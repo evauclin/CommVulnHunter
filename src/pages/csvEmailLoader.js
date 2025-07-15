@@ -74,45 +74,19 @@ class EmailCSVLoader {
      */
     async loadEmailsFromCSV(filename = './emails_live.csv') {
         try {
-            console.log(`📂 Chargement du fichier CSV: ${filename}`);
-
-            const possiblePaths = [
-                filename,
-                `src/pages/${filename}`,
-                `./${filename}`,
-                `../${filename}`,
-            ];
-
-            let csvText = null;
-            let successPath = null;
-
-            for (const path of possiblePaths) {
-                try {
-                    console.log(`🔍 Tentative de chargement: ${path}`);
-                    const response = await fetch(path);
-                    if (response.ok) {
-                        csvText = await response.text();
-                        successPath = path;
-                        break;
-                    }
-                } catch (e) {
-                    console.log(`⚠️ Échec pour: ${path}`);
-                }
+            const response = await fetch(filename);
+            if (!response.ok) {
+                throw new Error(`Impossible de charger le fichier ${filename}`);
             }
-
-            if (!csvText) {
-                throw new Error(`Fichier ${filename} non trouvé dans les chemins: ${possiblePaths.join(', ')}`);
-            }
-
+            
+            const csvText = await response.text();
             this.emails = this.parseCSV(csvText);
             this.currentSource = 'csv_live';
 
-            console.log(`✅ ${this.emails.length} emails chargés depuis: ${successPath}`);
-            this.updateSourceIndicator(`📊 Emails CSV chargés (${this.emails.length}) depuis ${successPath}`, 'success');
+            this.updateSourceIndicator(`📊 Emails CSV chargés (${this.emails.length})`, 'success');
 
             return this.emails;
         } catch (error) {
-            console.warn(`⚠️ Erreur chargement CSV: ${error.message}`);
             throw error;
         }
     }
@@ -462,33 +436,12 @@ class EmailCSVLoader {
     }
 }
 
+// Hash function moved to hashUtils.js - using centralized implementation
+
 // Instance globale
 const emailLoader = new EmailCSVLoader();
 
 // Fonctions globales pour compatibilité
-async function loadLiveEmails() {
-    try {
-        console.log('Chargement des emails live...');
-
-        await emailLoader.loadEmailsFromCSV('./emails_live.csv');
-        await emailLoader.loadStats();
-
-        const container = document.getElementById('emailList');
-        emailLoader.displayEmails(container);
-        emailLoader.updateStatsDisplay();
-
-        console.log('Emails live chargés avec succès');
-
-        if (emailLoader.emails.length > 0) {
-            selectEmail(0);
-        }
-
-    } catch (error) {
-        console.warn('Erreur chargement emails live:', error);
-        console.warn('Fallback vers emails de démo');
-        loadDemoEmails();
-    }
-}
 
 async function loadDemoEmails() {
     try {
@@ -566,17 +519,16 @@ function selectEmail(index) {
     if (email) {
         const formatted = emailLoader.formatEmailForDisplay(email);
 
-        // SAUVEGARDER LES DONNÉES RAW POUR LE ML (CORRIGÉ)
+        // Sauvegarder les données pour le ML
         if (typeof currentEmailData !== 'undefined') {
             currentEmailData = {
                 id: email.id || `email_${index}`,
-                from: email.from || '',  // DONNÉES RAW
-                subject: email.subject || '',  // DONNÉES RAW
-                body: email.body || '',  // DONNÉES RAW
+                from: email.from || '',
+                subject: email.subject || '',
+                body: email.body || '',
                 type: email.type || 'unknown',
-                fullText: `From: ${email.from || ''} Subject: ${email.subject || ''} Body: ${email.body || ''}`  // DONNÉES RAW
+                fullText: `From: ${email.from || ''} Subject: ${email.subject || ''} Body: ${email.body || ''}`
             };
-            console.log('📧 currentEmailData RAW sauvegardé:', currentEmailData);
         }
 
         const elements = {
@@ -609,16 +561,7 @@ function selectEmail(index) {
             }
         }
 
-        // Reset analysis
-        const analysisResult = document.getElementById('analysisResult');
-        if (analysisResult) analysisResult.textContent = '';
-
-        document.querySelectorAll('input[name="satisfaction"]').forEach(input => {
-            input.checked = false;
-            input.disabled = true;
-        });
-
-        // Réinitialiser l'analyse
+        // Reset analysis - DÉLÉGUÉ au script principal
         if (typeof resetAnalysisAndFeedback === 'function') {
             resetAnalysisAndFeedback();
         }

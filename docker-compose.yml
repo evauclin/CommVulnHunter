@@ -1,31 +1,59 @@
-version: '3.8'
-
 services:
+  # API ML existante
   fastapi:
     build:
       context: .
       dockerfile: Dockerfile_ml
     ports:
-      - "8000:80"  # Changé de 80:80 à 8000:80
+      - "8000:80"
     environment:
       - PYTHONUNBUFFERED=1
-    restart: unless-stopped
     volumes:
-      # Monter le dossier src/pages pour accéder aux CSV
-      - ./src/pages:/shared/data:ro  # ro = read-only
-      # Monter aussi le fichier CSV directement si nécessaire
-      - ./emails_live.csv:/app/emails_live.csv:ro
+      # Monter la structure de dossiers pour clients spécifiques
+      - ./src/pages/emails:/shared/data/emails
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "python", "-c", "import requests; requests.get('http://localhost:80/health', timeout=5)"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 40s
 
+  # Nouveau service d'authentification
+  auth:
+    build:
+      context: .
+      dockerfile: Dockerfile_auth
+    ports:
+      - "9000:9000"
+    environment:
+      - PYTHONUNBUFFERED=1
+    volumes:
+      # Monter le dossier src/pages en lecture-écriture pour créer les fichiers
+      - ./src/pages:/shared/data
+      - auth_data:/app/auth_system/data
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "python", "-c", "import requests; requests.get('http://localhost:9000/auth/health')"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # Service web avec authentification
   web:
     build:
       context: .
       dockerfile: Dockerfile_web
     ports:
-      - "8080:80"  # Port 8080 reste le même
+      - "8080:80"
+
     depends_on:
       - fastapi
+      - auth
     restart: unless-stopped
     volumes:
       - ./src/pages:/shared/data:ro
-      # Permettre à nginx de servir les fichiers CSV aussi
-      - ./emails_live.csv:/usr/share/nginx/html/emails_live.csv:ro
+      - ./src/pages/emails:/shared/data/emails
+
+volumes:
+  auth_data:

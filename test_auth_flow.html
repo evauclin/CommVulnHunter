@@ -1,0 +1,247 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Test d'Authentification</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
+    <style>
+        body { 
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); 
+            min-height: 100vh; 
+            padding: 20px; 
+        }
+        .test-container { 
+            background: white; 
+            border-radius: 15px; 
+            padding: 30px; 
+            margin: 20px auto; 
+            max-width: 800px; 
+            box-shadow: 0 8px 32px rgba(0,0,0,0.2); 
+        }
+        .log { 
+            background: #f8f9fa; 
+            border: 1px solid #dee2e6; 
+            border-radius: 5px; 
+            padding: 15px; 
+            margin: 10px 0; 
+            font-family: monospace; 
+            max-height: 300px; 
+            overflow-y: auto; 
+        }
+        .success { color: #28a745; }
+        .error { color: #dc3545; }
+        .info { color: #007bff; }
+    </style>
+</head>
+<body>
+    <div class="test-container">
+        <h1 class="text-center mb-4">🧪 Test du Flux d'Authentification</h1>
+        
+        <div class="row">
+            <div class="col-md-6">
+                <h3>Étapes de Test</h3>
+                <div class="btn-group-vertical w-100" role="group">
+                    <button class="btn btn-primary" onclick="testStep1()">1️⃣ Vérifier les services</button>
+                    <button class="btn btn-secondary" onclick="testStep2()">2️⃣ Tester l'accès non-authentifié</button>
+                    <button class="btn btn-info" onclick="testStep3()">3️⃣ Tester la connexion</button>
+                    <button class="btn btn-success" onclick="testStep4()">4️⃣ Tester l'accès authentifié</button>
+                    <button class="btn btn-warning" onclick="testStep5()">5️⃣ Tester la déconnexion</button>
+                    <button class="btn btn-danger" onclick="clearLogs()">🗑️ Effacer les logs</button>
+                </div>
+            </div>
+            <div class="col-md-6">
+                <h3>Comptes de Test</h3>
+                <div class="card">
+                    <div class="card-body">
+                        <p><strong>Admin:</strong><br>
+                        📧 admin@emailfilter.com<br>
+                        🔑 admin123</p>
+                        
+                        <p><strong>Utilisateur:</strong><br>
+                        📧 user@emailfilter.com<br>
+                        🔑 user123</p>
+                        
+                        <p><strong>Démo:</strong><br>
+                        📧 demo@emailfilter.com<br>
+                        🔑 demo123</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+        <div class="mt-4">
+            <h3>Logs de Test</h3>
+            <div id="testLogs" class="log">
+                <div class="info">📝 Prêt à tester le flux d'authentification...</div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        function log(message, type = 'info') {
+            const logs = document.getElementById('testLogs');
+            const timestamp = new Date().toLocaleTimeString();
+            const div = document.createElement('div');
+            div.className = type;
+            div.innerHTML = `[${timestamp}] ${message}`;
+            logs.appendChild(div);
+            logs.scrollTop = logs.scrollHeight;
+        }
+
+        function clearLogs() {
+            document.getElementById('testLogs').innerHTML = '<div class="info">📝 Logs effacés...</div>';
+        }
+
+        async function testStep1() {
+            log('🔍 Vérification des services...', 'info');
+            
+            try {
+                // Test du service web
+                const webResponse = await fetch('http://localhost:8080/login.html');
+                if (webResponse.ok) {
+                    log('✅ Service Web (8080) : OPÉRATIONNEL', 'success');
+                } else {
+                    log(`❌ Service Web (8080) : ERREUR ${webResponse.status}`, 'error');
+                }
+                
+                // Test du service API
+                const apiResponse = await fetch('http://localhost:8000/health');
+                if (apiResponse.ok) {
+                    const data = await apiResponse.json();
+                    log('✅ Service API (8000) : OPÉRATIONNEL', 'success');
+                    log(`📊 Statut API : ${data.status}`, 'info');
+                } else {
+                    log(`❌ Service API (8000) : ERREUR ${apiResponse.status}`, 'error');
+                }
+            } catch (error) {
+                log(`❌ Erreur de connexion : ${error.message}`, 'error');
+            }
+        }
+
+        async function testStep2() {
+            log('🚫 Test d\'accès non-authentifié à index.html...', 'info');
+            
+            try {
+                const response = await fetch('http://localhost:8080/index.html', {
+                    redirect: 'manual'
+                });
+                
+                if (response.status === 302) {
+                    log('✅ Redirection détectée (302) - Protection active', 'success');
+                    const location = response.headers.get('location');
+                    if (location) {
+                        log(`📍 Redirigé vers : ${location}`, 'info');
+                    }
+                } else if (response.status === 200) {
+                    log('⚠️ Accès autorisé sans authentification - PROBLÈME DE SÉCURITÉ', 'error');
+                } else {
+                    log(`❓ Statut inattendu : ${response.status}`, 'error');
+                }
+            } catch (error) {
+                log(`❌ Erreur : ${error.message}`, 'error');
+            }
+        }
+
+        async function testStep3() {
+            log('🔐 Test de connexion avec admin@emailfilter.com...', 'info');
+            
+            // Simuler la connexion en utilisant localStorage comme le fait auth-simple.js
+            const userData = {
+                id: 'admin@emailfilter.com',
+                email: 'admin@emailfilter.com',
+                name: 'Administrateur',
+                role: 'admin',
+                loginTime: new Date().toISOString()
+            };
+            
+            const now = Date.now();
+            const sessionData = {
+                user: userData,
+                created: now,
+                expires: now + (30 * 60 * 1000), // 30 minutes
+                rememberMe: false
+            };
+            
+            try {
+                localStorage.setItem('emailFilter_session', JSON.stringify(sessionData));
+                
+                // Créer le cookie d'authentification
+                const cookieValue = btoa(JSON.stringify({
+                    user: userData.email,
+                    expires: now + (30 * 60 * 1000)
+                }));
+                
+                document.cookie = `emailFilter_auth=${cookieValue}; path=/; SameSite=Strict`;
+                
+                log('✅ Session créée dans localStorage', 'success');
+                log('✅ Cookie d\'authentification créé', 'success');
+                log(`👤 Connecté en tant que : ${userData.name} (${userData.role})`, 'info');
+                
+            } catch (error) {
+                log(`❌ Erreur lors de la création de la session : ${error.message}`, 'error');
+            }
+        }
+
+        async function testStep4() {
+            log('🔓 Test d\'accès authentifié à index.html...', 'info');
+            
+            try {
+                const response = await fetch('http://localhost:8080/index.html');
+                
+                if (response.ok) {
+                    log('✅ Accès autorisé à index.html', 'success');
+                    
+                    // Vérifier que la page contient le contenu attendu
+                    const text = await response.text();
+                    if (text.includes('Email Filter ML Dashboard')) {
+                        log('✅ Contenu du dashboard détecté', 'success');
+                    } else {
+                        log('⚠️ Contenu inattendu dans la page', 'error');
+                    }
+                } else {
+                    log(`❌ Accès refusé : ${response.status}`, 'error');
+                }
+            } catch (error) {
+                log(`❌ Erreur : ${error.message}`, 'error');
+            }
+        }
+
+        async function testStep5() {
+            log('🚪 Test de déconnexion...', 'info');
+            
+            try {
+                // Effacer les données d'authentification
+                localStorage.removeItem('emailFilter_session');
+                localStorage.removeItem('emailFilter_remember');
+                
+                // Effacer le cookie
+                document.cookie = 'emailFilter_auth=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/; SameSite=Strict';
+                
+                log('✅ Session effacée du localStorage', 'success');
+                log('✅ Cookie d\'authentification supprimé', 'success');
+                
+                // Tester l'accès après déconnexion
+                const response = await fetch('http://localhost:8080/index.html', {
+                    redirect: 'manual'
+                });
+                
+                if (response.status === 302) {
+                    log('✅ Redirection après déconnexion - Protection rétablie', 'success');
+                } else {
+                    log(`⚠️ Statut inattendu après déconnexion : ${response.status}`, 'error');
+                }
+                
+            } catch (error) {
+                log(`❌ Erreur lors de la déconnexion : ${error.message}`, 'error');
+            }
+        }
+
+        // Test automatique au chargement
+        window.addEventListener('load', function() {
+            log('🚀 Page de test chargée', 'success');
+            log('💡 Cliquez sur les boutons pour tester chaque étape', 'info');
+        });
+    </script>
+</body>
+</html>
