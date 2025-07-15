@@ -340,12 +340,59 @@ def validate_gmail_credentials(username, password):
     Returns:
         tuple: (success: bool, message: str)
     """
+    import socket
+    import ssl
+    
+    print(f"🔍 [DEBUG] Validation Gmail pour: {username}")
+    
     try:
-        mail = imaplib.IMAP4_SSL("imap.gmail.com")
+        # Test 1: Résolution DNS
+        print(f"🔍 [DEBUG] Test résolution DNS imap.gmail.com...")
+        ip = socket.gethostbyname("imap.gmail.com")
+        print(f"✅ [DEBUG] DNS résolu: {ip}")
+        
+        # Test 2: Connectivité port 993
+        print(f"🔍 [DEBUG] Test connectivité port 993...")
+        sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        sock.settimeout(30)
+        result = sock.connect_ex((ip, 993))
+        sock.close()
+        
+        if result != 0:
+            return False, f"Port 993 inaccessible (code: {result})"
+        print(f"✅ [DEBUG] Port 993 accessible")
+        
+        # Test 3: Connexion IMAP SSL
+        print(f"🔍 [DEBUG] Test connexion IMAP SSL...")
+        mail = imaplib.IMAP4_SSL("imap.gmail.com", 993)
+        print(f"✅ [DEBUG] Connexion SSL établie")
+        
+        # Test 4: Authentification
+        print(f"🔍 [DEBUG] Test authentification...")
         mail.login(username, password)
+        print(f"✅ [DEBUG] Authentification réussie")
+        
         mail.logout()
+        print(f"✅ [DEBUG] Validation Gmail terminée avec succès")
         return True, "Identifiants Gmail valides"
+        
+    except socket.gaierror as e:
+        error_msg = f"Erreur résolution DNS: {str(e)}"
+        print(f"❌ [DEBUG] {error_msg}")
+        return False, error_msg
+    except socket.timeout as e:
+        error_msg = f"Timeout connexion: {str(e)}"
+        print(f"❌ [DEBUG] {error_msg}")
+        return False, error_msg
+    except ssl.SSLError as e:
+        error_msg = f"Erreur SSL: {str(e)}"
+        print(f"❌ [DEBUG] {error_msg}")
+        return False, error_msg
     except imaplib.IMAP4.error as e:
-        return False, f"Identifiants Gmail invalides: {str(e)}"
+        error_msg = f"Erreur authentification IMAP: {str(e)}"
+        print(f"❌ [DEBUG] {error_msg}")
+        return False, error_msg
     except Exception as e:
-        return False, f"Erreur de connexion: {str(e)}"
+        error_msg = f"Erreur inconnue: {str(e)} (type: {type(e).__name__})"
+        print(f"❌ [DEBUG] {error_msg}")
+        return False, error_msg

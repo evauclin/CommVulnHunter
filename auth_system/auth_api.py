@@ -270,7 +270,8 @@ async def register(user_data: UserRegister, request: Request):
     try:
         import sys
         import os
-        sys.path.append(os.path.join(os.path.dirname(__file__), '..', 'src', 'utils'))
+        # Chemin absolu pour Docker
+        sys.path.append('/app/src/utils')
         from gmail_fetcher import fetch_emails_from_gmail
         
         # Lancer la récupération en arrière-plan
@@ -292,13 +293,19 @@ async def register(user_data: UserRegister, request: Request):
     except Exception as e:
         print(f"⚠️ Impossible de lancer la récupération d'emails: {e}")
     
+    # Calculer le hash de l'email pour les dossiers
+    import hashlib
+    normalized_email = user["email"].strip().lower()
+    email_hash = hashlib.sha256(normalized_email.encode('utf-8')).hexdigest()[:12]
+    
     return {
         **tokens,
         "user": {
             "id": user["id"],
             "email": user["email"],
             "name": user["name"],
-            "role": user["role"]
+            "role": user["role"],
+            "email_hash": email_hash
         }
     }
 
@@ -335,7 +342,8 @@ async def login(credentials: UserLogin, request: Request):
         if user.get("google_app_password"):
             import sys
             import os
-            sys.path.append(os.path.join(os.path.dirname(__file__), '..', 'src', 'utils'))
+            # Chemin absolu pour Docker
+            sys.path.append('/app/src/utils')
             from gmail_fetcher import fetch_emails_from_gmail
             
             # Lancer la récupération en arrière-plan
@@ -358,13 +366,19 @@ async def login(credentials: UserLogin, request: Request):
     except Exception as e:
         print(f"⚠️ Impossible de lancer la mise à jour d'emails: {e}")
     
+    # Calculer le hash de l'email pour les dossiers
+    import hashlib
+    normalized_email = user["email"].strip().lower()
+    email_hash = hashlib.sha256(normalized_email.encode('utf-8')).hexdigest()[:12]
+    
     return {
         **tokens,
         "user": {
             "id": user["id"],
             "email": user["email"],
             "name": user["name"],
-            "role": user["role"]
+            "role": user["role"],
+            "email_hash": email_hash
         }
     }
 
@@ -618,7 +632,8 @@ async def validate_gmail_credentials(validation_data: GmailValidationRequest, re
         # Import gmail fetcher and test connection
         import sys
         import os
-        sys.path.append(os.path.join(os.path.dirname(__file__), '..', 'src', 'utils'))
+        # Chemin absolu pour Docker
+        sys.path.append('/app/src/utils')
         from gmail_fetcher import fetch_emails_from_gmail
         
         # Test connection without fetching emails (by limiting to 1 email)

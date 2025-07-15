@@ -36,7 +36,8 @@ from fastapi import Request
 from fastapi.responses import JSONResponse
 import time
 import sys
-sys.path.append(os.path.join(os.path.dirname(__file__), '..', 'src', 'utils'))
+# Chemin absolu pour Docker
+sys.path.append('/app/src/utils')
 
 try:
     from gmail_fetcher import fetch_emails_from_gmail, validate_gmail_credentials
