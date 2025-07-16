@@ -381,9 +381,7 @@ class EmailCSVLoader {
         container.innerHTML = html;
     }
 
-    /**
-     * ✅ NOUVEAU : Échappe le HTML pour éviter l'injection
-     */
+
     escapeHtml(text) {
         if (!text) return '';
         const div = document.createElement('div');

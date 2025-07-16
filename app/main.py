@@ -4,12 +4,8 @@ import re
 from pathlib import Path
 from typing import List
 import csv
-import os
 from datetime import datetime
 from typing import Optional
-import json
-import pickle
-import re
 import nltk
 import tensorflow as tf
 from langdetect import detect
@@ -20,24 +16,20 @@ from tensorflow.keras.models import load_model
 from tensorflow.keras.preprocessing.sequence import pad_sequences
 import threading
 from fastapi import BackgroundTasks
-from pathlib import Path
 import pandas as pd
 import subprocess
-import threading
 import numpy as np
 from collections import deque
-from fastapi import FastAPI, HTTPException, File, UploadFile
+from fastapi import File, UploadFile
 from fastapi.responses import StreamingResponse
 import io
 import html
 
 # Ajouter ces lignes après vos imports existants
-from fastapi import Request
-from fastapi.responses import JSONResponse
-import time
 import sys
+
 # Chemin absolu pour Docker
-sys.path.append('/app/src/utils')
+sys.path.append("/app/src/utils")
 
 try:
     from gmail_fetcher import fetch_emails_from_gmail, validate_gmail_credentials
@@ -47,12 +39,11 @@ except ImportError:
     validate_gmail_credentials = None
 
 
-
 # --- Configuration et Initialisation ---
 app = FastAPI(
     title="API de Détection de Phishing Automatique (FR/EN) - Smart Percentile",
     description="Une API adaptative pour classifier des textes avec optimisation automatique des longueurs.",
-    version="3.1.0"
+    version="3.1.0",
 )
 
 app.add_middleware(
@@ -76,10 +67,10 @@ SMART_PERCENTILE_ENABLED = False
 length_history = deque(maxlen=500)
 current_production_length = None
 adaptation_stats = {
-    'total_predictions': 0,
-    'adaptations_triggered': 0,
-    'avg_efficiency': 0.0,
-    'last_adaptation': None
+    "total_predictions": 0,
+    "adaptations_triggered": 0,
+    "avg_efficiency": 0.0,
+    "last_adaptation": None,
 }
 
 # Variables existantes pour fine-tuning
@@ -87,13 +78,13 @@ AUTO_FINETUNING_ENABLED = True
 IS_FINETUNING_RUNNING = False
 FINETUNING_LOCK = threading.Lock()
 NEGATIVE_FEEDBACK_THRESHOLD = 1
-tf.config.set_visible_devices([], 'GPU')
+tf.config.set_visible_devices([], "GPU")
 
 FEEDBACK_CSV_PATH = Path("./data/user_feedbacks.csv")
 
 
 def clean_input_field(text: str) -> str:
-    """Nettoie un champ texte comme dans le frontend JS (HTML stripping, normalisation, entités, caractères spéciaux)"""
+    """Clean a text field like in the frontend JS (HTML stripping, normalization, entities, special characters)"""
     if not text:
         return ""
 
@@ -109,7 +100,9 @@ def clean_input_field(text: str) -> str:
     cleaned = re.sub(r"[\x00-\x08\x0b\x0c\x0e-\x1f\x7f-\x9f]", "", cleaned)
 
     # 4. Supprimer les caractères non souhaités (emojis cassés, symboles, etc.)
-    cleaned = re.sub(r"[^\w\s\-.,!?@()[\]{}:;'\"€/àâçéèêëîïôöùûü%&*=+\\/|~`<>]", "", cleaned)
+    cleaned = re.sub(
+        r"[^\w\s\-.,!?@()[\]{}:;'\"€/àâçéèêëîïôöùûü%&*=+\\/|~`<>]", "", cleaned
+    )
 
     # 5. Normaliser les espaces multiples
     cleaned = re.sub(r"\s+", " ", cleaned)
@@ -118,52 +111,66 @@ def clean_input_field(text: str) -> str:
 
 
 def get_raw_email_from_csv(email_id: str, client_id: str = None) -> dict:
-    """Récupère les données brutes d'un email depuis le fichier CSV organisé par client"""
+    """Retrieve raw email data from CSV file organized by client"""
     print(f"🔍 Recherche du fichier CSV pour email ID: {email_id}, client: {client_id}")
 
     # Construire les chemins possibles en fonction du client_id
     possible_paths = []
-    
+
     if client_id:
-        # Chemins spécifiques au client (PRIORITÉ ABSOLUE)
-        possible_paths.extend([
-            Path(f"/shared/data/emails/{client_id}/emails_live.csv"),  # Volume partagé avec client
-            Path(f"/app/emails/{client_id}/emails_live.csv"),          # Dans le container avec client
-            Path(f"/shared/data/{client_id}/emails_live.csv"),        # Alternative
-            Path(f"./src/pages/emails/{client_id}/emails_live.csv"),  # Dossier src/pages avec client
-            Path(f"./emails/{client_id}/emails_live.csv"),            # Dossier local avec client
-        ])
+        # Chemins spécifiques au client
+        possible_paths.extend(
+            [
+                Path(
+                    f"/shared/data/emails/{client_id}/emails_live.csv"
+                ),  # Volume partagé avec client
+                Path(
+                    f"/app/emails/{client_id}/emails_live.csv"
+                ),  # Dans le container avec client
+                Path(f"/shared/data/{client_id}/emails_live.csv"),  # Alternative
+                Path(
+                    f"./src/pages/emails/{client_id}/emails_live.csv"
+                ),  # Dossier src/pages avec client
+                Path(
+                    f"./emails/{client_id}/emails_live.csv"
+                ),  # Dossier local avec client
+            ]
+        )
         print(f"🔍 Mode client spécifique: recherche pour client {client_id}")
     else:
-        print(f"🔍 Mode global: pas de client spécifique")
-    
+        print("🔍 Mode global: pas de client spécifique")
+
     # Chemins de fallback (globaux) - ajoutés après client-specific ou si pas de client_id
-    possible_paths.extend([
-        Path("/shared/data/emails_live.csv"),  # Volume partagé Docker
-        Path("./emails_live.csv"),             # Répertoire courant
-        Path("./src/pages/emails_live.csv"),   # Dossier src/pages
-        Path("/app/emails_live.csv"),          # Dans le container
-    ])
+    possible_paths.extend(
+        [
+            Path("/shared/data/emails_live.csv"),  # Volume partagé Docker
+            Path("./emails_live.csv"),  # Répertoire courant
+            Path("./src/pages/emails_live.csv"),  # Dossier src/pages
+            Path("/app/emails_live.csv"),  # Dans le container
+        ]
+    )
 
     csv_path = None
     found_files = []
-    
+
     for path in possible_paths:
         print(f"🔍 Vérification: {path} - Existe: {path.exists()}")
         if path.exists():
             found_files.append(path)
             # Vérifier si c'est un fichier client spécifique
             is_client_file = client_id and f"/{client_id}/" in str(path)
-            
+
             if is_client_file:
                 try:
                     temp_df = pd.read_csv(path)
-                    if email_id in temp_df['id'].values:
+                    if email_id in temp_df["id"].values:
                         csv_path = path
                         print(f"✅ Fichier client trouvé avec l'email ID: {csv_path}")
                         break
                     else:
-                        print(f"⚠️ Email ID {email_id} non trouvé dans le fichier client {path}, continuons...")
+                        print(
+                            f"⚠️ Email ID {email_id} non trouvé dans le fichier client {path}, continuons..."
+                        )
                         continue
                 except Exception as e:
                     print(f"⚠️ Erreur lecture fichier client {path}: {e}")
@@ -188,33 +195,38 @@ def get_raw_email_from_csv(email_id: str, client_id: str = None) -> dict:
             except:
                 print(f"📁 Impossible de lire {check_dir}")
 
-        raise HTTPException(status_code=404, detail=f"Email ID {email_id} non trouvé dans les fichiers CSV disponibles")
+        raise HTTPException(
+            status_code=404,
+            detail=f"Email ID {email_id} non trouvé dans les fichiers CSV disponibles",
+        )
 
     try:
         df = pd.read_csv(csv_path)
 
         # Chercher l'email par ID
-        email_row = df[df['id'] == email_id]
+        email_row = df[df["id"] == email_id]
 
         if email_row.empty:
-            raise HTTPException(status_code=404, detail=f"Email avec ID {email_id} non trouvé")
+            raise HTTPException(
+                status_code=404, detail=f"Email avec ID {email_id} non trouvé"
+            )
 
         row = email_row.iloc[0]
 
         # Retourner les données brutes SANS nettoyage
         return {
-            'id': row['id'],
-            'from': str(row['from']) if not pd.isna(row['from']) else "",
-            'subject': str(row['subject']) if not pd.isna(row['subject']) else "",
-            'body': str(row['body']) if not pd.isna(row['body']) else "",
-            'type': row['type'] if 'type' in row else 'unknown'
+            "id": row["id"],
+            "from": str(row["from"]) if not pd.isna(row["from"]) else "",
+            "subject": str(row["subject"]) if not pd.isna(row["subject"]) else "",
+            "body": str(row["body"]) if not pd.isna(row["body"]) else "",
+            "type": row["type"] if "type" in row else "unknown",
         }
 
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Erreur lecture CSV: {str(e)}")
 
 
-def analyze_input_lengths(texts):
+def analyze_input_lengths(texts: list) -> list:
     """Quick analysis of input text lengths"""
     lengths = []
     for text in texts:
@@ -222,46 +234,46 @@ def analyze_input_lengths(texts):
             lengths.append(0)
         else:
             clean_text = str(text).lower()
-            clean_text = re.sub(r'http[s]?://\S+', ' URL_TOKEN ', clean_text)
-            clean_text = re.sub(r'\S+@\S+', ' EMAIL_TOKEN ', clean_text)
-            clean_text = re.sub(r'[^\w\s]', ' ', clean_text)
+            clean_text = re.sub(r"http[s]?://\S+", " URL_TOKEN ", clean_text)
+            clean_text = re.sub(r"\S+@\S+", " EMAIL_TOKEN ", clean_text)
+            clean_text = re.sub(r"[^\w\s]", " ", clean_text)
             words = clean_text.split()
             lengths.append(len(words))
     return lengths
 
 
-def calculate_production_length(current_batch_lengths):
+def calculate_production_length(current_batch_lengths: list) -> int:
     """Calculate optimal length for this batch in production using smart_percentile"""
     global current_production_length
 
     all_lengths = list(current_batch_lengths)
 
-    # Ajouter l'historique récent si disponible
     if len(length_history) > 0:
-        recent_history = list(length_history)[-100:]  # 100 derniers échantillons
+        recent_history = list(length_history)[-100:]
         all_lengths.extend(recent_history)
 
     # Vérifier si on a assez de données (minimum 10 échantillons)
     if len(all_lengths) < 10:
         # Pas assez de données, utiliser la longueur d'entraînement
         fallback = current_production_length or MAX_SEQUENCE_LENGTH
-        print(f"  📊 Pas assez d'échantillons ({len(all_lengths)}<10), utilisation de {fallback}")
+        print(
+            f"  📊 Pas assez d'échantillons ({len(all_lengths)}<10), utilisation de {fallback}"
+        )
         return fallback
 
-    # Appliquer smart_percentile sur les données combinées
     mean_length = np.mean(all_lengths)
     std_length = np.std(all_lengths)
     p95_length = int(np.percentile(all_lengths, 95))
 
-    # Logique smart_percentile adaptée pour la production
-    if std_length > mean_length * 0.8:  # Grande variabilité
+    if std_length > mean_length * 0.8:
         optimal = min(p95_length, int(mean_length + 1.5 * std_length))
-        print(f"  🧠 Production: variabilité élevée (std={std_length:.1f}) → ajustement conservateur")
+        print(
+            f"  🧠 Production: variabilité élevée (std={std_length:.1f}) → ajustement conservateur"
+        )
     else:
         optimal = p95_length
-        print(f"  🧠 Production: distribution stable → 95e percentile")
+        print("  🧠 Production: distribution stable → 95e percentile")
 
-    # Appliquer les limites (entre 30 et 800)
     optimal = max(optimal, 30)
     optimal = min(optimal, 800)
 
@@ -273,7 +285,7 @@ def calculate_production_length(current_batch_lengths):
     return optimal
 
 
-def prepare_sequences_adaptive(texts, languages, target_length):
+def prepare_sequences_adaptive(texts: list, languages: list, target_length: int) -> tuple:
     """Prepare sequences with a specific target length"""
     processed_texts = []
     for text, lang in zip(texts, languages):
@@ -287,25 +299,27 @@ def prepare_sequences_adaptive(texts, languages, target_length):
     max_vocab_id = 10000
     for i, sequence in enumerate(sequences):
         if sequence:
-            sequences[i] = [token_id for token_id in sequence if token_id <= max_vocab_id]
+            sequences[i] = [
+                token_id for token_id in sequence if token_id <= max_vocab_id
+            ]
 
     # Padding avec la longueur adaptée
     padded_sequences = pad_sequences(
-        sequences,
-        maxlen=target_length,
-        padding='post',
-        truncating='post'
+        sequences, maxlen=target_length, padding="post", truncating="post"
     )
 
     return padded_sequences, processed_texts
 
 
-# --- Chargement des Artefacts du Modèle (VERSION AMÉLIORÉE) ---
-def load_model_artifacts():
+# --- Chargement des Artefacts du Modèle ---
+def load_model_artifacts() -> bool:
     """Load all model artifacts with smart_percentile capability detection"""
     global model, tokenizer, scaler, label_encoder, MAX_SEQUENCE_LENGTH
     global SUSPICIOUS_WORDS_SET, STOP_WORDS
-    global MODEL_SUPPORTS_VARIABLE_LENGTH, SMART_PERCENTILE_ENABLED, current_production_length
+    global \
+        MODEL_SUPPORTS_VARIABLE_LENGTH, \
+        SMART_PERCENTILE_ENABLED, \
+        current_production_length
 
     try:
         print("🚀 Démarrage de l'API et chargement des artefacts...")
@@ -316,29 +330,32 @@ def load_model_artifacts():
             try:
                 with open(metadata_file, "r") as f:
                     metadata = json.load(f)
-                config = metadata.get('config', {})
-                MAX_SEQUENCE_LENGTH = config.get('max_sequence_length', 566)
+                config = metadata.get("config", {})
+                MAX_SEQUENCE_LENGTH = config.get("max_sequence_length", 566)
 
-                # NOUVEAU: Détecter les capacités smart_percentile
-                SMART_PERCENTILE_ENABLED = config.get('smart_percentile_enabled', False)
-                MODEL_SUPPORTS_VARIABLE_LENGTH = config.get('enable_variable_length', False)
+                # Détecter les capacités smart_percentile
+                SMART_PERCENTILE_ENABLED = config.get("smart_percentile_enabled", False)
+                MODEL_SUPPORTS_VARIABLE_LENGTH = config.get(
+                    "enable_variable_length", False
+                )
 
-                print(f"✅ Métadonnées chargées:")
+                print("✅ Métadonnées chargées:")
                 print(f"  max_sequence_length: {MAX_SEQUENCE_LENGTH}")
-                print(f"  🧠 Smart_percentile: {'✅ ACTIVÉ' if SMART_PERCENTILE_ENABLED else '❌ DÉSACTIVÉ'}")
-                print(f"  🔄 Longueurs variables: {'✅ SUPPORTÉ' if MODEL_SUPPORTS_VARIABLE_LENGTH else '❌ FIXE'}")
+                print(
+                    f"  🧠 Smart_percentile: {'✅ ACTIVÉ' if SMART_PERCENTILE_ENABLED else '❌ DÉSACTIVÉ'}"
+                )
+                print(
+                    f"  🔄 Longueurs variables: {'✅ SUPPORTÉ' if MODEL_SUPPORTS_VARIABLE_LENGTH else '❌ FIXE'}"
+                )
 
                 # Initialiser la longueur de production
                 current_production_length = MAX_SEQUENCE_LENGTH
 
             except Exception as e:
                 print(f"⚠️ Erreur chargement métadonnées: {e}")
-                print(f"⚠️ Utilisation des valeurs par défaut")
+                print("⚠️ Utilisation des valeurs par défaut")
         else:
-            print(f"⚠️ Fichier model_metadata.json non trouvé")
-
-        # ÉTAPE 2-8: Chargement standard des autres artefacts (identique à votre code)
-        # [Garder tout votre code existant pour le chargement du modèle, tokenizer, etc.]
+            print("⚠️ Fichier model_metadata.json non trouvé")
 
         # ÉTAPE 2: Chargement du modèle
         model_path = Path("model/model_prod/best_lstm_model.keras")
@@ -349,7 +366,7 @@ def load_model_artifacts():
         print("✅ Modèle LSTM chargé")
 
         # ÉTAPE 3: Vérifier les dimensions du modèle
-        print(f"🔍 Vérification des dimensions du modèle:")
+        print("🔍 Vérification des dimensions du modèle:")
         for i, input_layer in enumerate(model.inputs):
             print(f"  Input {i}: {input_layer.name} - Shape: {input_layer.shape}")
 
@@ -359,7 +376,7 @@ def load_model_artifacts():
                 if expected_seq_length is None:
                     # Le modèle accepte vraiment des longueurs variables
                     MODEL_SUPPORTS_VARIABLE_LENGTH = True
-                    print(f"  ✅ Modèle à longueurs variables confirmé")
+                    print("  ✅ Modèle à longueurs variables confirmé")
                 elif expected_seq_length != MAX_SEQUENCE_LENGTH:
                     print(f"  🔧 Correction longueur: {expected_seq_length}")
                     MAX_SEQUENCE_LENGTH = expected_seq_length
@@ -369,7 +386,7 @@ def load_model_artifacts():
         tokenizer_path = Path("model/model_prod/tokenizer.pkl")
         if not tokenizer_path.exists():
             raise FileNotFoundError(f"Tokenizer non trouvé: {tokenizer_path}")
-        with open(tokenizer_path, 'rb') as f:
+        with open(tokenizer_path, "rb") as f:
             tokenizer = pickle.load(f)
         print(f"✅ Tokenizer chargé (vocab: {len(tokenizer.word_index)} mots)")
 
@@ -377,7 +394,7 @@ def load_model_artifacts():
         scaler_path = Path("model/model_prod/scaler.pkl")
         if not scaler_path.exists():
             raise FileNotFoundError(f"Scaler non trouvé: {scaler_path}")
-        with open(scaler_path, 'rb') as f:
+        with open(scaler_path, "rb") as f:
             scaler = pickle.load(f)
         print("✅ Scaler chargé")
 
@@ -385,7 +402,7 @@ def load_model_artifacts():
         label_encoder_path = Path("model/model_prod/label_encoder.pkl")
         if not label_encoder_path.exists():
             raise FileNotFoundError(f"Label encoder non trouvé: {label_encoder_path}")
-        with open(label_encoder_path, 'rb') as f:
+        with open(label_encoder_path, "rb") as f:
             label_encoder = pickle.load(f)
         print(f"✅ Label encoder chargé (classes: {label_encoder.classes_})")
 
@@ -393,38 +410,76 @@ def load_model_artifacts():
         suspicious_words_file = Path("model/model_prod/suspicious_words.json")
         if suspicious_words_file.exists():
             try:
-                with open(suspicious_words_file, 'r') as f:
+                with open(suspicious_words_file, "r") as f:
                     suspicious_words_data = json.load(f)
-                SUSPICIOUS_WORDS_SET = set(suspicious_words_data.get('en', []) + suspicious_words_data.get('fr', []))
+                SUSPICIOUS_WORDS_SET = set(
+                    suspicious_words_data.get("en", [])
+                    + suspicious_words_data.get("fr", [])
+                )
                 print(f"✅ Mots suspects chargés ({len(SUSPICIOUS_WORDS_SET)} mots)")
             except Exception as e:
                 print(f"⚠️ Erreur chargement mots suspects: {e}")
 
         try:
             try:
-                nltk.data.find('corpora/stopwords')
+                nltk.data.find("corpora/stopwords")
             except LookupError:
                 print("📥 Téléchargement des données NLTK...")
-                nltk.download('stopwords', quiet=True)
+                nltk.download("stopwords", quiet=True)
             STOP_WORDS = {
-                'en': set(nltk.corpus.stopwords.words('english')),
-                'fr': set(nltk.corpus.stopwords.words('french'))
+                "en": set(nltk.corpus.stopwords.words("english")),
+                "fr": set(nltk.corpus.stopwords.words("french")),
             }
             print("✅ Stopwords chargés")
         except Exception as e:
             print(f"⚠️ Erreur chargement stopwords: {e}")
             STOP_WORDS = {
-                'en': {'the', 'a', 'an', 'and', 'or', 'but', 'in', 'on', 'at', 'to', 'for', 'of', 'with', 'by'},
-                'fr': {'le', 'la', 'les', 'un', 'une', 'des', 'et', 'ou', 'mais', 'dans', 'sur', 'avec', 'pour', 'de'}
+                "en": {
+                    "the",
+                    "a",
+                    "an",
+                    "and",
+                    "or",
+                    "but",
+                    "in",
+                    "on",
+                    "at",
+                    "to",
+                    "for",
+                    "of",
+                    "with",
+                    "by",
+                },
+                "fr": {
+                    "le",
+                    "la",
+                    "les",
+                    "un",
+                    "une",
+                    "des",
+                    "et",
+                    "ou",
+                    "mais",
+                    "dans",
+                    "sur",
+                    "avec",
+                    "pour",
+                    "de",
+                },
             }
 
         # ÉTAPE 9: Test de prédiction pour vérifier le fonctionnement
-        print(f"\n🧪 Test de validation du modèle...")
+        print("\n🧪 Test de validation du modèle...")
         try:
             test_text = "Test email content"
-            test_processed = preprocess_text(test_text, 'en')
+            test_processed = preprocess_text(test_text, "en")
             test_sequence = tokenizer.texts_to_sequences([test_processed])
-            test_padded = pad_sequences(test_sequence, maxlen=MAX_SEQUENCE_LENGTH, padding='post', truncating='post')
+            test_padded = pad_sequences(
+                test_sequence,
+                maxlen=MAX_SEQUENCE_LENGTH,
+                padding="post",
+                truncating="post",
+            )
             test_features = extract_numerical_features(test_text)
             test_scaled = scaler.transform([test_features])
             test_pred = model.predict([test_padded, test_scaled], verbose=0)
@@ -434,12 +489,17 @@ def load_model_artifacts():
             return False
 
         # NOUVEAU: Affichage du résumé des capacités
-        print(f"\n🎉 API prête ! Capacités activées:")
+        print("\n🎉 API prête ! Capacités activées:")
         print(f"  📏 Longueur de séquence: {MAX_SEQUENCE_LENGTH}")
-        print(f"  🧠 Smart_percentile: {'✅ OUI' if SMART_PERCENTILE_ENABLED else '❌ NON'}")
-        print(f"  🔄 Longueurs variables: {'✅ OUI' if MODEL_SUPPORTS_VARIABLE_LENGTH else '❌ NON'}")
         print(
-            f"  📊 Adaptation en production: {'✅ DISPONIBLE' if (SMART_PERCENTILE_ENABLED and MODEL_SUPPORTS_VARIABLE_LENGTH) else '❌ INDISPONIBLE'}")
+            f"  🧠 Smart_percentile: {'✅ OUI' if SMART_PERCENTILE_ENABLED else '❌ NON'}"
+        )
+        print(
+            f"  🔄 Longueurs variables: {'✅ OUI' if MODEL_SUPPORTS_VARIABLE_LENGTH else '❌ NON'}"
+        )
+        print(
+            f"  📊 Adaptation en production: {'✅ DISPONIBLE' if (SMART_PERCENTILE_ENABLED and MODEL_SUPPORTS_VARIABLE_LENGTH) else '❌ INDISPONIBLE'}"
+        )
 
         return True
 
@@ -448,9 +508,10 @@ def load_model_artifacts():
         return False
 
 
-# --- Modèles de Données Pydantic (NOUVEAUX) ---
+# --- Modèles de Données Pydantic ---
 class TextInput(BaseModel):
     text: str
+
 
 class EmailIDInput(BaseModel):
     email_id: str
@@ -488,8 +549,6 @@ class FeedbackByIdInput(BaseModel):
     client_id: Optional[str] = None
 
 
-
-
 class GmailCredentials(BaseModel):
     username: str
     password: str
@@ -498,7 +557,7 @@ class GmailCredentials(BaseModel):
         json_schema_extra = {
             "example": {
                 "username": "votre@gmail.com",
-                "password": "votre_mot_de_passe_application"
+                "password": "votre_mot_de_passe_application",
             }
         }
 
@@ -515,33 +574,40 @@ class GmailFetchRequest(BaseModel):
                 "username": "votre@gmail.com",
                 "password": "votre_mot_de_passe_application",
                 "max_emails": 50,
-                "include_spam": True
+                "include_spam": True,
             }
         }
 
 
 # --- Fonctions de Prétraitement ---
-def preprocess_text(text: str, language: str):
+def preprocess_text(text: str, language: str) -> str:
     """Specialized and multilingual text preprocessing."""
     if pd.isna(text):
         return ""
 
     text = str(text).lower()
-    text = re.sub(r'http[s]?://(?:[a-zA-Z]|[0-9]|[$-_@.&+]|[!*\\(\\),]|(?:%[0-9a-fA-F][0-9a-fA-F]))+', ' URL_TOKEN ',
-                  text)
-    text = re.sub(r'\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}\b', ' EMAIL_TOKEN ', text)
-    text = re.sub(r'\b\d+\b', ' NUM_TOKEN ', text)
-    text = re.sub(r'[^\w\s]', ' ', text)
-    text = re.sub(r'\s+', ' ', text).strip()
+    text = re.sub(
+        r"http[s]?://(?:[a-zA-Z]|[0-9]|[$-_@.&+]|[!*\\(\\),]|(?:%[0-9a-fA-F][0-9a-fA-F]))+",
+        " URL_TOKEN ",
+        text,
+    )
+    text = re.sub(
+        r"\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}\b", " EMAIL_TOKEN ", text
+    )
+    text = re.sub(r"\b\d+\b", " NUM_TOKEN ", text)
+    text = re.sub(r"[^\w\s]", " ", text)
+    text = re.sub(r"\s+", " ", text).strip()
 
     tokens = text.split()
     stop_words_lang = STOP_WORDS.get(language, set())
 
-    filtered_tokens = [token for token in tokens if len(token) > 2 and token not in stop_words_lang]
-    return ' '.join(filtered_tokens)
+    filtered_tokens = [
+        token for token in tokens if len(token) > 2 and token not in stop_words_lang
+    ]
+    return " ".join(filtered_tokens)
 
 
-def extract_numerical_features(text: str):
+def extract_numerical_features(text: str) -> list:
     """Extract numerical features aligned with training."""
     if pd.isna(text):
         text = ""
@@ -550,20 +616,22 @@ def extract_numerical_features(text: str):
     features = [
         len(text_str),
         len(text_str.split()),
-        text_str.count('!'),
-        text_str.count('?'),
+        text_str.count("!"),
+        text_str.count("?"),
         sum(1 for c in text_str if c.isupper()) / max(len(text_str), 1),
-        len(re.findall(r'http[s]?://', text_str)),
-        len(re.findall(r'\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}\b', text_str)),
+        len(re.findall(r"http[s]?://", text_str)),
+        len(
+            re.findall(r"\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}\b", text_str)
+        ),
         sum(1 for word in SUSPICIOUS_WORDS_SET if word in text_str.lower()),
         sum(1 for c in text_str if c.isdigit()) / max(len(text_str), 1),
-        sum(1 for c in text_str if c in '!@#$%^&*()') / max(len(text_str), 1)
+        sum(1 for c in text_str if c in "!@#$%^&*()") / max(len(text_str), 1),
     ]
     return features
 
 
 # --- NOUVELLE FONCTION: Prédiction avec Smart Percentile ---
-def perform_prediction_adaptive(texts, enable_adaptation=True):
+def perform_prediction_adaptive(texts: list, enable_adaptation: bool = True) -> dict:
     """
     Adaptive prediction with smart_percentile in production
 
@@ -584,34 +652,37 @@ def perform_prediction_adaptive(texts, enable_adaptation=True):
         texts = [texts]
 
     try:
-        adaptation_stats['total_predictions'] += len(texts)
+        adaptation_stats["total_predictions"] += len(texts)
 
         # Détection des langues
         languages = []
         for text in texts:
             try:
                 detected_lang = detect(text[:1000])
-                lang = detected_lang if detected_lang in ['fr', 'en'] else 'en'
+                lang = detected_lang if detected_lang in ["fr", "en"] else "en"
             except Exception:
-                lang = 'en'
+                lang = "en"
             languages.append(lang)
 
-        print(f"🔮 PRÉDICTION SMART_PERCENTILE")
+        print("🔮 PRÉDICTION SMART_PERCENTILE")
         print(f"   Nombre de textes: {len(texts)}")
         print(f"   Adaptation activée: {enable_adaptation}")
         print(f"   Modèle supporte variables: {MODEL_SUPPORTS_VARIABLE_LENGTH}")
         print(f"   Smart_percentile activé: {SMART_PERCENTILE_ENABLED}")
 
         # Décider si on doit adapter
-        should_adapt = (enable_adaptation and
-                        SMART_PERCENTILE_ENABLED and
-                        MODEL_SUPPORTS_VARIABLE_LENGTH)
+        should_adapt = (
+            enable_adaptation
+            and SMART_PERCENTILE_ENABLED
+            and MODEL_SUPPORTS_VARIABLE_LENGTH
+        )
 
         if should_adapt:
             # 1. Analyser les longueurs du batch actuel
             current_lengths = analyze_input_lengths(texts)
             print(
-                f"   Longueurs actuelles: {min(current_lengths)}-{max(current_lengths)} (moy: {np.mean(current_lengths):.1f})")
+                f"   Longueurs actuelles: {min(current_lengths)}-{max(current_lengths)} (moy: {np.mean(current_lengths):.1f})"
+            )
 
             # 2. Calculer la longueur optimale avec smart_percentile
             optimal_length = calculate_production_length(current_lengths)
@@ -621,16 +692,20 @@ def perform_prediction_adaptive(texts, enable_adaptation=True):
             if abs(optimal_length - training_length) > 10:  # Seuil de changement
                 print(f"   🔄 Adaptation: {training_length} → {optimal_length}")
                 # Utiliser la longueur adaptée
-                padded_sequences, processed_texts = prepare_sequences_adaptive(texts, languages, optimal_length)
+                padded_sequences, processed_texts = prepare_sequences_adaptive(
+                    texts, languages, optimal_length
+                )
                 current_production_length = optimal_length
-                adaptation_stats['adaptations_triggered'] += 1
-                adaptation_stats['last_adaptation'] = datetime.now().isoformat()
+                adaptation_stats["adaptations_triggered"] += 1
+                adaptation_stats["last_adaptation"] = datetime.now().isoformat()
                 adaptation_triggered = True
                 actual_length_used = optimal_length
             else:
-                print(f"   ⚪ Pas d'adaptation nécessaire (écart < 10)")
+                print("   ⚪ Pas d'adaptation nécessaire (écart < 10)")
                 # Utiliser la méthode standard
-                padded_sequences, processed_texts = prepare_sequences_adaptive(texts, languages, training_length)
+                padded_sequences, processed_texts = prepare_sequences_adaptive(
+                    texts, languages, training_length
+                )
                 adaptation_triggered = False
                 actual_length_used = training_length
 
@@ -638,13 +713,21 @@ def perform_prediction_adaptive(texts, enable_adaptation=True):
             length_history.extend(current_lengths)
 
             # 5. Calculer l'efficacité
-            efficiency = np.mean(current_lengths) / actual_length_used if actual_length_used > 0 else 1.0
-            adaptation_stats['avg_efficiency'] = (adaptation_stats['avg_efficiency'] * 0.9 + efficiency * 0.1)
+            efficiency = (
+                np.mean(current_lengths) / actual_length_used
+                if actual_length_used > 0
+                else 1.0
+            )
+            adaptation_stats["avg_efficiency"] = (
+                adaptation_stats["avg_efficiency"] * 0.9 + efficiency * 0.1
+            )
 
         else:
             # Mode standard sans adaptation
-            print(f"   📋 Mode standard (adaptation désactivée)")
-            padded_sequences, processed_texts = prepare_sequences_adaptive(texts, languages, MAX_SEQUENCE_LENGTH)
+            print("   📋 Mode standard (adaptation désactivée)")
+            padded_sequences, processed_texts = prepare_sequences_adaptive(
+                texts, languages, MAX_SEQUENCE_LENGTH
+            )
             adaptation_triggered = False
             actual_length_used = MAX_SEQUENCE_LENGTH
             efficiency = 1.0
@@ -683,8 +766,12 @@ def perform_prediction_adaptive(texts, enable_adaptation=True):
                     "adaptation_enabled": should_adapt,
                     "adaptation_triggered": adaptation_triggered,
                     "efficiency": efficiency if should_adapt else None,
-                    "original_length": len(processed_texts[i].split()) if processed_texts else None
-                } if should_adapt else None
+                    "original_length": len(processed_texts[i].split())
+                    if processed_texts
+                    else None,
+                }
+                if should_adapt
+                else None,
             }
             results.append(result)
 
@@ -699,38 +786,38 @@ def perform_prediction_adaptive(texts, enable_adaptation=True):
         raise HTTPException(status_code=500, detail=f"Erreur de prédiction: {str(e)}")
 
 
-# --- Logique de prédiction principale (VERSION ORIGINALE CONSERVÉE) ---
-def perform_prediction(text: str):
+# --- Logique de prédiction principale ---
+def perform_prediction(text: str) -> dict:
     """Original function kept for compatibility"""
-    # Votre code existant identique
     if not model:
         raise HTTPException(status_code=503, detail="Modèle non chargé")
 
     try:
         try:
             detected_lang = detect(text[:1000])
-            lang = detected_lang if detected_lang in ['fr', 'en'] else 'en'
+            lang = detected_lang if detected_lang in ["fr", "en"] else "en"
         except Exception:
-            lang = 'en'
+            lang = "en"
 
         processed_text = preprocess_text(text, lang)
         sequence = tokenizer.texts_to_sequences([processed_text])
 
         if sequence[0]:
             max_vocab_id = 10000
-            sequence[0] = [token_id for token_id in sequence[0] if token_id <= max_vocab_id]
+            sequence[0] = [
+                token_id for token_id in sequence[0] if token_id <= max_vocab_id
+            ]
 
         padded_sequence = pad_sequences(
-            sequence,
-            maxlen=MAX_SEQUENCE_LENGTH,
-            padding='post',
-            truncating='post'
+            sequence, maxlen=MAX_SEQUENCE_LENGTH, padding="post", truncating="post"
         )
 
         numerical_features = extract_numerical_features(text)
         scaled_features = scaler.transform([numerical_features])
 
-        prediction_proba = model.predict([padded_sequence, scaled_features], verbose=0)[0][0]
+        prediction_proba = model.predict([padded_sequence, scaled_features], verbose=0)[
+            0
+        ][0]
         prediction_int = int(prediction_proba > 0.5)
         predicted_class = label_encoder.inverse_transform([prediction_int])[0]
 
@@ -742,7 +829,9 @@ def perform_prediction(text: str):
         else:
             confidence = "LOW"
 
-        print(f"✅ PREDICTION: {predicted_class} (prob: {prediction_proba:.4f}, confidence: {confidence})")
+        print(
+            f"✅ PREDICTION: {predicted_class} (prob: {prediction_proba:.4f}, confidence: {confidence})"
+        )
 
         return {
             "prediction": predicted_class,
@@ -754,14 +843,13 @@ def perform_prediction(text: str):
                 "processed_text_length": len(processed_text),
                 "original_sequence_length": len(sequence[0]) if sequence[0] else 0,
                 "padded_sequence_shape": list(padded_sequence.shape),
-                "features_shape": list(scaled_features.shape)
-            }
+                "features_shape": list(scaled_features.shape),
+            },
         }
 
     except Exception as e:
         print(f"❌ Erreur dans perform_prediction: {e}")
         raise HTTPException(status_code=500, detail=f"Erreur de prédiction: {str(e)}")
-
 
 
 def count_negative_feedbacks() -> int:
@@ -770,27 +858,31 @@ def count_negative_feedbacks() -> int:
         if not FEEDBACK_CSV_PATH.exists():
             return 0
         df = pd.read_csv(FEEDBACK_CSV_PATH)
-        negative_unprocessed = len(df[
-                                       (df['user_satisfaction'] == 'no') &
-                                       (df['processed'] == False)
-                                       ])
+        negative_unprocessed = len(
+            df[(df["user_satisfaction"] == "no") & (df["processed"] == False)]
+        )
         return negative_unprocessed
     except Exception as e:
         print(f"❌ Erreur lors du comptage des feedbacks négatifs: {e}")
         return 0
 
 
-def save_feedback_to_csv(feedback_data):
+def save_feedback_to_csv(feedback_data: dict) -> bool:
     """Save feedback to CSV file"""
     try:
         csv_headers = [
-            'timestamp', 'email_text', 'predicted_class',
-            'predicted_probability', 'user_satisfaction', 'language_detected', 'processed'
+            "timestamp",
+            "email_text",
+            "predicted_class",
+            "predicted_probability",
+            "user_satisfaction",
+            "language_detected",
+            "processed",
         ]
-        feedback_data['processed'] = False
+        feedback_data["processed"] = False
         FEEDBACK_CSV_PATH.parent.mkdir(exist_ok=True)
         file_exists = FEEDBACK_CSV_PATH.exists()
-        with open(FEEDBACK_CSV_PATH, 'a', newline='', encoding='utf-8') as csvfile:
+        with open(FEEDBACK_CSV_PATH, "a", newline="", encoding="utf-8") as csvfile:
             writer = csv.DictWriter(csvfile, fieldnames=csv_headers)
             if not file_exists:
                 writer.writeheader()
@@ -801,12 +893,10 @@ def save_feedback_to_csv(feedback_data):
         return False
 
 
-# Dans main.py
-
-def run_finetuning_script():
+def run_finetuning_script() -> bool:
     """
-    Lance le script de fine-tuning en arrière-plan ET RECHARGE LE MODÈLE après succès.
-    Version améliorée avec rechargement direct.
+    Launch the fine-tuning script in background AND RELOAD THE MODEL after success.
+    Improved version with direct reloading.
     """
     global IS_FINETUNING_RUNNING
 
@@ -831,8 +921,8 @@ def run_finetuning_script():
             stdout=subprocess.PIPE,
             stderr=subprocess.STDOUT,
             text=True,
-            encoding='utf-8',
-            errors='replace'
+            encoding="utf-8",
+            errors="replace",
         )
 
         print("🎯 Processus de fine-tuning lancé. Affichage des logs...")
@@ -840,7 +930,7 @@ def run_finetuning_script():
 
         while True:
             output_line = process.stdout.readline()
-            if output_line == '' and process.poll() is not None:
+            if output_line == "" and process.poll() is not None:
                 break
             if output_line:
                 print(f"FT-LOG | {output_line.strip()}", flush=True)
@@ -850,7 +940,9 @@ def run_finetuning_script():
         end_time = datetime.now()
         duration = end_time - start_time
         print("-" * 60)
-        print(f"🕐 Fin du fine-tuning: {end_time.strftime('%H:%M:%S')} (Durée: {duration})")
+        print(
+            f"🕐 Fin du fine-tuning: {end_time.strftime('%H:%M:%S')} (Durée: {duration})"
+        )
 
         if return_code == 0:
             print("✅ FINE-TUNING TERMINÉ AVEC SUCCÈS!")
@@ -860,7 +952,9 @@ def run_finetuning_script():
             if reload_success:
                 print("🎉 NOUVEAU MODÈLE ACTIF DANS L'API!")
             else:
-                print("❌ ERREUR CRITIQUE: Le fine-tuning a réussi mais le rechargement a échoué.")
+                print(
+                    "❌ ERREUR CRITIQUE: Le fine-tuning a réussi mais le rechargement a échoué."
+                )
             return reload_success
         else:
             print(f"❌ FINE-TUNING ÉCHOUÉ! (Code de retour: {return_code})")
@@ -873,9 +967,9 @@ def run_finetuning_script():
         # S'assurer que le statut est bien réinitialisé
         IS_FINETUNING_RUNNING = False
         print("=" * 60)
-        print(f"🚀 Processus de fine-tuning terminé.")
+        print("🚀 Processus de fine-tuning terminé.")
 
-# ✅ NOUVEAU: Endpoint pour obtenir les logs de fine-tuning
+
 @app.get("/finetuning/logs", summary="Logs du fine-tuning en cours")
 def get_finetuning_logs():
     """
@@ -887,12 +981,13 @@ def get_finetuning_logs():
         "status": "info",
         "message": "Logs disponibles dans la console de l'API",
         "is_finetuning_running": IS_FINETUNING_RUNNING,
-        "note": "Pour voir les logs en temps réel, consultez la console où l'API est lancée"
+        "note": "Pour voir les logs en temps réel, consultez la console où l'API est lancée",
     }
 
-def trigger_automatic_finetuning():
+
+def trigger_automatic_finetuning() -> bool:
     """
-    Déclenche le fine-tuning automatique en arrière-plan
+    Trigger automatic fine-tuning in background
     """
     global IS_FINETUNING_RUNNING
 
@@ -908,28 +1003,26 @@ def trigger_automatic_finetuning():
 
         # Lancer le fine-tuning dans un thread séparé
         finetuning_thread = threading.Thread(
-            target=run_finetuning_script,
-            name="AutoFineTuning"
+            target=run_finetuning_script, name="AutoFineTuning"
         )
         finetuning_thread.daemon = True
         finetuning_thread.start()
 
-        # ---- LA MODIFICATION EST ICI ----
-        # Ajout d'un \n pour éviter le collage des logs
         print("\n🚀 Fine-tuning automatique lancé en arrière-plan.")
-        # -------------------------------
         return True
 
 
-def check_and_trigger_finetuning():
+def check_and_trigger_finetuning() -> bool:
     """
-    Vérifie si les conditions pour déclencher le fine-tuning sont remplies et lance si nécessaire
+    Check if conditions for triggering fine-tuning are met and launch if necessary
     """
     try:
         negative_count = count_negative_feedbacks()
 
         if negative_count >= NEGATIVE_FEEDBACK_THRESHOLD:
-            print(f"🚨 Seuil de fine-tuning atteint: {negative_count}/{NEGATIVE_FEEDBACK_THRESHOLD} feedbacks négatifs")
+            print(
+                f"🚨 Seuil de fine-tuning atteint: {negative_count}/{NEGATIVE_FEEDBACK_THRESHOLD} feedbacks négatifs"
+            )
 
             if AUTO_FINETUNING_ENABLED and not IS_FINETUNING_RUNNING:
                 print("🚀 Déclenchement automatique du fine-tuning...")
@@ -938,10 +1031,14 @@ def check_and_trigger_finetuning():
                 print("⚠️ Fine-tuning déjà en cours")
                 return False
             else:
-                print("💡 Fine-tuning automatique désactivé, déclenchement manuel requis")
+                print(
+                    "💡 Fine-tuning automatique désactivé, déclenchement manuel requis"
+                )
                 return False
         else:
-            print(f"📊 Feedbacks négatifs: {negative_count}/{NEGATIVE_FEEDBACK_THRESHOLD}")
+            print(
+                f"📊 Feedbacks négatifs: {negative_count}/{NEGATIVE_FEEDBACK_THRESHOLD}"
+            )
             return False
 
     except Exception as e:
@@ -949,11 +1046,18 @@ def check_and_trigger_finetuning():
         return False
 
 
-def reload_model_artifacts():
+def reload_model_artifacts() -> bool:
     """
-    Recharge le modèle et tous les artefacts depuis le disque
+    Reload the model and all artifacts from disk
     """
-    global model, tokenizer, scaler, label_encoder, MAX_SEQUENCE_LENGTH, SUSPICIOUS_WORDS_SET, STOP_WORDS
+    global \
+        model, \
+        tokenizer, \
+        scaler, \
+        label_encoder, \
+        MAX_SEQUENCE_LENGTH, \
+        SUSPICIOUS_WORDS_SET, \
+        STOP_WORDS
 
     print("🔄 RECHARGEMENT DU MODÈLE EN COURS...")
     print("=" * 50)
@@ -993,10 +1097,6 @@ def reload_model_artifacts():
         return False
 
 
-# [Garder toutes vos autres fonctions de fine-tuning existantes]
-
-# --- NOUVEAUX ENDPOINTS SMART_PERCENTILE ---
-
 @app.get("/", summary="Welcome message with capabilities")
 def read_root():
     return {
@@ -1007,14 +1107,17 @@ def read_root():
         "model_loaded": model is not None,
         "smart_percentile_enabled": SMART_PERCENTILE_ENABLED,
         "variable_length_supported": MODEL_SUPPORTS_VARIABLE_LENGTH,
-        "adaptive_prediction_available": SMART_PERCENTILE_ENABLED and MODEL_SUPPORTS_VARIABLE_LENGTH
+        "adaptive_prediction_available": SMART_PERCENTILE_ENABLED
+        and MODEL_SUPPORTS_VARIABLE_LENGTH,
     }
 
 
 @app.get("/health", summary="Health check with fine-tuning info")
 def health_check():
     if model is None:
-        raise HTTPException(status_code=503, detail="Service Unavailable: Model not loaded")
+        raise HTTPException(
+            status_code=503, detail="Service Unavailable: Model not loaded"
+        )
 
     negative_feedbacks = count_negative_feedbacks()
     finetuning_ready = negative_feedbacks >= NEGATIVE_FEEDBACK_THRESHOLD
@@ -1027,21 +1130,20 @@ def health_check():
         "negative_feedbacks": negative_feedbacks,
         "finetuning_ready": finetuning_ready,
         "model_classes": list(label_encoder.classes_) if label_encoder else [],
-
-        # ✅ NOUVEAU: Informations de fine-tuning
         "is_finetuning_running": IS_FINETUNING_RUNNING,
         "auto_finetuning_enabled": AUTO_FINETUNING_ENABLED,
         "finetuning_threshold": NEGATIVE_FEEDBACK_THRESHOLD,
-
         # Informations smart_percentile existantes
         "smart_percentile_capabilities": {
             "enabled": SMART_PERCENTILE_ENABLED,
             "variable_length_supported": MODEL_SUPPORTS_VARIABLE_LENGTH,
-            "adaptive_prediction_available": SMART_PERCENTILE_ENABLED and MODEL_SUPPORTS_VARIABLE_LENGTH,
+            "adaptive_prediction_available": SMART_PERCENTILE_ENABLED
+            and MODEL_SUPPORTS_VARIABLE_LENGTH,
             "current_production_length": current_production_length,
-            "adaptation_stats": adaptation_stats
-        }
+            "adaptation_stats": adaptation_stats,
+        },
     }
+
 
 @app.post("/predict", summary="Predict on single text (standard mode)")
 def predict(item: TextInput):
@@ -1083,8 +1185,8 @@ def predict_by_email_id(item: EmailIDInput):
         result = perform_prediction(raw_text)
 
         # Ajouter l'ID de l'email dans la réponse
-        result['email_id'] = item.email_id
-        result['data_source'] = 'raw_csv'
+        result["email_id"] = item.email_id
+        result["data_source"] = "raw_csv"
 
         return result
 
@@ -1108,7 +1210,7 @@ def predict_adaptive(item: TextInputAdaptive):
         result = perform_prediction(item.text)
         result["adaptation_info"] = {
             "adaptation_available": False,
-            "reason": "Modèle ne supporte pas l'adaptation"
+            "reason": "Modèle ne supporte pas l'adaptation",
         }
         return result
 
@@ -1134,7 +1236,10 @@ def predict_batch(batch: BatchInput):
     return {"results": results}
 
 
-@app.post("/predict/batch/adaptive", summary="Predict on list with smart_percentile adaptation")
+@app.post(
+    "/predict/batch/adaptive",
+    summary="Predict on list with smart_percentile adaptation",
+)
 def predict_batch_adaptive(batch: BatchInputAdaptive):
     """
     Analyze a list of texts with automatic smart_percentile adaptation
@@ -1171,7 +1276,7 @@ def get_adaptation_stats():
     if not SMART_PERCENTILE_ENABLED:
         return {
             "smart_percentile_enabled": False,
-            "message": "Smart_percentile non activé sur ce modèle"
+            "message": "Smart_percentile non activé sur ce modèle",
         }
 
     recent_lengths = list(length_history)[-50:] if len(length_history) > 0 else []
@@ -1186,9 +1291,13 @@ def get_adaptation_stats():
         "recent_analysis": {
             "sample_size": len(recent_lengths),
             "avg_length": np.mean(recent_lengths) if recent_lengths else 0,
-            "min_max": (min(recent_lengths), max(recent_lengths)) if recent_lengths else (0, 0),
-            "efficiency": adaptation_stats['avg_efficiency']
-        } if recent_lengths else None
+            "min_max": (min(recent_lengths), max(recent_lengths))
+            if recent_lengths
+            else (0, 0),
+            "efficiency": adaptation_stats["avg_efficiency"],
+        }
+        if recent_lengths
+        else None,
     }
 
 
@@ -1199,25 +1308,23 @@ def reset_adaptation_history():
 
     length_history.clear()
     adaptation_stats = {
-        'total_predictions': 0,
-        'adaptations_triggered': 0,
-        'avg_efficiency': 0.0,
-        'last_adaptation': None
+        "total_predictions": 0,
+        "adaptations_triggered": 0,
+        "avg_efficiency": 0.0,
+        "last_adaptation": None,
     }
     current_production_length = MAX_SEQUENCE_LENGTH
 
     return {
         "status": "success",
         "message": "Historique d'adaptation réinitialisé",
-        "reset_to_length": MAX_SEQUENCE_LENGTH
+        "reset_to_length": MAX_SEQUENCE_LENGTH,
     }
-
 
 
 @app.post("/feedback", summary="Save user feedback")
 async def save_feedback(feedback: FeedbackInput, background_tasks: BackgroundTasks):
     """Save user feedback and automatically trigger fine-tuning if necessary"""
-    # [Garder votre code existant identique]
     try:
         feedback_data = {
             "timestamp": datetime.now().isoformat(),
@@ -1225,7 +1332,7 @@ async def save_feedback(feedback: FeedbackInput, background_tasks: BackgroundTas
             "predicted_class": feedback.predicted_class,
             "predicted_probability": feedback.predicted_probability,
             "user_satisfaction": feedback.user_satisfaction,
-            "language_detected": feedback.language_detected
+            "language_detected": feedback.language_detected,
         }
 
         if not save_feedback_to_csv(feedback_data):
@@ -1233,7 +1340,7 @@ async def save_feedback(feedback: FeedbackInput, background_tasks: BackgroundTas
 
         print(f"📝 Feedback enregistré: {feedback.user_satisfaction}")
 
-        # ✨ NOUVEAU: Vérifier et déclencher automatiquement le fine-tuning
+        # Vérifier et déclencher automatiquement le fine-tuning
         auto_triggered = False
         if feedback.user_satisfaction == "no":  # Seulement pour les feedbacks négatifs
             auto_triggered = check_and_trigger_finetuning()
@@ -1250,13 +1357,17 @@ async def save_feedback(feedback: FeedbackInput, background_tasks: BackgroundTas
             "negative_feedbacks": negative_count,
             "finetuning_ready": finetuning_ready,
             "auto_finetuning_triggered": auto_triggered,  # ✨ NOUVEAU
-            "is_finetuning_running": IS_FINETUNING_RUNNING  # ✨ NOUVEAU
+            "is_finetuning_running": IS_FINETUNING_RUNNING,  # ✨ NOUVEAU
         }
 
         if auto_triggered:
-            response["finetuning_message"] = "🚀 Fine-tuning automatique lancé en arrière-plan!"
+            response["finetuning_message"] = (
+                "🚀 Fine-tuning automatique lancé en arrière-plan!"
+            )
         elif finetuning_ready and not IS_FINETUNING_RUNNING:
-            response["finetuning_message"] = "Seuil atteint! Fine-tuning prêt à être lancé"
+            response["finetuning_message"] = (
+                "Seuil atteint! Fine-tuning prêt à être lancé"
+            )
         elif IS_FINETUNING_RUNNING:
             response["finetuning_message"] = "Fine-tuning en cours d'exécution..."
 
@@ -1265,6 +1376,7 @@ async def save_feedback(feedback: FeedbackInput, background_tasks: BackgroundTas
     except Exception as e:
         print(f"❌ Erreur feedback: {e}")
         raise HTTPException(status_code=500, detail=f"Erreur: {e}")
+
 
 @app.get("/feedbacks", summary="View user feedbacks")
 def get_feedbacks():
@@ -1276,11 +1388,11 @@ def get_feedbacks():
             return {
                 "message": "Aucun feedback enregistré pour le moment",
                 "feedbacks": [],
-                "count": 0
+                "count": 0,
             }
 
         feedbacks = []
-        with open(FEEDBACK_CSV_PATH, 'r', encoding='utf-8') as csvfile:
+        with open(FEEDBACK_CSV_PATH, "r", encoding="utf-8") as csvfile:
             reader = csv.DictReader(csvfile)
             for row in reader:
                 feedbacks.append(row)
@@ -1289,7 +1401,7 @@ def get_feedbacks():
             "message": "Feedbacks récupérés avec succès",
             "count": len(feedbacks),
             "feedbacks": feedbacks,
-            "file_location": str(FEEDBACK_CSV_PATH)
+            "file_location": str(FEEDBACK_CSV_PATH),
         }
 
     except Exception as e:
@@ -1298,11 +1410,15 @@ def get_feedbacks():
 
 
 @app.post("/feedback/by-id", summary="Save user feedback using email ID")
-async def save_feedback_by_id(feedback: FeedbackByIdInput, background_tasks: BackgroundTasks):
+async def save_feedback_by_id(
+    feedback: FeedbackByIdInput, background_tasks: BackgroundTasks
+):
     """Save user feedback using email ID to get complete email data"""
     try:
-        print(f"🔍 Feedback reçu pour email_id: {feedback.email_id}, client_id: {feedback.client_id}")
-        
+        print(
+            f"🔍 Feedback reçu pour email_id: {feedback.email_id}, client_id: {feedback.client_id}"
+        )
+
         # Récupérer les données complètes comme pour l'analyse
         email_data = get_raw_email_from_csv(feedback.email_id, feedback.client_id)
 
@@ -1316,29 +1432,30 @@ async def save_feedback_by_id(feedback: FeedbackByIdInput, background_tasks: Bac
             "predicted_class": feedback.predicted_class,
             "predicted_probability": feedback.predicted_probability,
             "user_satisfaction": feedback.user_satisfaction,
-            "language_detected": feedback.language_detected
+            "language_detected": feedback.language_detected,
         }
 
         if not save_feedback_to_csv(feedback_data):
             raise HTTPException(status_code=500, detail="Erreur sauvegarde feedback")
 
-        # ✅ NOUVEAU: Logs détaillés pour debugging
-        print(f"\n📤 === FEEDBACK REÇU ===")
+        print("\n📤 === FEEDBACK REÇU ===")
         print(f"📧 Email ID: {feedback.email_id}")
         print(f"👤 Client ID: {feedback.client_id}")
-        print(f"🤖 Prédiction: {feedback.predicted_class} (prob: {feedback.predicted_probability:.4f})")
+        print(
+            f"🤖 Prédiction: {feedback.predicted_class} (prob: {feedback.predicted_probability:.4f})"
+        )
         print(f"😊 Satisfaction utilisateur: {feedback.user_satisfaction}")
         print(f"🌍 Langue détectée: {feedback.language_detected}")
-        print(f"💾 Feedback sauvegardé avec succès")
+        print("💾 Feedback sauvegardé avec succès")
 
-        # ✅ AMÉLIORÉ: Déclencher le fine-tuning pour feedbacks négatifs
+        # Déclencher le fine-tuning pour feedbacks négatifs
         auto_triggered = False
         finetuning_message = ""
 
         if feedback.user_satisfaction == "no":
             auto_triggered = check_and_trigger_finetuning()
             if auto_triggered:
-                print(f"🚀 Fine-tuning automatique déclenché par feedback négatif")
+                print("🚀 Fine-tuning automatique déclenché par feedback négatif")
 
         negative_count = count_negative_feedbacks()
         finetuning_ready = negative_count >= NEGATIVE_FEEDBACK_THRESHOLD
@@ -1351,12 +1468,13 @@ async def save_feedback_by_id(feedback: FeedbackByIdInput, background_tasks: Bac
             "finetuning_ready": finetuning_ready,
             "auto_finetuning_triggered": auto_triggered,  # ✅ IMPORTANT
             "is_finetuning_running": IS_FINETUNING_RUNNING,  # ✅ IMPORTANT
-            "data_source": "complete_csv_data"
+            "data_source": "complete_csv_data",
         }
 
-        # ✅ NOUVEAU: Messages plus informatifs
         if auto_triggered:
-            response["finetuning_message"] = "🧠 IA en cours d'amélioration grâce à votre feedback!"
+            response["finetuning_message"] = (
+                "🧠 IA en cours d'amélioration grâce à votre feedback!"
+            )
             response["estimated_duration"] = "~5-10 minutes"
         elif finetuning_ready and not IS_FINETUNING_RUNNING:
             response["finetuning_message"] = "Prêt pour amélioration du modèle"
@@ -1368,8 +1486,11 @@ async def save_feedback_by_id(feedback: FeedbackByIdInput, background_tasks: Bac
     except Exception as e:
         print(f"❌ Erreur feedback par ID: {e}")
         import traceback
+
         print(f"❌ Stack trace complète: {traceback.format_exc()}")
         raise HTTPException(status_code=500, detail=f"Erreur: {e}")
+
+
 @app.get("/feedbacks/stats", summary="Feedback statistics")
 def get_feedback_stats():
     """
@@ -1382,18 +1503,17 @@ def get_feedback_stats():
                 "positive_feedbacks": 0,
                 "negative_feedbacks": 0,
                 "negative_unprocessed": 0,
-                "finetuning_ready": False
+                "finetuning_ready": False,
             }
 
         df = pd.read_csv(FEEDBACK_CSV_PATH)
 
         total = len(df)
-        positive = len(df[df['user_satisfaction'] == 'yes'])
-        negative = len(df[df['user_satisfaction'] == 'no'])
-        negative_unprocessed = len(df[
-                                       (df['user_satisfaction'] == 'no') &
-                                       (df['processed'] == False)
-                                       ])
+        positive = len(df[df["user_satisfaction"] == "yes"])
+        negative = len(df[df["user_satisfaction"] == "no"])
+        negative_unprocessed = len(
+            df[(df["user_satisfaction"] == "no") & (df["processed"] == False)]
+        )
 
         finetuning_ready = negative_unprocessed >= 1
 
@@ -1403,7 +1523,7 @@ def get_feedback_stats():
             "negative_feedbacks": negative,
             "negative_unprocessed": negative_unprocessed,
             "finetuning_ready": finetuning_ready,
-            "success_rate": round((positive / total * 100), 2) if total > 0 else 0
+            "success_rate": round((positive / total * 100), 2) if total > 0 else 0,
         }
 
     except Exception as e:
@@ -1422,7 +1542,7 @@ def stop_finetuning():
         return {
             "status": "info",
             "message": "Aucun fine-tuning en cours",
-            "is_finetuning_running": False
+            "is_finetuning_running": False,
         }
 
     # Note: Dans un vrai scénario, il faudrait implémenter
@@ -1433,7 +1553,7 @@ def stop_finetuning():
         "status": "success",
         "message": "Fine-tuning arrêté",
         "is_finetuning_running": False,
-        "note": "Arrêt forcé pour debug - le processus peut continuer en arrière-plan"
+        "note": "Arrêt forcé pour debug - le processus peut continuer en arrière-plan",
     }
 
 
@@ -1452,22 +1572,23 @@ def get_model_info():
             "suspicious_words_count": len(SUSPICIOUS_WORDS_SET),
             "stopwords_languages": list(STOP_WORDS.keys()),
             "label_classes": label_encoder.classes_.tolist() if label_encoder else [],
-            "model_summary": None
+            "model_summary": None,
         }
 
         if model:
             for i, input_layer in enumerate(model.inputs):
-                info["model_inputs"].append({
-                    "index": i,
-                    "name": input_layer.name,
-                    "shape": input_layer.shape.as_list(),
-                    "dtype": str(input_layer.dtype)
-                })
+                info["model_inputs"].append(
+                    {
+                        "index": i,
+                        "name": input_layer.name,
+                        "shape": input_layer.shape.as_list(),
+                        "dtype": str(input_layer.dtype),
+                    }
+                )
 
             # Ajouter un résumé du modèle
             try:
                 import io
-                import sys
                 from contextlib import redirect_stdout
 
                 f = io.StringIO()
@@ -1482,7 +1603,6 @@ def get_model_info():
         return {"error": str(e), "model_loaded": model is not None}
 
 
-# --- Nouveau endpoint pour déclencher le fine-tuning ---
 @app.post("/trigger-finetuning", summary="Trigger fine-tuning (development only)")
 def trigger_finetuning():
     """
@@ -1498,21 +1618,25 @@ def trigger_finetuning():
                 "message": "Fine-tuning peut être déclenché",
                 "negative_feedbacks": negative_count,
                 "command": "python traitement.py",
-                "note": "Exécutez cette commande dans le terminal pour démarrer le fine-tuning"
+                "note": "Exécutez cette commande dans le terminal pour démarrer le fine-tuning",
             }
         else:
             return {
                 "status": "not_ready",
                 "message": f"Pas assez de feedbacks négatifs ({negative_count}/5)",
                 "negative_feedbacks": negative_count,
-                "needed": 1 - negative_count
+                "needed": 1 - negative_count,
             }
 
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Erreur: {e}")
 
 
-@app.api_route("/reload-model", methods=["GET", "POST"], summary="Recharger le modèle depuis le disque")
+@app.api_route(
+    "/reload-model",
+    methods=["GET", "POST"],
+    summary="Recharger le modèle depuis le disque",
+)
 async def reload_model_endpoint():
     """
     Force le rechargement du modèle depuis le disque
@@ -1537,26 +1661,20 @@ async def reload_model_endpoint():
             return {
                 "status": "success",
                 "message": "Modèle rechargé avec succès",
-                "model_version": current_metadata.get('model_version', 'unknown'),
+                "model_version": current_metadata.get("model_version", "unknown"),
                 "max_sequence_length": MAX_SEQUENCE_LENGTH,
                 "vocab_size": len(tokenizer.word_index) if tokenizer else 0,
-                "timestamp": datetime.now().isoformat()
+                "timestamp": datetime.now().isoformat(),
             }
         else:
             raise HTTPException(
-                status_code=500,
-                detail="Échec du rechargement du modèle"
+                status_code=500, detail="Échec du rechargement du modèle"
             )
 
     except Exception as e:
         print(f"❌ Erreur rechargement manuel: {e}")
-        raise HTTPException(
-            status_code=500,
-            detail=f"Erreur rechargement: {str(e)}"
-        )
+        raise HTTPException(status_code=500, detail=f"Erreur rechargement: {str(e)}")
 
-
-# CORRECTION 2: Améliorer l'endpoint /model-status
 
 @app.get("/model-status", summary="Statut détaillé du modèle")
 def get_model_status():
@@ -1575,30 +1693,41 @@ def get_model_status():
 
         return {
             "model_loaded": model is not None,
-            "model_version": current_metadata.get('model_version', 'unknown'),
-            "last_retraining": current_metadata.get('last_individual_retraining', 'never'),
-            "last_feedback_processed": current_metadata.get('last_feedback_processed', 'none'),
-            "total_retrainings": current_metadata.get('total_individual_retrainings', 0),
+            "model_version": current_metadata.get("model_version", "unknown"),
+            "last_retraining": current_metadata.get(
+                "last_individual_retraining", "never"
+            ),
+            "last_feedback_processed": current_metadata.get(
+                "last_feedback_processed", "none"
+            ),
+            "total_retrainings": current_metadata.get(
+                "total_individual_retrainings", 0
+            ),
             "max_sequence_length": MAX_SEQUENCE_LENGTH,
             "vocab_size": len(tokenizer.word_index) if tokenizer else 0,
             "suspicious_words_count": len(SUSPICIOUS_WORDS_SET),
-            "deployment_method": current_metadata.get('deployment_method', 'initial_load'),
+            "deployment_method": current_metadata.get(
+                "deployment_method", "initial_load"
+            ),
             "model_file_exists": model_file_path.exists(),
             "model_file_modified": datetime.fromtimestamp(
                 model_file_path.stat().st_mtime
-            ).isoformat() if model_file_path.exists() else None,
-            "check_timestamp": datetime.now().isoformat()
+            ).isoformat()
+            if model_file_path.exists()
+            else None,
+            "check_timestamp": datetime.now().isoformat(),
         }
 
     except Exception as e:
         return {
             "error": str(e),
             "model_loaded": model is not None,
-            "check_timestamp": datetime.now().isoformat()
+            "check_timestamp": datetime.now().isoformat(),
         }
 
 
 # --- Endpoints Gmail ---
+
 
 @app.post("/gmail/validate", summary="Valider les identifiants Gmail")
 async def validate_gmail(credentials: GmailCredentials):
@@ -1606,16 +1735,20 @@ async def validate_gmail(credentials: GmailCredentials):
     Valide les identifiants Gmail sans récupérer les emails
     """
     if not validate_gmail_credentials:
-        raise HTTPException(status_code=503, detail="Fonctionnalité Gmail non disponible")
+        raise HTTPException(
+            status_code=503, detail="Fonctionnalité Gmail non disponible"
+        )
 
     try:
-        success, message = validate_gmail_credentials(credentials.username, credentials.password)
+        success, message = validate_gmail_credentials(
+            credentials.username, credentials.password
+        )
 
         if success:
             return {
                 "status": "success",
                 "message": message,
-                "username": credentials.username
+                "username": credentials.username,
             }
         else:
             raise HTTPException(status_code=401, detail=message)
@@ -1625,29 +1758,40 @@ async def validate_gmail(credentials: GmailCredentials):
 
 
 @app.post("/gmail/fetch", summary="Récupérer les emails depuis Gmail")
-async def fetch_gmail_emails(request: GmailFetchRequest, background_tasks: BackgroundTasks):
+async def fetch_gmail_emails(
+    request: GmailFetchRequest, background_tasks: BackgroundTasks
+):
     """
     Récupère les emails depuis Gmail et les sauvegarde dans emails_live.csv et emails_live.json
     """
     if not fetch_emails_from_gmail:
-        raise HTTPException(status_code=503, detail="Fonctionnalité Gmail non disponible")
+        raise HTTPException(
+            status_code=503, detail="Fonctionnalité Gmail non disponible"
+        )
 
     try:
         # Valider d'abord les identifiants
         if validate_gmail_credentials:
-            valid, validation_message = validate_gmail_credentials(request.username, request.password)
+            valid, validation_message = validate_gmail_credentials(
+                request.username, request.password
+            )
             if not valid:
                 raise HTTPException(status_code=401, detail=validation_message)
 
         # Lancer la récupération en arrière-plan
         def fetch_emails_task():
-            success, message, emails_data = fetch_emails_from_gmail(request.username, request.password)
+            success, message, emails_data = fetch_emails_from_gmail(
+                request.username, request.password
+            )
             if success:
                 print(f"✅ Emails récupérés avec succès: {len(emails_data)} emails")
                 # Hash de l'email pour identifier le dossier - Normalisation identique à JavaScript
                 import hashlib
+
                 normalized_email = request.username.strip().lower()
-                email_hash = hashlib.sha256(normalized_email.encode('utf-8')).hexdigest()[:12]
+                email_hash = hashlib.sha256(
+                    normalized_email.encode("utf-8")
+                ).hexdigest()[:12]
                 print(f"📁 Emails sauvegardés dans: src/pages/emails/{email_hash}")
             else:
                 print(f"❌ Erreur récupération emails: {message}")
@@ -1659,13 +1803,15 @@ async def fetch_gmail_emails(request: GmailFetchRequest, background_tasks: Backg
             "message": "Récupération des emails démarrée en arrière-plan",
             "username": request.username,
             "max_emails": request.max_emails,
-            "include_spam": request.include_spam
+            "include_spam": request.include_spam,
         }
 
     except HTTPException:
         raise
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Erreur lors de la récupération: {str(e)}")
+        raise HTTPException(
+            status_code=500, detail=f"Erreur lors de la récupération: {str(e)}"
+        )
 
 
 @app.get("/gmail/status", summary="Statut de la récupération Gmail")
@@ -1688,31 +1834,35 @@ async def gmail_status():
             csv_modified = datetime.fromtimestamp(csv_path.stat().st_mtime).isoformat()
             # Compter les lignes du CSV (moins 1 pour le header)
             try:
-                with open(csv_path, 'r', encoding='utf-8') as f:
+                with open(csv_path, "r", encoding="utf-8") as f:
                     total_emails = sum(1 for line in f) - 1
             except:
                 total_emails = 0
 
         if json_exists:
-            json_modified = datetime.fromtimestamp(json_path.stat().st_mtime).isoformat()
+            json_modified = datetime.fromtimestamp(
+                json_path.stat().st_mtime
+            ).isoformat()
 
         return {
             "csv_file": {
                 "exists": csv_exists,
                 "path": str(csv_path),
                 "last_modified": csv_modified,
-                "total_emails": total_emails
+                "total_emails": total_emails,
             },
             "json_file": {
                 "exists": json_exists,
                 "path": str(json_path),
-                "last_modified": json_modified
+                "last_modified": json_modified,
             },
-            "check_timestamp": datetime.now().isoformat()
+            "check_timestamp": datetime.now().isoformat(),
         }
 
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Erreur lors de la vérification: {str(e)}")
+        raise HTTPException(
+            status_code=500, detail=f"Erreur lors de la vérification: {str(e)}"
+        )
 
 
 @app.post("/process-csv", summary="Process CSV file with ML predictions")
@@ -1724,38 +1874,37 @@ async def process_csv_file(file: UploadFile = File(...)):
         raise HTTPException(status_code=503, detail="Modèle non disponible")
 
     try:
-        print(f"\n🔥 === DÉBUT TRAITEMENT CSV ===")
+        print("\n🔥 === DÉBUT TRAITEMENT CSV ===")
         print(f"📁 Fichier reçu: {file.filename}")
         print(f"📁 Content-Type: {file.content_type}")
 
         # Vérifier le type de fichier
-        if not file.filename.endswith('.csv'):
+        if not file.filename.endswith(".csv"):
             print(f"❌ Type de fichier invalide: {file.filename}")
             raise HTTPException(status_code=400, detail="Le fichier doit être un CSV")
 
         # Lire le fichier CSV uploadé
-        print(f"📖 Lecture du fichier...")
+        print("📖 Lecture du fichier...")
         content = await file.read()
         print(f"📖 Taille du fichier: {len(content)} bytes")
 
-        df = pd.read_csv(io.StringIO(content.decode('utf-8')))
-        print(f"📊 CSV parsé avec succès")
+        df = pd.read_csv(io.StringIO(content.decode("utf-8")))
+        print("📊 CSV parsé avec succès")
         print(f"📊 Colonnes détectées: {list(df.columns)}")
         print(f"📊 Nombre de lignes: {len(df)}")
 
         # Vérifier les colonnes requises - From, Subject, Body comme sur l'interface web
-        required_columns = ['from', 'subject', 'body', 'type']
+        required_columns = ["from", "subject", "body", "type"]
         missing_columns = [col for col in required_columns if col not in df.columns]
         if missing_columns:
             print(f"❌ Colonnes manquantes: {missing_columns}")
             raise HTTPException(
-                status_code=400,
-                detail=f"Colonnes manquantes: {missing_columns}"
+                status_code=400, detail=f"Colonnes manquantes: {missing_columns}"
             )
 
-        print(f"✅ Validation des colonnes OK")
-        print(f"📊 Distribution AVANT traitement:")
-        distribution_avant = df['type'].value_counts()
+        print("✅ Validation des colonnes OK")
+        print("📊 Distribution AVANT traitement:")
+        distribution_avant = df["type"].value_counts()
         for type_email, count in distribution_avant.items():
             print(f"   - {type_email}: {count}")
 
@@ -1764,10 +1913,12 @@ async def process_csv_file(file: UploadFile = File(...)):
         all_results = []
         total_batches = (len(df) + batch_size - 1) // batch_size
 
-        print(f"🔄 Début du traitement par batch ({total_batches} batches de {batch_size})")
+        print(
+            f"🔄 Début du traitement par batch ({total_batches} batches de {batch_size})"
+        )
 
         for i in range(0, len(df), batch_size):
-            batch_df = df.iloc[i:i + batch_size]
+            batch_df = df.iloc[i : i + batch_size]
             batch_results = []
             batch_num = i // batch_size + 1
 
@@ -1779,23 +1930,30 @@ async def process_csv_file(file: UploadFile = File(...)):
                 email_index = i + (j - batch_df.index[0]) + 1
                 try:
                     # Utiliser les données BRUTES comme predict_by_email_id
-                    from_field = str(row['from']) if not pd.isna(row['from']) else ""
-                    subject_field = str(row['subject']) if not pd.isna(row['subject']) else ""
-                    body_field = str(row['body']) if not pd.isna(row['body']) else ""
+                    from_field = str(row["from"]) if not pd.isna(row["from"]) else ""
+                    subject_field = (
+                        str(row["subject"]) if not pd.isna(row["subject"]) else ""
+                    )
+                    body_field = str(row["body"]) if not pd.isna(row["body"]) else ""
 
                     # Créer le texte combiné pour l'analyse (même format que l'interface web)
                     combined_text = f"From: {from_field}\nSubject: {subject_field}\nBody: {body_field}".strip()
 
-                    if not combined_text or combined_text == "From: \nSubject: \nBody: ":
+                    if (
+                        not combined_text
+                        or combined_text == "From: \nSubject: \nBody: "
+                    ):
                         print(f"   ⚪ Email {email_index}: Vide - type conservé")
                         # Email vide - garder le type original
-                        original_type = row['type']
-                        batch_results.append({
-                            'new_type': original_type,
-                            'prediction': 'unknown',
-                            'probability': 0.0,
-                            'confidence': 'LOW'
-                        })
+                        original_type = row["type"]
+                        batch_results.append(
+                            {
+                                "new_type": original_type,
+                                "prediction": "unknown",
+                                "probability": 0.0,
+                                "confidence": "LOW",
+                            }
+                        )
                         continue
 
                     # Prédiction avec le modèle en utilisant le texte combiné
@@ -1803,68 +1961,93 @@ async def process_csv_file(file: UploadFile = File(...)):
                     result = perform_prediction(combined_text)
 
                     # Mapper la prédiction vers IMPORTANT/SPAM
-                    new_type = 'SPAM' if result['prediction'] == 'phishing' else 'IMPORTANT'
-                    old_type = row['type']
+                    new_type = (
+                        "SPAM" if result["prediction"] == "phishing" else "IMPORTANT"
+                    )
+                    old_type = row["type"]
 
                     if new_type != old_type:
-                        print(f"   🔄 Email {email_index}: {old_type} → {new_type} (conf: {result['confidence']})")
+                        print(
+                            f"   🔄 Email {email_index}: {old_type} → {new_type} (conf: {result['confidence']})"
+                        )
                     else:
-                        print(f"   ✅ Email {email_index}: {new_type} confirmé (conf: {result['confidence']})")
+                        print(
+                            f"   ✅ Email {email_index}: {new_type} confirmé (conf: {result['confidence']})"
+                        )
 
-                    batch_results.append({
-                        'new_type': new_type,
-                        'prediction': result['prediction'],
-                        'probability': result['probability'],
-                        'confidence': result['confidence']
-                    })
+                    batch_results.append(
+                        {
+                            "new_type": new_type,
+                            "prediction": result["prediction"],
+                            "probability": result["probability"],
+                            "confidence": result["confidence"],
+                        }
+                    )
 
                 except Exception as e:
                     print(f"   ❌ Email {email_index}: ERREUR - {str(e)}")
                     # En cas d'erreur, garder le type original
-                    original_type = row['type']
-                    batch_results.append({
-                        'new_type': original_type,
-                        'prediction': 'error',
-                        'probability': 0.0,
-                        'confidence': 'LOW'
-                    })
+                    original_type = row["type"]
+                    batch_results.append(
+                        {
+                            "new_type": original_type,
+                            "prediction": "error",
+                            "probability": 0.0,
+                            "confidence": "LOW",
+                        }
+                    )
 
             all_results.extend(batch_results)
             print(f"✅ Batch {batch_num} terminé ({len(batch_results)} emails traités)")
 
-        print(f"🎯 === TRAITEMENT TERMINÉ ===")
+        print("🎯 === TRAITEMENT TERMINÉ ===")
 
         # Mettre à jour le DataFrame avec les nouvelles prédictions
         results_df = pd.DataFrame(all_results)
-        df['type'] = results_df['new_type']
+        df["type"] = results_df["new_type"]
 
         # Statistiques détaillées
-        print(f"📈 === STATISTIQUES FINALES ===")
-        distribution_apres = df['type'].value_counts()
+        print("📈 === STATISTIQUES FINALES ===")
+        distribution_apres = df["type"].value_counts()
         for type_email, count in distribution_apres.items():
             print(f"   - {type_email}: {count}")
 
         # Calculer les changements
         if len(distribution_avant) > 0 and len(distribution_apres) > 0:
-            spam_avant = distribution_avant.get('SPAM', 0)
-            spam_apres = distribution_apres.get('SPAM', 0)
-            important_avant = distribution_avant.get('IMPORTANT', 0)
-            important_apres = distribution_apres.get('IMPORTANT', 0)
+            spam_avant = distribution_avant.get("SPAM", 0)
+            spam_apres = distribution_apres.get("SPAM", 0)
+            important_avant = distribution_avant.get("IMPORTANT", 0)
+            important_apres = distribution_apres.get("IMPORTANT", 0)
 
-            print(f"📊 ÉVOLUTION:")
-            print(f"   - SPAM: {spam_avant} → {spam_apres} ({spam_apres - spam_avant:+d})")
-            print(f"   - IMPORTANT: {important_avant} → {important_apres} ({important_apres - important_avant:+d})")
+            print("📊 ÉVOLUTION:")
+            print(
+                f"   - SPAM: {spam_avant} → {spam_apres} ({spam_apres - spam_avant:+d})"
+            )
+            print(
+                f"   - IMPORTANT: {important_avant} → {important_apres} ({important_apres - important_avant:+d})"
+            )
 
         # Préparer les colonnes de sortie
-        output_columns = ["id", "type", "from", "to", "date", "subject", "body", "message_id", "processed_at"]
+        output_columns = [
+            "id",
+            "type",
+            "from",
+            "to",
+            "date",
+            "subject",
+            "body",
+            "message_id",
+            "processed_at",
+        ]
         available_columns = [col for col in output_columns if col in df.columns]
         df_output = df[available_columns].copy()
 
         # Ajouter timestamp de traitement
         from datetime import datetime
-        df_output['processed_at'] = datetime.now().isoformat()
 
-        print(f"📝 Préparation du CSV de sortie...")
+        df_output["processed_at"] = datetime.now().isoformat()
+
+        print("📝 Préparation du CSV de sortie...")
         print(f"📝 Colonnes incluses: {available_columns}")
 
         # Convertir en CSV
@@ -1873,26 +2056,26 @@ async def process_csv_file(file: UploadFile = File(...)):
         csv_content = output.getvalue()
 
         print(f"✅ CSV de sortie généré: {len(csv_content)} caractères")
-        print(f"📤 Envoi de la réponse au client...")
+        print("📤 Envoi de la réponse au client...")
 
         # Préparer la réponse en streaming
         headers = {
-            'Content-Disposition': 'attachment; filename="emails_live_processed.csv"',
-            'Content-Type': 'text/csv'
+            "Content-Disposition": 'attachment; filename="emails_live_processed.csv"',
+            "Content-Type": "text/csv",
         }
 
-        print(f"🎉 === TRAITEMENT CSV TERMINÉ AVEC SUCCÈS ===")
+        print("🎉 === TRAITEMENT CSV TERMINÉ AVEC SUCCÈS ===")
         print(f"   📊 Total traité: {len(df)} emails")
-        print(f"   📤 Fichier renvoyé au client\n")
+        print("   📤 Fichier renvoyé au client\n")
 
         return StreamingResponse(
-            io.BytesIO(csv_content.encode('utf-8')),
+            io.BytesIO(csv_content.encode("utf-8")),
             media_type="text/csv",
-            headers=headers
+            headers=headers,
         )
 
     except pd.errors.EmptyDataError:
-        print(f"❌ ERREUR: Fichier CSV vide")
+        print("❌ ERREUR: Fichier CSV vide")
         raise HTTPException(status_code=400, detail="Fichier CSV vide")
     except pd.errors.ParserError as e:
         print(f"❌ ERREUR: Parsing CSV échoué - {str(e)}")
@@ -1900,6 +2083,7 @@ async def process_csv_file(file: UploadFile = File(...)):
     except Exception as e:
         print(f"❌ ERREUR CRITIQUE: {str(e)}")
         import traceback
+
         print(f"❌ Stack trace: {traceback.format_exc()}")
         raise HTTPException(status_code=500, detail=f"Erreur traitement: {str(e)}")
 
@@ -1918,14 +2102,16 @@ def get_finetuning_status():
             "negative_feedbacks_count": negative_count,
             "finetuning_threshold": NEGATIVE_FEEDBACK_THRESHOLD,
             "finetuning_ready": negative_count >= NEGATIVE_FEEDBACK_THRESHOLD,
-            "last_check": datetime.now().isoformat()
+            "last_check": datetime.now().isoformat(),
         }
     except Exception as e:
         return {
             "error": str(e),
             "is_finetuning_running": False,
-            "last_check": datetime.now().isoformat()
+            "last_check": datetime.now().isoformat(),
         }
+
+
 # --- Charger les artefacts au démarrage ---
 print("🚀 Initialisation de l'API de détection de phishing avec Smart Percentile...")
 model_loaded = load_model_artifacts()
