@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 install_dependencies.py
-Script d'installation automatique des dépendances pour Email Filter
+Automatic dependency installation script for Email Filter
 """
 
 import subprocess
@@ -10,7 +10,7 @@ import os
 
 
 def install_package(package):
-    """Installe un package Python"""
+    """Install a Python package"""
     try:
         subprocess.check_call([sys.executable, "-m", "pip", "install", package])
         return True
@@ -19,7 +19,7 @@ def install_package(package):
 
 
 def check_python_version():
-    """Vérifie la version de Python"""
+    """Check the Python version"""
     if sys.version_info < (3, 6):
         print("❌ Python 3.6+ requis. Version actuelle:", sys.version)
         return False
