@@ -381,7 +381,6 @@
         </div>
 
 
-        <!-- ✅ MODIFIÉ: Indicateur de Fine-tuning avec timer -->
         <div id="finetuningIndicator" class="finetuning-indicator" style="display: none;">
             <div class="d-flex justify-content-between align-items-center">
                 <div class="d-flex align-items-center">
@@ -684,7 +683,6 @@
         let mlStatusOnline = false;
         let autoRefreshMode = false;
         let finetuningStatus = false;
-        // ✅ NOUVEAU: Variables pour le timer de fine-tuning
         let finetuningTimerInterval = null;
         let finetuningStartTime = null;
 
@@ -837,7 +835,6 @@
             }
         }
 
-        // ✅ MODIFIÉ: Gestion du timer de fine-tuning
         async function checkFinetuningStatus() {
             try {
                 const response = await fetch(`${mlApiUrl}/health`, { mode: 'cors', signal: AbortSignal.timeout(5000) });
@@ -878,7 +875,6 @@
             }
         }
 
-        // ✅ NOUVEAU: Fonctions pour le timer
         function startFinetuningTimer() {
             if (finetuningTimerInterval) clearInterval(finetuningTimerInterval);
             finetuningStartTime = Date.now();
@@ -911,7 +907,6 @@
             if (indicator) indicator.style.display = show ? 'block' : 'none';
         }
 
-        // ✅ MODIFIÉ: Mise à jour du statut ML
         function updateMLStatusForTraining(isTraining) {
             const statusElement = document.getElementById('mlStatus');
             const analyzeBtn = document.getElementById('analyzeBtn');
@@ -924,7 +919,6 @@
                  statusElement.className = 'ml-status online';
             }
 
-            // ✅ MODIFIÉ: Le bouton d'analyse reste activé
             if (mlStatusOnline) {
                 analyzeBtn.disabled = document.getElementById('emailId').textContent === 'Sélectionnez un email';
             } else {
@@ -1232,7 +1226,6 @@
             }
 
             updateBodyDisplay();
-            // ✅ MODIFIÉ: Le bouton ne se désactive que si le ML est hors ligne
             document.getElementById('analyzeBtn').disabled = !mlStatusOnline;
 
             resetAnalysisAndFeedback();
@@ -1252,10 +1245,8 @@
             document.getElementById('analysisResult').innerHTML = '';
             document.querySelectorAll('input[name="satisfaction"]').forEach(input => {
                 input.checked = false;
-                // ✅ MODIFIÉ: Ne plus désactiver les boutons
                 // input.disabled = true;
             });
-            // ✅ NOUVEAU: Réafficher l'instruction quand on reset
             const feedbackInstruction = document.getElementById('feedbackInstruction');
             if (feedbackInstruction) {
                 feedbackInstruction.style.display = 'block';
@@ -1371,7 +1362,6 @@
                     <div><small class="text-muted">Langue: ${data.language_detected || 'en'}</small></div>
                 </div>
             `;
-            // ✅ NOUVEAU: Masquer l'instruction et activer les boutons
             const feedbackInstruction = document.getElementById('feedbackInstruction');
             if (feedbackInstruction) {
                 feedbackInstruction.style.display = 'none';
@@ -1479,7 +1469,6 @@
             }
         }
 
-        // ✅ NOUVEAU: Analyser puis envoyer feedback automatiquement
         async function analyzeEmailThenSendFeedback(satisfaction) {
             if (!mlStatusOnline) {
                 alert('Le modèle ML n\'est pas disponible. Impossible d\'envoyer le feedback.');
@@ -1814,7 +1803,6 @@
             });
         }
         
-        // ✅ NOUVEAU: Functions pour gérer les événements
         function handleSatisfactionChange(e) {
             console.log('🎯 handleSatisfactionChange déclenché:', e.target.id, 'valeur:', e.target.value, 'checked:', e.target.checked);
             if (e.target.checked) {
@@ -1827,13 +1815,11 @@
             // Laisser l'événement change gérer la logique
         }
         
-        // ✅ NOUVEAU: Fonction de test direct du feedback
         function testFeedback(satisfaction) {
             console.log('🧪 TEST DIRECT du feedback avec:', satisfaction);
             handleFeedback(satisfaction);
         }
         
-        // ✅ NOUVEAU: Fonction directe pour les boutons de feedback 
         async function sendFeedbackDirect(satisfaction) {
             console.log('🎯 Bouton de feedback cliqué:', satisfaction);
             
@@ -1856,7 +1842,6 @@
             }
         }
 
-        // ✅ NOUVEAU: Exposer les fonctions de test globalement pour debug
         window.testFeedback = testFeedback;
         window.debugFeedbackState = debugFeedbackState;
         window.sendFeedbackDirect = sendFeedbackDirect;

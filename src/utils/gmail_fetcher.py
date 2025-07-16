@@ -18,15 +18,15 @@ import hashlib
 def fetch_emails_from_gmail(username, password):
     """
     Fetch emails from Gmail using provided credentials
-    
+
     Args:
         username (str): Gmail address
         password (str): Gmail app password
-        
+
     Returns:
         tuple: (success: bool, message: str, emails_data: list)
     """
-    
+
     try:
         # Connexion à Gmail
         mail = imaplib.IMAP4_SSL("imap.gmail.com")
@@ -37,7 +37,7 @@ def fetch_emails_from_gmail(username, password):
         # 1. Récupérer les emails importants (boîte de réception)
         mail.select("INBOX")
         status, messages = mail.search(None, "ALL")
-        
+
         if messages[0]:
             email_ids = messages[0].split()[-50:]  # 50 derniers emails
 
@@ -50,7 +50,7 @@ def fetch_emails_from_gmail(username, password):
         try:
             mail.select("[Gmail]/Spam")
             status, messages = mail.search(None, "ALL")
-            
+
             if messages[0]:
                 spam_ids = messages[0].split()[-25:]  # 25 derniers spams
 
@@ -58,14 +58,14 @@ def fetch_emails_from_gmail(username, password):
                     email_data = process_email(mail, email_id, "SPAM")
                     if email_data:
                         emails_data.append(email_data)
-        except Exception as e:
+        except Exception:
             pass  # Impossible d'accéder aux spams
 
         mail.logout()
 
         # Générer les fichiers CSV et JSON
         success_files = generate_csv_files(emails_data, username)
-        
+
         if success_files:
             message = f"{len(emails_data)} emails récupérés et sauvegardés"
             return True, message, emails_data
@@ -107,14 +107,14 @@ def process_email(mail, email_id, email_type):
                     "message_id": message_id,
                     "processed_at": datetime.now().isoformat(),
                 }
-    except Exception as e:
+    except Exception:
         return None
 
 
 def generate_email_id(from_addr, subject, date_str):
     """Generate a unique ID for the email"""
     content = f"{from_addr}-{subject}-{date_str}"
-    return hashlib.sha256(content.encode('utf-8')).hexdigest()[:12]
+    return hashlib.sha256(content.encode("utf-8")).hexdigest()[:12]
 
 
 def decode_header_text(header_value):
@@ -230,18 +230,18 @@ def extract_text_from_html(html_content):
 
 def generate_csv_files(emails_data, username=None):
     """Generate CSV and JSON files"""
-    
+
     # Créer le hash de l'email pour le nom du dossier
     if username:
         # Hash de l'email pour le nom du dossier - Normalisation identique à JavaScript
         normalized_email = username.strip().lower()
-        email_hash = hashlib.sha256(normalized_email.encode('utf-8')).hexdigest()[:12]
+        email_hash = hashlib.sha256(normalized_email.encode("utf-8")).hexdigest()[:12]
         # Utiliser le chemin monté dans le volume Docker
         output_dir = os.path.join("/shared", "data", "emails", email_hash)
     else:
         # Utiliser le chemin monté dans le volume Docker
         output_dir = "/shared/data"
-    
+
     os.makedirs(output_dir, exist_ok=True)
 
     csv_file_path = os.path.join(output_dir, "emails_live.csv")
@@ -290,10 +290,10 @@ def generate_csv_files(emails_data, username=None):
 
         # 3. Génération des statistiques
         generate_statistics(emails_data, output_dir)
-        
+
         return True
 
-    except Exception as e:
+    except Exception:
         return False
 
 
@@ -336,46 +336,46 @@ def generate_statistics(emails_data, output_dir):
 def validate_gmail_credentials(username, password):
     """
     Validate Gmail credentials without fetching emails
-    
+
     Returns:
         tuple: (success: bool, message: str)
     """
     import socket
     import ssl
-    
+
     print(f"🔍 [DEBUG] Validation Gmail pour: {username}")
-    
+
     try:
         # Test 1: Résolution DNS
-        print(f"🔍 [DEBUG] Test résolution DNS imap.gmail.com...")
+        print("🔍 [DEBUG] Test résolution DNS imap.gmail.com...")
         ip = socket.gethostbyname("imap.gmail.com")
         print(f"✅ [DEBUG] DNS résolu: {ip}")
-        
+
         # Test 2: Connectivité port 993
-        print(f"🔍 [DEBUG] Test connectivité port 993...")
+        print("🔍 [DEBUG] Test connectivité port 993...")
         sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         sock.settimeout(30)
         result = sock.connect_ex((ip, 993))
         sock.close()
-        
+
         if result != 0:
             return False, f"Port 993 inaccessible (code: {result})"
-        print(f"✅ [DEBUG] Port 993 accessible")
-        
+        print("✅ [DEBUG] Port 993 accessible")
+
         # Test 3: Connexion IMAP SSL
-        print(f"🔍 [DEBUG] Test connexion IMAP SSL...")
+        print("🔍 [DEBUG] Test connexion IMAP SSL...")
         mail = imaplib.IMAP4_SSL("imap.gmail.com", 993)
-        print(f"✅ [DEBUG] Connexion SSL établie")
-        
+        print("✅ [DEBUG] Connexion SSL établie")
+
         # Test 4: Authentification
-        print(f"🔍 [DEBUG] Test authentification...")
+        print("🔍 [DEBUG] Test authentification...")
         mail.login(username, password)
-        print(f"✅ [DEBUG] Authentification réussie")
-        
+        print("✅ [DEBUG] Authentification réussie")
+
         mail.logout()
-        print(f"✅ [DEBUG] Validation Gmail terminée avec succès")
+        print("✅ [DEBUG] Validation Gmail terminée avec succès")
         return True, "Identifiants Gmail valides"
-        
+
     except socket.gaierror as e:
         error_msg = f"Erreur résolution DNS: {str(e)}"
         print(f"❌ [DEBUG] {error_msg}")
