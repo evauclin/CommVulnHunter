@@ -1,79 +1,9 @@
 {
-  "total_emails": 69,
+  "total_emails": 67,
   "important_emails": 50,
-  "spam_emails": 19,
-  "generated_at": "2025-07-17T23:56:16.870913",
+  "spam_emails": 17,
+  "generated_at": "2025-07-18T21:04:31.911511",
   "domains": {
-    "news.intermarche.com": {
-      "total": 2,
-      "spam": 0,
-      "important": 2
-    },
-    "email.alphorm.com": {
-      "total": 1,
-      "spam": 0,
-      "important": 1
-    },
-    "pdffiller.com": {
-      "total": 1,
-      "spam": 0,
-      "important": 1
-    },
-    "emails.hellowork.com": {
-      "total": 1,
-      "spam": 0,
-      "important": 1
-    },
-    "location-etudiant.fr": {
-      "total": 4,
-      "spam": 0,
-      "important": 4
-    },
-    "e.govoyages.com": {
-      "total": 1,
-      "spam": 0,
-      "important": 1
-    },
-    "accounts.google.com": {
-      "total": 6,
-      "spam": 0,
-      "important": 6
-    },
-    "satisfaction.sncf-connect.com": {
-      "total": 1,
-      "spam": 0,
-      "important": 1
-    },
-    "email.decathlon.fr": {
-      "total": 1,
-      "spam": 0,
-      "important": 1
-    },
-    "academia-mail.com": {
-      "total": 2,
-      "spam": 0,
-      "important": 2
-    },
-    "e.lucid.co": {
-      "total": 2,
-      "spam": 0,
-      "important": 2
-    },
-    "google.com": {
-      "total": 4,
-      "spam": 0,
-      "important": 4
-    },
-    "k.aroma-zone.com": {
-      "total": 1,
-      "spam": 0,
-      "important": 1
-    },
-    "meteojob.com": {
-      "total": 4,
-      "spam": 0,
-      "important": 4
-    },
     "dremio.com": {
       "total": 3,
       "spam": 0,
@@ -90,9 +20,14 @@
       "important": 2
     },
     "comms.vueling.com": {
-      "total": 1,
+      "total": 2,
       "spam": 0,
-      "important": 1
+      "important": 2
+    },
+    "location-etudiant.fr": {
+      "total": 4,
+      "spam": 0,
+      "important": 4
     },
     "marketing.ryanairemail.com": {
       "total": 2,
@@ -104,15 +39,30 @@
       "spam": 0,
       "important": 1
     },
+    "google.com": {
+      "total": 4,
+      "spam": 0,
+      "important": 4
+    },
+    "meteojob.com": {
+      "total": 4,
+      "spam": 0,
+      "important": 4
+    },
     "mkt.getyourguide.com": {
+      "total": 2,
+      "spam": 0,
+      "important": 2
+    },
+    "news.intermarche.com": {
       "total": 1,
       "spam": 0,
       "important": 1
     },
     "newsletter.volotea.com": {
-      "total": 1,
+      "total": 2,
       "spam": 0,
-      "important": 1
+      "important": 2
     },
     "doctolib.fr": {
       "total": 1,
@@ -120,6 +70,11 @@
       "important": 1
     },
     "mail.adobe.com": {
+      "total": 2,
+      "spam": 0,
+      "important": 2
+    },
+    "e.lucid.co": {
       "total": 1,
       "spam": 0,
       "important": 1
@@ -149,15 +104,60 @@
       "spam": 0,
       "important": 1
     },
-    "GkjeGHsqa.us": {
+    "academia-mail.com": {
       "total": 1,
-      "spam": 1,
-      "important": 0
+      "spam": 0,
+      "important": 1
     },
-    "hello.redis.io": {
-      "total": 2,
-      "spam": 2,
-      "important": 0
+    "monmaster.gouv.fr": {
+      "total": 1,
+      "spam": 0,
+      "important": 1
+    },
+    "noreply55.jobs2web.com": {
+      "total": 1,
+      "spam": 0,
+      "important": 1
+    },
+    "bonjour.franprix.fr": {
+      "total": 1,
+      "spam": 0,
+      "important": 1
+    },
+    "k.aroma-zone.com": {
+      "total": 1,
+      "spam": 0,
+      "important": 1
+    },
+    "e.govoyages.com": {
+      "total": 1,
+      "spam": 0,
+      "important": 1
+    },
+    "accounts.google.com": {
+      "total": 3,
+      "spam": 0,
+      "important": 3
+    },
+    "com-parc.sfr.fr": {
+      "total": 1,
+      "spam": 0,
+      "important": 1
+    },
+    "tabobine.com": {
+      "total": 1,
+      "spam": 0,
+      "important": 1
+    },
+    "infos.doctolib.com": {
+      "total": 1,
+      "spam": 0,
+      "important": 1
+    },
+    "email.anthropic.com": {
+      "total": 1,
+      "spam": 0,
+      "important": 1
     },
     "G4dSDoBKG4dSDoBK.fr": {
       "total": 1,
@@ -185,6 +185,11 @@
       "important": 0
     },
     "86NBc3tC86NBc3tC.fr": {
+      "total": 1,
+      "spam": 1,
+      "important": 0
+    },
+    "hello.redis.io": {
       "total": 1,
       "spam": 1,
       "important": 0
@@ -225,5 +230,5 @@
       "important": 0
     }
   },
-  "success_rate": 72.46
+  "success_rate": 74.63
 }

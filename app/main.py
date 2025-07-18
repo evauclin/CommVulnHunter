@@ -228,19 +228,59 @@ def get_raw_email_from_csv(email_id: str, client_id: str = None) -> dict:
 
 def get_emails_contributing_to_finetuning() -> List[str]:
     """
-    Retourne les email_id des feedbacks négatifs qui ont été traités (processed = True).
+    Retourne les email_id des feedbacks négatifs qui ont été traités ET DÉPLOYÉS.
     C'est la source de vérité pour l'affichage "✅ Fine-tuning terminé".
     """
     if not FEEDBACK_CSV_PATH.exists(): return []
     try:
         df = pd.read_csv(FEEDBACK_CSV_PATH)
-        if not all(c in df.columns for c in ["email_id", "user_satisfaction", "processed"]): return []
+        # La colonne 'deployed' est maintenant la seule condition pour être "terminé"
+        required_cols = ["email_id", "user_satisfaction", "deployed"]
+        if not all(c in df.columns for c in required_cols):
+            print(
+                "⚠️ Colonne 'deployed' manquante dans user_feedbacks.csv, impossible de confirmer les emails terminés.")
+            return []
 
-        processed_df = df[(df["user_satisfaction"] == "no") & (df["processed"] == True)]
+        # Logique finale et robuste :
+        processed_df = df[
+            (df["user_satisfaction"] == "no") &
+            (df["deployed"] == True)
+            ]
         return processed_df["email_id"].dropna().unique().tolist()
     except Exception as e:
         print(f"⚠️ Erreur lecture emails contributeurs: {e}")
         return []
+
+
+def get_emails_pending_finetuning() -> List[str]:
+    """
+    Retourne les email_id des feedbacks négatifs en attente OU en cours de traitement.
+    C'est la source de vérité pour l'affichage "🔥 En cours de fine-tuning".
+    Un email est dans cet état s'il a un feedback négatif et que son statut 'deployed' n'est pas True.
+    """
+    if not FEEDBACK_CSV_PATH.exists(): return []
+    try:
+        df = pd.read_csv(FEEDBACK_CSV_PATH)
+        required_cols = ["email_id", "user_satisfaction", "deployed"]
+
+        # Si le fichier n'a pas encore la colonne 'deployed', on se base sur 'processed'
+        if not all(c in df.columns for c in required_cols):
+            if "processed" in df.columns:
+                pending_df = df[(df["user_satisfaction"] == "no") & (df["processed"] == False)]
+                return pending_df["email_id"].dropna().unique().tolist()
+            return []
+
+        # Logique finale et robuste :
+        # 1. On prend tous les feedbacks négatifs
+        negative_df = df[df["user_satisfaction"] == "no"]
+        # 2. On exclut ceux qui sont déjà marqués comme déployés
+        pending_df = negative_df[negative_df["deployed"] != True]
+
+        return pending_df["email_id"].dropna().unique().tolist()
+    except Exception as e:
+        print(f"⚠️ Erreur lecture emails en attente: {e}")
+        return []
+
 def analyze_input_lengths(texts: list) -> list:
     """Quick analysis of input text lengths"""
     lengths = []
@@ -893,12 +933,13 @@ def save_feedback_to_csv(feedback_data: dict) -> bool:
             "user_satisfaction",
             "language_detected",
             "processed",
+            "email_id"
         ]
         feedback_data["processed"] = False
         FEEDBACK_CSV_PATH.parent.mkdir(exist_ok=True)
         file_exists = FEEDBACK_CSV_PATH.exists()
         with open(FEEDBACK_CSV_PATH, "a", newline="", encoding="utf-8") as csvfile:
-            writer = csv.DictWriter(csvfile, fieldnames=csv_headers)
+            writer = csv.DictWriter(csvfile, fieldnames=csv_headers, extrasaction='ignore')  # ignore les clés en trop
             if not file_exists:
                 writer.writeheader()
             writer.writerow(feedback_data)
@@ -998,6 +1039,7 @@ def get_finetuning_logs():
         "is_finetuning_running": IS_FINETUNING_RUNNING,
         "note": "Pour voir les logs en temps réel, consultez la console où l'API est lancée",
     }
+
 @app.post("/finetuning/sync-frontend", summary="Synchronise l'état complet du fine-tuning avec le frontend")
 def sync_frontend_finetuning():
     """
@@ -1008,7 +1050,10 @@ def sync_frontend_finetuning():
         "status": "success",
         "sync_data": {
             "is_finetuning_running": IS_FINETUNING_RUNNING,
+            # Emails dont le fine-tuning est terminé
             "processed_email_ids": get_emails_contributing_to_finetuning(),
+            # NOUVEAU : Emails en attente ou en cours de fine-tuning
+            "pending_email_ids": get_emails_pending_finetuning()
         }
     }
 
@@ -1460,6 +1505,7 @@ async def save_feedback_by_id(
             "predicted_probability": feedback.predicted_probability,
             "user_satisfaction": feedback.user_satisfaction,
             "language_detected": feedback.language_detected,
+            "email_id": feedback.email_id
         }
 
         if not save_feedback_to_csv(feedback_data):

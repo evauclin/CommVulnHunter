@@ -321,8 +321,8 @@ class EmailCSVLoader {
     /**
      * ✅ AMÉLIORÉ : Affiche les emails dans l'interface avec un meilleur rendu
      */
-    displayEmails(container, emails = null) {
-        const emailsToDisplay = emails || this.emails;
+    displayEmails(container, emailsToDisplay = this.emails) {
+
 
         if (!container) {
             console.error('Container not found for displaying emails');
@@ -344,10 +344,13 @@ class EmailCSVLoader {
         emailsToDisplay.forEach((email, index) => {
             const formatted = this.formatEmailForDisplay(email);
 
+            // ✅✅✅ CORRECTION À APPLIQUER ICI ✅✅✅
+            // Ajoutez data-email-id="${email.id}" à la ligne ci-dessous
             html += `
                 <div class="email-item ${formatted.isSpam ? 'spam' : ''}" 
                      onclick="selectEmail(${index})" 
                      data-index="${index}"
+                     data-email-id="${email.id}" 
                      title="Cliquez pour voir les détails">
                     <div class="d-flex justify-content-between align-items-start">
                         <div class="flex-grow-1">

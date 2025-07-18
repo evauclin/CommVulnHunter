@@ -21,7 +21,7 @@
             content: '';
             position: absolute;
             top: 10px;
-            right: 10px;
+            right: calc(10px + 1cm);
             font-size: 16px;
             padding: 2px 6px;
             border-radius: 50%;
@@ -61,7 +61,14 @@
         }
         .feedback-positive { background: #d4edda; color: #155724; }
         .feedback-negative { background: #f8d7da; color: #721c24; }
-
+         /* Style pour les emails avec feedback négatif */
+       .email-item.has-feedback.has-negative-feedback {
+            background-color: rgba(248, 215, 218, 0.5); /* Rouge clair, semi-transparent */
+        }
+        .email-item.has-feedback.has-negative-feedback::before {
+            content: '❌'; /* Remplace l'icône 🧠 par défaut */
+            background: rgba(220, 53, 69, 0.1);
+        }
         .card { backdrop-filter: blur(10px); background: rgba(255, 255, 255, 0.95); border: none; box-shadow: 0 8px 32px rgba(0, 0, 0, 0.1); }
         .stats-card { text-align: center; padding: 2rem; color: white; border-radius: 15px; transition: transform 0.3s ease; }
         .stats-card:hover { transform: translateY(-5px); }
@@ -408,25 +415,25 @@
                 <div class="col-md-3">
                     <div class="legend-item">
                         <div class="legend-color" style="border: 2px solid #ff9800;"></div>
-                        <span>🧠 Feedback envoyé</span>
+                        <span class="me-1">🧠</span><span>Feedback envoyé</span>
                     </div>
                 </div>
                 <div class="col-md-3">
                     <div class="legend-item">
                         <div class="legend-color" style="border: 2px solid #ff5722;"></div>
-                        <span>🔥 En cours de fine-tuning</span>
+                        <span class="me-1">🔥</span><span>En cours de fine-tuning</span>
                     </div>
                 </div>
                 <div class="col-md-3">
                     <div class="legend-item">
                         <div class="legend-color" style="border: 2px solid #28a745;"></div>
-                        <span>✅ Fine-tuning terminé</span>
+                        <span class="me-1">✅</span><span>Fine-tuning terminé</span>
                     </div>
                 </div>
                 <div class="col-md-3">
                     <div class="legend-item">
                         <div class="legend-color" style="background: #f8d7da;"></div>
-                        <span>❌ Feedback négatif</span>
+                        <span class="me-1">❌</span><span>Feedback négatif</span>
                     </div>
                 </div>
             </div>
@@ -747,18 +754,31 @@
             return finetunedEmailIds.has(emailId);
         }
 
-        function updateEmailDisplayWithFeedback() {
+function updateEmailDisplayWithFeedback() {
             const emailItems = document.querySelectorAll('#emailList .email-item');
             emailItems.forEach(item => {
                 const emailId = item.dataset.emailId;
                 if (!emailId) return;
-                item.classList.remove('has-feedback', 'contributing-to-finetuning', 'finetuned-successfully');
-                if (finetunedEmailIds.has(emailId)) {
+
+                // 1. Réinitialiser toutes les classes de statut
+                item.classList.remove('has-feedback', 'contributing-to-finetuning', 'finetuned-successfully', 'has-negative-feedback');
+
+                // 2. Appliquer le statut le plus important en premier
+                if (isEmailFinetuned(emailId)) {
+                    // ✅ Si l'ID est dans la liste des "terminés"
                     item.classList.add('finetuned-successfully');
-                } else if (finetuningEmailIds.has(emailId)) {
+                } else if (isEmailContributingToFinetuning(emailId)) {
+                    // 🔥 Si l'ID est dans la liste des "en cours"
                     item.classList.add('contributing-to-finetuning');
-                } else if (feedbackStorage[emailId]) {
-                    item.classList.add('has-feedback');
+                } else {
+                    // 🧠 ou ❌ Sinon, vérifier s'il y a un feedback simple
+                    const feedback = getEmailFeedbackStatus(emailId);
+                    if (feedback) {
+                        item.classList.add('has-feedback');
+                        if (feedback.satisfaction === 'no') {
+                            item.classList.add('has-negative-feedback');
+                        }
+                    }
                 }
             });
         }
@@ -829,7 +849,7 @@
         console.warn("Erreur de monitoring", error.message);
     }
 }
-       async function syncWithAPI() {
+              async function syncWithAPI() {
             console.log("🔄 Synchronisation complète avec l'API...");
             try {
                 const response = await fetch(`${mlApiUrl}/finetuning/sync-frontend`, { method: 'POST' });
@@ -838,22 +858,34 @@
                 const data = await response.json();
                 const syncData = data.sync_data;
 
+                // ✅✅✅ LIGNE DE DEBUG À AJOUTER ✅✅✅
+                console.log("🔄 Données de synchronisation reçues de l'API:", syncData);
+
                 const wasTraining = finetuningStatus;
                 const isNowTraining = syncData.is_finetuning_running;
 
                 finetuningStatus = isNowTraining;
                 showFinetuningIndicator(isNowTraining);
 
-                if (wasTraining && !isNowTraining) {
-                    const processedIds = syncData.processed_email_ids || [];
-                    if (processedIds.length > 0) {
-                        markEmailsAsFinetuned(processedIds);
-                        clearPendingFinetuningEmails();
-                        showFinetuningNotification(`✅ Amélioration terminée! ${processedIds.length} email(s) ont contribué.`, 'success');
-                    }
+                // Reconstruire l'état local à partir de la source de vérité (le backend)
+                finetuningEmailIds = new Set(syncData.pending_email_ids || []);
+                finetunedEmailIds = new Set(syncData.processed_email_ids || []);
+
+                console.log(`🔄 État mis à jour: ${finetuningEmailIds.size} en cours (🔥), ${finetunedEmailIds.size} terminés (✅).`);
+
+                // Sauvegarder ce nouvel état dans le localStorage
+                localStorage.setItem('finetuningEmails', JSON.stringify([...finetuningEmailIds]));
+                localStorage.setItem('finetunedEmails', JSON.stringify([...finetunedEmailIds]));
+
+                // Mettre à jour TOUTE l'interface visuelle
+                updateEmailDisplayWithFeedback();
+
+                // Rafraîchir l'email actuellement sélectionné pour que son badge soit aussi à jour
+                const activeEmailElement = document.querySelector('#emailList .email-item.active');
+                if (activeEmailElement && activeEmailElement.dataset.index) {
+                    selectEmail(parseInt(activeEmailElement.dataset.index, 10));
                 }
 
-                updateEmailDisplayWithFeedback();
                 console.log("🔄 Synchronisation terminée.");
             } catch (error) {
                 console.error("❌ Erreur critique de synchronisation:", error);
@@ -1365,7 +1397,11 @@
         }
 
         async function sendFeedback(satisfaction) {
-            if (!currentEmailData || !currentAnalysisResult) return;
+            // ✅ Vérification que l'email est bien sélectionné et a un ID
+            if (!currentEmailData || !currentEmailData.id || !currentAnalysisResult) {
+                alert("Veuillez d'abord analyser un email avant de donner votre feedback.");
+                return;
+            }
 
             try {
                 // Récupérer le client_id de la même manière que pour l'analyse
@@ -1374,70 +1410,60 @@
                     const userData = localStorage.getItem('user_data');
                     if (userData) {
                         const user = JSON.parse(userData);
-                        // Utiliser le hash fourni par le backend (email_hash)
-                        if (user.email_hash) {
-                            clientId = user.email_hash;
-                        } else if (user.email) {
-                            // Fallback vers le calcul local si le hash n'est pas disponible
-                            clientId = await hashEmailForDirectory(user.email);
-                        }
+                        if (user.email_hash) clientId = user.email_hash;
+                        else if (user.email) clientId = await hashEmailForDirectory(user.email);
                     }
                 } catch (e) {
                     console.log('Info: Pas de client_id pour le feedback, envoi global');
                 }
 
+                // Construction des données du feedback
                 const feedbackData = {
+                    // ✅✅✅ CORRECTION CLÉ : L'ID est maintenant inclus ✅✅✅
                     email_id: currentEmailData.id,
+
                     predicted_class: currentAnalysisResult.prediction,
                     predicted_probability: currentAnalysisResult.probability,
                     user_satisfaction: satisfaction,
                     language_detected: currentAnalysisResult.language_detected,
                     client_id: clientId
                 };
+
                 showFeedbackMessage('Envoi du feedback...', 'info');
 
                 const response = await fetch(`${mlApiUrl}/feedback/by-id`, {
-                    method: 'POST', mode: 'cors', headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify(feedbackData), signal: AbortSignal.timeout(10000)
+                    method: 'POST',
+                    mode: 'cors',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(feedbackData),
+                    signal: AbortSignal.timeout(10000)
                 });
                 if (!response.ok) throw new Error(`HTTP ${response.status}: ${await response.text()}`);
 
                 const result = await response.json();
+
+                // Sauvegarde locale du feedback (incluant l'ID)
                 saveFeedbackToStorage(currentEmailData.id, {
-                    satisfaction: satisfaction, timestamp: new Date().toISOString(),
-                    prediction: currentAnalysisResult.prediction, probability: currentAnalysisResult.probability
+                    satisfaction: satisfaction,
+                    timestamp: new Date().toISOString(),
+                    prediction: currentAnalysisResult.prediction,
+                    probability: currentAnalysisResult.probability
                 });
-                // On utilise /health juste pour une vérification rapide et légère
-                try {
-                const response = await fetch(`${mlApiUrl}/health`);
-                const data = await response.json();
-                const isApiTraining = data.is_finetuning_running;
-                if (isApiTraining == true) {
+
+                // Logique de mise à jour de l'UI
+                if (satisfaction === 'no') {
                     markEmailForFinetuning(currentEmailData.id);
-                    showFeedbackMessage('✅ Feedback enregistré! 🧠 IA en cours d\'amélioration...', 'success');
-                    await checkFinetuningStatus(); // Mettre à jour l'état immédiatement
-                    applyFiltersAndSearch();
+                    showFeedbackMessage('✅ Feedback enregistré! L\'IA va apprendre de ce cas.', 'success');
                 } else {
-                    showFeedbackMessage('✅ Merci ! Feedback enregistré', 'success');
-                }
-                }catch (error) {
-
+                     showFeedbackMessage('✅ Merci ! Feedback enregistré.', 'success');
                 }
 
-                updateEmailDisplayWithFeedback();
-
-                const feedbackStatusElement = document.getElementById('emailFeedbackStatus');
-                feedbackStatusElement.style.display = 'block';
-                feedbackStatusElement.className = `badge ${satisfaction === 'yes' ? 'bg-success' : 'bg-danger'}`;
-                feedbackStatusElement.innerHTML = `${satisfaction === 'yes' ? '✅ Feedback Positif' : '❌ Feedback Négatif'}`;
-                document.querySelectorAll('input[name="satisfaction"]').forEach(input => input.disabled = true);
+                // Forcer la synchronisation avec le backend pour avoir l'état le plus récent
+                await syncWithAPI();
 
             } catch (error) {
                 console.error('❌ Erreur feedback:', error);
                 showFeedbackMessage('❌ Erreur lors de l\'envoi', 'error');
-                document.querySelectorAll('input[name="satisfaction"]').forEach(input => {
-                    input.disabled = false; input.checked = false;
-                });
             }
         }
 
@@ -1592,73 +1618,74 @@
             }
         }
 
-document.addEventListener('DOMContentLoaded', async () => {
-    console.log('🚀 Démarrage du Dashboard ML (version corrigée et finalisée)');
+        document.addEventListener('DOMContentLoaded', async () => {
+            console.log('🚀 Démarrage du Dashboard ML (version corrigée et finalisée)');
 
-    // ====================================================================
-    // ÉTAPE 1: SETUP DE L'ENVIRONNEMENT ET DE L'UTILISATEUR
-    // ====================================================================
+            // ====================================================================
+            // ÉTAPE 1: SETUP DE L'ENVIRONNEMENT ET DE L'UTILISATEUR
+            // ====================================================================
 
-    // Initialisation et simulation d'authentification (votre code est correct)
-    localStorage.removeItem('userEmailHash');
-    sessionStorage.removeItem('userEmailHash');
+            // Initialisation et simulation d'authentification (votre code est correct)
+            localStorage.removeItem('userEmailHash');
+            sessionStorage.removeItem('userEmailHash');
 
-    if (!localStorage.getItem('user_data')) {
-        console.log('🔧 SIMULATION: Pas d\'auth détectée, création d\'un utilisateur de démo.');
-        localStorage.setItem('user_data', JSON.stringify({
-            email: 'farinesfari@gmail.com',
-            name: 'Test User',
-            role: 'user',
-            email_hash: '40a478aac913' // Hash pré-calculé
-        }));
-    }
+            if (!localStorage.getItem('user_data')) {
+                console.log('🔧 SIMULATION: Pas d\'auth détectée, création d\'un utilisateur de démo.');
+                localStorage.setItem('user_data', JSON.stringify({
+                    email: 'farinesfari@gmail.com',
+                    name: 'Test User',
+                    role: 'user',
+                    email_hash: '40a478aac913' // Hash pré-calculé
+                }));
+            }
 
-    // Si vous aviez une vraie fonction checkAuth(), elle serait appelée ici
-    // if (!checkAuth()) { window.location.href = 'new_login.html'; return; }
+            // Si vous aviez une vraie fonction checkAuth(), elle serait appelée ici
+            // if (!checkAuth()) { window.location.href = 'new_login.html'; return; }
 
-    // Initialise l'affichage des informations utilisateur (nom, email, etc.)
-    // Assurez-vous que la fonction initializeUserInterface() est définie dans votre script.
-    // initializeUserInterface();
-
-
-    // ====================================================================
-    // ÉTAPE 2: CHARGEMENT DES DONNÉES ET DE L'ÉTAT LOCAL
-    // ====================================================================
-
-    // Charge l'état précédent du feedback depuis le stockage local (icônes 🔥 et ✅)
-    loadFeedbackState();
-
-    // Charge les emails depuis la source par défaut (par exemple, les emails "live")
-    // Note : la fonction loadLiveEmails() doit appeler resetFeedbackState() au début
-    // pour nettoyer les données d'une session précédente si nécessaire.
-    await loadLiveEmails();
-
-    // Vérifie l'état initial du modèle ML (online/offline)
-    await checkMLStatus();
-
-    // Ajoute les listeners pour les contrôles de l'UI
-    document.querySelectorAll('input[name="viewMode"]').forEach(input => input.addEventListener('change', updateBodyDisplay));
-
-    console.log('✅ Données initiales et UI prêtes.');
+            // Initialise l'affichage des informations utilisateur (nom, email, etc.)
+            // Assurez-vous que la fonction initializeUserInterface() est définie dans votre script.
+            // initializeUserInterface();
 
 
-    // ====================================================================
-    // ÉTAPE 3: SYNCHRONISATION ET DÉMARRAGE DU MONITORING
-    // ====================================================================
+            // ====================================================================
+            // ÉTAPE 2: CHARGEMENT DES DONNÉES ET DE L'ÉTAT LOCAL
+            // ====================================================================
 
-    // Forcer une synchronisation complète avec le backend dès le démarrage.
-    // C'est la correction clé qui résout le problème de l'indicateur bloqué
-    // et met à jour les icônes ✅ pour les fine-tunings terminés pendant que la page était fermée.
-    console.log("🔄 Lancement de la synchronisation initiale pour garantir la cohérence...");
-    await syncWithAPI();
+            // Charge l'état précédent du feedback depuis le stockage local (icônes 🔥 et ✅)
+            loadFeedbackState();
 
-    // Démarrer le "radar" : une seule boucle de monitoring qui vérifiera l'état
-    // du fine-tuning toutes les 5 secondes.
-    console.log("📡 Démarrage du monitoring en continu...");
-    setInterval(checkFinetuningStatus, 5000);
+            // Charge les emails depuis la source par défaut (par exemple, les emails "live")
+            // Note : la fonction loadLiveEmails() doit appeler resetFeedbackState() au début
+            // pour nettoyer les données d'une session précédente si nécessaire.
+            await loadLiveEmails();
 
-    console.log('🎉 Dashboard entièrement initialisé et prêt à l\'emploi.');
-});
+            // Vérifie l'état initial du modèle ML (online/offline)
+            await checkMLStatus();
+
+            // Ajoute les listeners pour les contrôles de l'UI
+            document.querySelectorAll('input[name="viewMode"]').forEach(input => input.addEventListener('change', updateBodyDisplay));
+
+            console.log('✅ Données initiales et UI prêtes.');
+
+
+            // ====================================================================
+            // ÉTAPE 3: SYNCHRONISATION ET DÉMARRAGE DU MONITORING
+            // ====================================================================
+
+            // Forcer une synchronisation complète avec le backend dès le démarrage.
+            // C'est la correction clé qui résout le problème de l'indicateur bloqué
+            // et met à jour les icônes ✅ pour les fine-tunings terminés pendant que la page était fermée.
+            console.log("🔄 Lancement de la synchronisation initiale pour garantir la cohérence...");
+            await syncWithAPI();
+
+            // Démarrer le "radar" : une seule boucle de monitoring qui vérifiera l'état
+            // du fine-tuning toutes les 5 secondes.
+            console.log("📡 Démarrage du monitoring en continu...");
+            setInterval(checkFinetuningStatus, 5000);
+
+            console.log('🎉 Dashboard entièrement initialisé et prêt à l\'emploi.');
+        });
+
         // Initialiser l'interface utilisateur
         function initializeUserInterface() {
             const user = AuthManager.getCurrentUser();
