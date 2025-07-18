@@ -1127,7 +1127,6 @@ class IndividualFeedbackRetrainingManager:
     ):
         """Enregistre la tentative de re-entraînement"""
         try:
-
             clean_feedback_data = convert_numpy_types(
                 {
                     "text": feedback_data["text"][:200],
@@ -1150,7 +1149,6 @@ class IndividualFeedbackRetrainingManager:
                 "consecutive_failures": int(self.consecutive_failures),
             }
 
-
             retraining_log = []
             if self.retraining_log_path.exists():
                 try:
@@ -1159,9 +1157,7 @@ class IndividualFeedbackRetrainingManager:
                 except:
                     retraining_log = []
 
-
             retraining_log.append(log_entry)
-
 
             if len(retraining_log) > 50:
                 retraining_log = retraining_log[-50:]
@@ -1342,9 +1338,7 @@ class IndividualFeedbackRetrainingManager:
                 print(
                     f" Meilleur résultat obtenu à la tentative #{self.best_result_so_far['attempt_number']}"
                 )
-                print(
-                    f" Confiance: {self.best_result_so_far['confidence_score']:.3f}"
-                )
+                print(f" Confiance: {self.best_result_so_far['confidence_score']:.3f}")
 
             self.consecutive_failures += 1
 
@@ -1689,9 +1683,7 @@ if __name__ == "__main__":
             manager = IndividualFeedbackRetrainingManager()
             try:
                 processed, deployed = manager.run_continuous_individual_processing()
-                print(
-                    f" Traitement terminé: {processed} traités, {deployed} déployés"
-                )
+                print(f" Traitement terminé: {processed} traités, {deployed} déployés")
                 sys.exit(0)
             except KeyboardInterrupt:
                 print("\n Arrêté par l'utilisateur")
@@ -1736,5 +1728,4 @@ if __name__ == "__main__":
         else:
             print(" Commande non reconnue. Utilisez 'help' pour voir les options")
     else:
-
         main()
