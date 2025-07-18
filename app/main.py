@@ -133,9 +133,9 @@ def get_raw_email_from_csv(email_id: str, client_id: str = None) -> dict:
                 ),  # Dossier local avec client
             ]
         )
-        print(f"🔍 Mode client spécifique: recherche pour client {client_id}")
+        print(f" Mode client spécifique: recherche pour client {client_id}")
     else:
-        print("🔍 Mode global: pas de client spécifique")
+        print(" Mode global: pas de client spécifique")
 
     # Chemins de fallback (globaux) - ajoutés après client-specific ou si pas de client_id
     possible_paths.extend(
@@ -151,7 +151,7 @@ def get_raw_email_from_csv(email_id: str, client_id: str = None) -> dict:
     found_files = []
 
     for path in possible_paths:
-        print(f"🔍 Vérification: {path} - Existe: {path.exists()}")
+        print(f" Vérification: {path} - Existe: {path.exists()}")
         if path.exists():
             found_files.append(path)
             # Vérifier si c'est un fichier client spécifique
@@ -162,35 +162,35 @@ def get_raw_email_from_csv(email_id: str, client_id: str = None) -> dict:
                     temp_df = pd.read_csv(path)
                     if email_id in temp_df["id"].values:
                         csv_path = path
-                        print(f"✅ Fichier client trouvé avec l'email ID: {csv_path}")
+                        print(f" Fichier client trouvé avec l'email ID: {csv_path}")
                         break
                     else:
                         print(
-                            f"⚠️ Email ID {email_id} non trouvé dans le fichier client {path}, continuons..."
+                            f"️ Email ID {email_id} non trouvé dans le fichier client {path}, continuons..."
                         )
                         continue
                 except Exception as e:
-                    print(f"⚠️ Erreur lecture fichier client {path}: {e}")
+                    print(f"️ Erreur lecture fichier client {path}: {e}")
                     continue
             else:
                 # Pour les fichiers globaux, prendre le premier trouvé seulement si on n'a pas trouvé de fichier client
                 if csv_path is None:
                     csv_path = path
-                    print(f"✅ Fichier global trouvé: {csv_path}")
+                    print(f" Fichier global trouvé: {csv_path}")
                     break
 
     if csv_path is None:
-        print(f"❌ Aucun fichier CSV trouvé avec l'email ID {email_id}")
-        print(f"📁 Fichiers trouvés: {[str(f) for f in found_files]}")
+        print(f" Aucun fichier CSV trouvé avec l'email ID {email_id}")
+        print(f" Fichiers trouvés: {[str(f) for f in found_files]}")
         # Lister le contenu des dossiers pour debug
         for check_dir in ["/shared", "/shared/data", ".", "./src", "./src/pages"]:
             try:
                 check_path = Path(check_dir)
                 if check_path.exists():
                     files = list(check_path.iterdir())
-                    print(f"📁 Contenu de {check_dir}: {[f.name for f in files]}")
+                    print(f" Contenu de {check_dir}: {[f.name for f in files]}")
             except:
-                print(f"📁 Impossible de lire {check_dir}")
+                print(f" Impossible de lire {check_dir}")
 
         raise HTTPException(
             status_code=404,
@@ -226,7 +226,7 @@ def get_raw_email_from_csv(email_id: str, client_id: str = None) -> dict:
 def get_emails_contributing_to_finetuning() -> List[str]:
     """
     Retourne les email_id des feedbacks négatifs qui ont été traités ET DÉPLOYÉS.
-    C'est la source de vérité pour l'affichage "✅ Fine-tuning terminé".
+    C'est la source de vérité pour l'affichage " Fine-tuning terminé".
     """
     if not FEEDBACK_CSV_PATH.exists(): return []
     try:
@@ -235,7 +235,7 @@ def get_emails_contributing_to_finetuning() -> List[str]:
         required_cols = ["email_id", "user_satisfaction", "deployed"]
         if not all(c in df.columns for c in required_cols):
             print(
-                "⚠️ Colonne 'deployed' manquante dans user_feedbacks.csv, impossible de confirmer les emails terminés.")
+                " Colonne 'deployed' manquante dans user_feedbacks.csv, impossible de confirmer les emails terminés.")
             return []
 
         # Logique finale et robuste :
@@ -245,14 +245,14 @@ def get_emails_contributing_to_finetuning() -> List[str]:
             ]
         return processed_df["email_id"].dropna().unique().tolist()
     except Exception as e:
-        print(f"⚠️ Erreur lecture emails contributeurs: {e}")
+        print(f" Erreur lecture emails contributeurs: {e}")
         return []
 
 
 def get_emails_pending_finetuning() -> List[str]:
     """
     Retourne les email_id des feedbacks négatifs en attente OU en cours de traitement.
-    C'est la source de vérité pour l'affichage "🔥 En cours de fine-tuning".
+    C'est la source de vérité pour l'affichage " En cours de fine-tuning".
     Un email est dans cet état s'il a un feedback négatif et que son statut 'deployed' n'est pas True.
     """
     if not FEEDBACK_CSV_PATH.exists(): return []
@@ -275,7 +275,7 @@ def get_emails_pending_finetuning() -> List[str]:
 
         return pending_df["email_id"].dropna().unique().tolist()
     except Exception as e:
-        print(f"⚠️ Erreur lecture emails en attente: {e}")
+        print(f"⚠ Erreur lecture emails en attente: {e}")
         return []
 
 def analyze_input_lengths(texts: list) -> list:
