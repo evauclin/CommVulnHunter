@@ -226,6 +226,21 @@ def get_raw_email_from_csv(email_id: str, client_id: str = None) -> dict:
         raise HTTPException(status_code=500, detail=f"Erreur lecture CSV: {str(e)}")
 
 
+def get_emails_contributing_to_finetuning() -> List[str]:
+    """
+    Retourne les email_id des feedbacks négatifs qui ont été traités (processed = True).
+    C'est la source de vérité pour l'affichage "✅ Fine-tuning terminé".
+    """
+    if not FEEDBACK_CSV_PATH.exists(): return []
+    try:
+        df = pd.read_csv(FEEDBACK_CSV_PATH)
+        if not all(c in df.columns for c in ["email_id", "user_satisfaction", "processed"]): return []
+
+        processed_df = df[(df["user_satisfaction"] == "no") & (df["processed"] == True)]
+        return processed_df["email_id"].dropna().unique().tolist()
+    except Exception as e:
+        print(f"⚠️ Erreur lecture emails contributeurs: {e}")
+        return []
 def analyze_input_lengths(texts: list) -> list:
     """Quick analysis of input text lengths"""
     lengths = []
@@ -983,7 +998,19 @@ def get_finetuning_logs():
         "is_finetuning_running": IS_FINETUNING_RUNNING,
         "note": "Pour voir les logs en temps réel, consultez la console où l'API est lancée",
     }
-
+@app.post("/finetuning/sync-frontend", summary="Synchronise l'état complet du fine-tuning avec le frontend")
+def sync_frontend_finetuning():
+    """
+    Endpoint crucial pour le frontend. Il fournit l'état actuel ET la liste des emails
+    qui ont été traités avec succès pour permettre la mise à jour de l'UI avec les icônes ✅.
+    """
+    return {
+        "status": "success",
+        "sync_data": {
+            "is_finetuning_running": IS_FINETUNING_RUNNING,
+            "processed_email_ids": get_emails_contributing_to_finetuning(),
+        }
+    }
 
 def trigger_automatic_finetuning() -> bool:
     """
