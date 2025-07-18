@@ -24,8 +24,6 @@ from fastapi import File, UploadFile
 from fastapi.responses import StreamingResponse
 import io
 import html
-
-# Ajouter ces lignes après vos imports existants
 import sys
 
 # Chemin absolu pour Docker
@@ -39,7 +37,7 @@ except ImportError:
     validate_gmail_credentials = None
 
 
-# --- Configuration et Initialisation ---
+
 app = FastAPI(
     title="API de Détection de Phishing Automatique (FR/EN) - Smart Percentile",
     description="Une API adaptative pour classifier des textes avec optimisation automatique des longueurs.",
@@ -73,7 +71,6 @@ adaptation_stats = {
     "last_adaptation": None,
 }
 
-# Variables existantes pour fine-tuning
 AUTO_FINETUNING_ENABLED = True
 IS_FINETUNING_RUNNING = False
 FINETUNING_LOCK = threading.Lock()
@@ -136,9 +133,9 @@ def get_raw_email_from_csv(email_id: str, client_id: str = None) -> dict:
                 ),  # Dossier local avec client
             ]
         )
-        print(f"🔍 Mode client spécifique: recherche pour client {client_id}")
+        print(f" Mode client spécifique: recherche pour client {client_id}")
     else:
-        print("🔍 Mode global: pas de client spécifique")
+        print(" Mode global: pas de client spécifique")
 
     # Chemins de fallback (globaux) - ajoutés après client-specific ou si pas de client_id
     possible_paths.extend(
@@ -154,7 +151,7 @@ def get_raw_email_from_csv(email_id: str, client_id: str = None) -> dict:
     found_files = []
 
     for path in possible_paths:
-        print(f"🔍 Vérification: {path} - Existe: {path.exists()}")
+        print(f" Vérification: {path} - Existe: {path.exists()}")
         if path.exists():
             found_files.append(path)
             # Vérifier si c'est un fichier client spécifique
@@ -165,35 +162,35 @@ def get_raw_email_from_csv(email_id: str, client_id: str = None) -> dict:
                     temp_df = pd.read_csv(path)
                     if email_id in temp_df["id"].values:
                         csv_path = path
-                        print(f"✅ Fichier client trouvé avec l'email ID: {csv_path}")
+                        print(f" Fichier client trouvé avec l'email ID: {csv_path}")
                         break
                     else:
                         print(
-                            f"⚠️ Email ID {email_id} non trouvé dans le fichier client {path}, continuons..."
+                            f"️ Email ID {email_id} non trouvé dans le fichier client {path}, continuons..."
                         )
                         continue
                 except Exception as e:
-                    print(f"⚠️ Erreur lecture fichier client {path}: {e}")
+                    print(f"️ Erreur lecture fichier client {path}: {e}")
                     continue
             else:
                 # Pour les fichiers globaux, prendre le premier trouvé seulement si on n'a pas trouvé de fichier client
                 if csv_path is None:
                     csv_path = path
-                    print(f"✅ Fichier global trouvé: {csv_path}")
+                    print(f" Fichier global trouvé: {csv_path}")
                     break
 
     if csv_path is None:
-        print(f"❌ Aucun fichier CSV trouvé avec l'email ID {email_id}")
-        print(f"📁 Fichiers trouvés: {[str(f) for f in found_files]}")
+        print(f" Aucun fichier CSV trouvé avec l'email ID {email_id}")
+        print(f" Fichiers trouvés: {[str(f) for f in found_files]}")
         # Lister le contenu des dossiers pour debug
         for check_dir in ["/shared", "/shared/data", ".", "./src", "./src/pages"]:
             try:
                 check_path = Path(check_dir)
                 if check_path.exists():
                     files = list(check_path.iterdir())
-                    print(f"📁 Contenu de {check_dir}: {[f.name for f in files]}")
+                    print(f" Contenu de {check_dir}: {[f.name for f in files]}")
             except:
-                print(f"📁 Impossible de lire {check_dir}")
+                print(f" Impossible de lire {check_dir}")
 
         raise HTTPException(
             status_code=404,
@@ -226,6 +223,61 @@ def get_raw_email_from_csv(email_id: str, client_id: str = None) -> dict:
         raise HTTPException(status_code=500, detail=f"Erreur lecture CSV: {str(e)}")
 
 
+def get_emails_contributing_to_finetuning() -> List[str]:
+    """
+    Retourne les email_id des feedbacks négatifs qui ont été traités ET DÉPLOYÉS.
+    C'est la source de vérité pour l'affichage " Fine-tuning terminé".
+    """
+    if not FEEDBACK_CSV_PATH.exists(): return []
+    try:
+        df = pd.read_csv(FEEDBACK_CSV_PATH)
+        # La colonne 'deployed' est maintenant la seule condition pour être "terminé"
+        required_cols = ["email_id", "user_satisfaction", "deployed"]
+        if not all(c in df.columns for c in required_cols):
+            print(
+                " Colonne 'deployed' manquante dans user_feedbacks.csv, impossible de confirmer les emails terminés.")
+            return []
+
+        # Logique finale et robuste :
+        processed_df = df[
+            (df["user_satisfaction"] == "no") &
+            (df["deployed"] == True)
+            ]
+        return processed_df["email_id"].dropna().unique().tolist()
+    except Exception as e:
+        print(f" Erreur lecture emails contributeurs: {e}")
+        return []
+
+
+def get_emails_pending_finetuning() -> List[str]:
+    """
+    Retourne les email_id des feedbacks négatifs en attente OU en cours de traitement.
+    C'est la source de vérité pour l'affichage " En cours de fine-tuning".
+    Un email est dans cet état s'il a un feedback négatif et que son statut 'deployed' n'est pas True.
+    """
+    if not FEEDBACK_CSV_PATH.exists(): return []
+    try:
+        df = pd.read_csv(FEEDBACK_CSV_PATH)
+        required_cols = ["email_id", "user_satisfaction", "deployed"]
+
+        # Si le fichier n'a pas encore la colonne 'deployed', on se base sur 'processed'
+        if not all(c in df.columns for c in required_cols):
+            if "processed" in df.columns:
+                pending_df = df[(df["user_satisfaction"] == "no") & (df["processed"] == False)]
+                return pending_df["email_id"].dropna().unique().tolist()
+            return []
+
+        # Logique finale et robuste :
+        # 1. On prend tous les feedbacks négatifs
+        negative_df = df[df["user_satisfaction"] == "no"]
+        # 2. On exclut ceux qui sont déjà marqués comme déployés
+        pending_df = negative_df[negative_df["deployed"] != True]
+
+        return pending_df["email_id"].dropna().unique().tolist()
+    except Exception as e:
+        print(f"⚠ Erreur lecture emails en attente: {e}")
+        return []
+
 def analyze_input_lengths(texts: list) -> list:
     """Quick analysis of input text lengths"""
     lengths = []
@@ -254,10 +306,9 @@ def calculate_production_length(current_batch_lengths: list) -> int:
 
     # Vérifier si on a assez de données (minimum 10 échantillons)
     if len(all_lengths) < 10:
-        # Pas assez de données, utiliser la longueur d'entraînement
         fallback = current_production_length or MAX_SEQUENCE_LENGTH
         print(
-            f"  📊 Pas assez d'échantillons ({len(all_lengths)}<10), utilisation de {fallback}"
+            f"   Pas assez d'échantillons ({len(all_lengths)}<10), utilisation de {fallback}"
         )
         return fallback
 
@@ -268,11 +319,11 @@ def calculate_production_length(current_batch_lengths: list) -> int:
     if std_length > mean_length * 0.8:
         optimal = min(p95_length, int(mean_length + 1.5 * std_length))
         print(
-            f"  🧠 Production: variabilité élevée (std={std_length:.1f}) → ajustement conservateur"
+            f"   Production: variabilité élevée (std={std_length:.1f}) → ajustement conservateur"
         )
     else:
         optimal = p95_length
-        print("  🧠 Production: distribution stable → 95e percentile")
+        print("   Production: distribution stable → 95e percentile")
 
     optimal = max(optimal, 30)
     optimal = min(optimal, 800)
@@ -280,7 +331,7 @@ def calculate_production_length(current_batch_lengths: list) -> int:
     # Calculer l'efficacité
     current_avg = np.mean(current_batch_lengths)
     efficiency = current_avg / optimal if optimal > 0 else 0
-    print(f"  🎯 Longueur adaptée: {optimal} (efficacité: {efficiency:.2f})")
+    print(f"   Longueur adaptée: {optimal} (efficacité: {efficiency:.2f})")
 
     return optimal
 
@@ -322,7 +373,7 @@ def load_model_artifacts() -> bool:
         current_production_length
 
     try:
-        print("🚀 Démarrage de l'API et chargement des artefacts...")
+        print(" Démarrage de l'API et chargement des artefacts...")
 
         # ÉTAPE 1: Charger les métadonnées en premier pour obtenir la bonne longueur
         metadata_file = Path("model/model_prod/model_metadata.json")
@@ -339,23 +390,23 @@ def load_model_artifacts() -> bool:
                     "enable_variable_length", False
                 )
 
-                print("✅ Métadonnées chargées:")
+                print(" Métadonnées chargées:")
                 print(f"  max_sequence_length: {MAX_SEQUENCE_LENGTH}")
                 print(
-                    f"  🧠 Smart_percentile: {'✅ ACTIVÉ' if SMART_PERCENTILE_ENABLED else '❌ DÉSACTIVÉ'}"
+                    f"   Smart_percentile: {' ACTIVÉ' if SMART_PERCENTILE_ENABLED else ' DÉSACTIVÉ'}"
                 )
                 print(
-                    f"  🔄 Longueurs variables: {'✅ SUPPORTÉ' if MODEL_SUPPORTS_VARIABLE_LENGTH else '❌ FIXE'}"
+                    f"   Longueurs variables: {' SUPPORTÉ' if MODEL_SUPPORTS_VARIABLE_LENGTH else ' FIXE'}"
                 )
 
                 # Initialiser la longueur de production
                 current_production_length = MAX_SEQUENCE_LENGTH
 
             except Exception as e:
-                print(f"⚠️ Erreur chargement métadonnées: {e}")
-                print("⚠️ Utilisation des valeurs par défaut")
+                print(f" Erreur chargement métadonnées: {e}")
+                print(" Utilisation des valeurs par défaut")
         else:
-            print("⚠️ Fichier model_metadata.json non trouvé")
+            print(" Fichier model_metadata.json non trouvé")
 
         # ÉTAPE 2: Chargement du modèle
         model_path = Path("model/model_prod/best_lstm_model.keras")
@@ -363,10 +414,10 @@ def load_model_artifacts() -> bool:
             raise FileNotFoundError(f"Modèle non trouvé: {model_path}")
 
         model = load_model(str(model_path))
-        print("✅ Modèle LSTM chargé")
+        print(" Modèle LSTM chargé")
 
         # ÉTAPE 3: Vérifier les dimensions du modèle
-        print("🔍 Vérification des dimensions du modèle:")
+        print(" Vérification des dimensions du modèle:")
         for i, input_layer in enumerate(model.inputs):
             print(f"  Input {i}: {input_layer.name} - Shape: {input_layer.shape}")
 
@@ -378,7 +429,7 @@ def load_model_artifacts() -> bool:
                     MODEL_SUPPORTS_VARIABLE_LENGTH = True
                     print("  ✅ Modèle à longueurs variables confirmé")
                 elif expected_seq_length != MAX_SEQUENCE_LENGTH:
-                    print(f"  🔧 Correction longueur: {expected_seq_length}")
+                    print(f"   Correction longueur: {expected_seq_length}")
                     MAX_SEQUENCE_LENGTH = expected_seq_length
                     current_production_length = expected_seq_length
 
@@ -418,13 +469,13 @@ def load_model_artifacts() -> bool:
                 )
                 print(f"✅ Mots suspects chargés ({len(SUSPICIOUS_WORDS_SET)} mots)")
             except Exception as e:
-                print(f"⚠️ Erreur chargement mots suspects: {e}")
+                print(f" Erreur chargement mots suspects: {e}")
 
         try:
             try:
                 nltk.data.find("corpora/stopwords")
             except LookupError:
-                print("📥 Téléchargement des données NLTK...")
+                print(" Téléchargement des données NLTK...")
                 nltk.download("stopwords", quiet=True)
             STOP_WORDS = {
                 "en": set(nltk.corpus.stopwords.words("english")),
@@ -432,7 +483,7 @@ def load_model_artifacts() -> bool:
             }
             print("✅ Stopwords chargés")
         except Exception as e:
-            print(f"⚠️ Erreur chargement stopwords: {e}")
+            print(f" Erreur chargement stopwords: {e}")
             STOP_WORDS = {
                 "en": {
                     "the",
@@ -489,22 +540,22 @@ def load_model_artifacts() -> bool:
             return False
 
         # NOUVEAU: Affichage du résumé des capacités
-        print("\n🎉 API prête ! Capacités activées:")
-        print(f"  📏 Longueur de séquence: {MAX_SEQUENCE_LENGTH}")
+        print("\n API prête ! Capacités activées:")
+        print(f"   Longueur de séquence: {MAX_SEQUENCE_LENGTH}")
         print(
-            f"  🧠 Smart_percentile: {'✅ OUI' if SMART_PERCENTILE_ENABLED else '❌ NON'}"
+            f"   Smart_percentile: {' OUI' if SMART_PERCENTILE_ENABLED else ' NON'}"
         )
         print(
-            f"  🔄 Longueurs variables: {'✅ OUI' if MODEL_SUPPORTS_VARIABLE_LENGTH else '❌ NON'}"
+            f"   Longueurs variables: {' OUI' if MODEL_SUPPORTS_VARIABLE_LENGTH else ' NON'}"
         )
         print(
-            f"  📊 Adaptation en production: {'✅ DISPONIBLE' if (SMART_PERCENTILE_ENABLED and MODEL_SUPPORTS_VARIABLE_LENGTH) else '❌ INDISPONIBLE'}"
+            f"   Adaptation en production: {' DISPONIBLE' if (SMART_PERCENTILE_ENABLED and MODEL_SUPPORTS_VARIABLE_LENGTH) else ' INDISPONIBLE'}"
         )
 
         return True
 
     except Exception as e:
-        print(f"❌ ERREUR CRITIQUE AU DÉMARRAGE: {e}")
+        print(f" ERREUR CRITIQUE AU DÉMARRAGE: {e}")
         return False
 
 
@@ -520,14 +571,14 @@ class EmailIDInput(BaseModel):
 
 class TextInputAdaptive(BaseModel):
     text: str
-    enable_adaptation: bool = True  # NOUVEAU: Permettre de désactiver l'adaptation
+    enable_adaptation: bool = True
 
 
 class BatchInput(BaseModel):
     items: List[TextInput]
 
 
-class BatchInputAdaptive(BaseModel):  # NOUVEAU
+class BatchInputAdaptive(BaseModel):
     items: List[TextInput]
     enable_adaptation: bool = True
 
@@ -664,7 +715,7 @@ def perform_prediction_adaptive(texts: list, enable_adaptation: bool = True) -> 
                 lang = "en"
             languages.append(lang)
 
-        print("🔮 PRÉDICTION SMART_PERCENTILE")
+        print(" PRÉDICTION SMART_PERCENTILE")
         print(f"   Nombre de textes: {len(texts)}")
         print(f"   Adaptation activée: {enable_adaptation}")
         print(f"   Modèle supporte variables: {MODEL_SUPPORTS_VARIABLE_LENGTH}")
@@ -690,7 +741,7 @@ def perform_prediction_adaptive(texts: list, enable_adaptation: bool = True) -> 
             # 3. Vérifier si on doit vraiment adapter
             training_length = MAX_SEQUENCE_LENGTH
             if abs(optimal_length - training_length) > 10:  # Seuil de changement
-                print(f"   🔄 Adaptation: {training_length} → {optimal_length}")
+                print(f"    Adaptation: {training_length} → {optimal_length}")
                 # Utiliser la longueur adaptée
                 padded_sequences, processed_texts = prepare_sequences_adaptive(
                     texts, languages, optimal_length
@@ -701,7 +752,7 @@ def perform_prediction_adaptive(texts: list, enable_adaptation: bool = True) -> 
                 adaptation_triggered = True
                 actual_length_used = optimal_length
             else:
-                print("   ⚪ Pas d'adaptation nécessaire (écart < 10)")
+                print("    Pas d'adaptation nécessaire (écart < 10)")
                 # Utiliser la méthode standard
                 padded_sequences, processed_texts = prepare_sequences_adaptive(
                     texts, languages, training_length
@@ -724,7 +775,7 @@ def perform_prediction_adaptive(texts: list, enable_adaptation: bool = True) -> 
 
         else:
             # Mode standard sans adaptation
-            print("   📋 Mode standard (adaptation désactivée)")
+            print("    Mode standard (adaptation désactivée)")
             padded_sequences, processed_texts = prepare_sequences_adaptive(
                 texts, languages, MAX_SEQUENCE_LENGTH
             )
@@ -782,7 +833,7 @@ def perform_prediction_adaptive(texts: list, enable_adaptation: bool = True) -> 
             return {"results": results}
 
     except Exception as e:
-        print(f"❌ Erreur dans perform_prediction_adaptive: {e}")
+        print(f" Erreur dans perform_prediction_adaptive: {e}")
         raise HTTPException(status_code=500, detail=f"Erreur de prédiction: {str(e)}")
 
 
@@ -830,7 +881,7 @@ def perform_prediction(text: str) -> dict:
             confidence = "LOW"
 
         print(
-            f"✅ PREDICTION: {predicted_class} (prob: {prediction_proba:.4f}, confidence: {confidence})"
+            f" PREDICTION: {predicted_class} (prob: {prediction_proba:.4f}, confidence: {confidence})"
         )
 
         return {
@@ -848,7 +899,7 @@ def perform_prediction(text: str) -> dict:
         }
 
     except Exception as e:
-        print(f"❌ Erreur dans perform_prediction: {e}")
+        print(f" Erreur dans perform_prediction: {e}")
         raise HTTPException(status_code=500, detail=f"Erreur de prédiction: {str(e)}")
 
 
@@ -863,7 +914,7 @@ def count_negative_feedbacks() -> int:
         )
         return negative_unprocessed
     except Exception as e:
-        print(f"❌ Erreur lors du comptage des feedbacks négatifs: {e}")
+        print(f" Erreur lors du comptage des feedbacks négatifs: {e}")
         return 0
 
 
@@ -878,18 +929,19 @@ def save_feedback_to_csv(feedback_data: dict) -> bool:
             "user_satisfaction",
             "language_detected",
             "processed",
+            "email_id"
         ]
         feedback_data["processed"] = False
         FEEDBACK_CSV_PATH.parent.mkdir(exist_ok=True)
         file_exists = FEEDBACK_CSV_PATH.exists()
         with open(FEEDBACK_CSV_PATH, "a", newline="", encoding="utf-8") as csvfile:
-            writer = csv.DictWriter(csvfile, fieldnames=csv_headers)
+            writer = csv.DictWriter(csvfile, fieldnames=csv_headers, extrasaction='ignore')  # ignore les clés en trop
             if not file_exists:
                 writer.writeheader()
             writer.writerow(feedback_data)
         return True
     except Exception as e:
-        print(f"❌ Erreur sauvegarde feedback: {e}")
+        print(f" Erreur sauvegarde feedback: {e}")
         return False
 
 
@@ -900,7 +952,7 @@ def run_finetuning_script() -> bool:
     """
     global IS_FINETUNING_RUNNING
 
-    print("🚀 DÉMARRAGE DU FINE-TUNING AUTOMATIQUE (avec rechargement direct)")
+    print(" DÉMARRAGE DU FINE-TUNING AUTOMATIQUE (avec rechargement direct)")
     print("=" * 60)
 
     try:
@@ -909,12 +961,12 @@ def run_finetuning_script() -> bool:
 
         script_path = Path("traitement.py")
         if not script_path.exists():
-            print(f"❌ Script de fine-tuning non trouvé: {script_path}")
+            print(f" Script de fine-tuning non trouvé: {script_path}")
             IS_FINETUNING_RUNNING = False
             return False
 
         start_time = datetime.now()
-        print(f"🕐 Début du fine-tuning: {start_time.strftime('%H:%M:%S')}")
+        print(f" Début du fine-tuning: {start_time.strftime('%H:%M:%S')}")
 
         process = subprocess.Popen(
             ["python", "-u", "traitement.py"],
@@ -925,7 +977,7 @@ def run_finetuning_script() -> bool:
             errors="replace",
         )
 
-        print("🎯 Processus de fine-tuning lancé. Affichage des logs...")
+        print(" Processus de fine-tuning lancé. Affichage des logs...")
         print("-" * 60)
 
         while True:
@@ -941,33 +993,32 @@ def run_finetuning_script() -> bool:
         duration = end_time - start_time
         print("-" * 60)
         print(
-            f"🕐 Fin du fine-tuning: {end_time.strftime('%H:%M:%S')} (Durée: {duration})"
+            f" Fin du fine-tuning: {end_time.strftime('%H:%M:%S')} (Durée: {duration})"
         )
 
         if return_code == 0:
             print("✅ FINE-TUNING TERMINÉ AVEC SUCCÈS!")
-            # ✅✅✅ SOLUTION : RECHARGEMENT DIRECT ET FIABLE ✅✅✅
-            print("🔄 Rechargement du nouveau modèle dans l'API...")
+            print(" Rechargement du nouveau modèle dans l'API...")
             reload_success = reload_model_artifacts()
             if reload_success:
-                print("🎉 NOUVEAU MODÈLE ACTIF DANS L'API!")
+                print(" NOUVEAU MODÈLE ACTIF DANS L'API!")
             else:
                 print(
-                    "❌ ERREUR CRITIQUE: Le fine-tuning a réussi mais le rechargement a échoué."
+                    " ERREUR CRITIQUE: Le fine-tuning a réussi mais le rechargement a échoué."
                 )
             return reload_success
         else:
-            print(f"❌ FINE-TUNING ÉCHOUÉ! (Code de retour: {return_code})")
+            print(f" FINE-TUNING ÉCHOUÉ! (Code de retour: {return_code})")
             return False
 
     except Exception as e:
-        print(f"❌ Erreur critique lors du lancement du fine-tuning: {e}")
+        print(f" Erreur critique lors du lancement du fine-tuning: {e}")
         return False
     finally:
         # S'assurer que le statut est bien réinitialisé
         IS_FINETUNING_RUNNING = False
         print("=" * 60)
-        print("🚀 Processus de fine-tuning terminé.")
+        print(" Processus de fine-tuning terminé.")
 
 
 @app.get("/finetuning/logs", summary="Logs du fine-tuning en cours")
@@ -975,8 +1026,7 @@ def get_finetuning_logs():
     """
     Retourne les logs du fine-tuning (si disponibles)
     """
-    # Dans une implémentation plus avancée, on pourrait stocker les logs
-    # dans un fichier et les retourner ici
+
     return {
         "status": "info",
         "message": "Logs disponibles dans la console de l'API",
@@ -984,6 +1034,22 @@ def get_finetuning_logs():
         "note": "Pour voir les logs en temps réel, consultez la console où l'API est lancée",
     }
 
+@app.post("/finetuning/sync-frontend", summary="Synchronise l'état complet du fine-tuning avec le frontend")
+def sync_frontend_finetuning():
+    """
+    Endpoint crucial pour le frontend. Il fournit l'état actuel ET la liste des emails
+    qui ont été traités avec succès pour permettre la mise à jour de l'UI avec les icônes .
+    """
+    return {
+        "status": "success",
+        "sync_data": {
+            "is_finetuning_running": IS_FINETUNING_RUNNING,
+
+            "processed_email_ids": get_emails_contributing_to_finetuning(),
+
+            "pending_email_ids": get_emails_pending_finetuning()
+        }
+    }
 
 def trigger_automatic_finetuning() -> bool:
     """
@@ -994,11 +1060,11 @@ def trigger_automatic_finetuning() -> bool:
     # Utiliser un verrou pour éviter les conditions de course
     with FINETUNING_LOCK:
         if IS_FINETUNING_RUNNING:
-            print("⚠️ Fine-tuning déjà en cours, ignorer le déclenchement")
+            print("️ Fine-tuning déjà en cours, ignorer le déclenchement")
             return False
 
         if not AUTO_FINETUNING_ENABLED:
-            print("⚠️ Fine-tuning automatique désactivé")
+            print("️ Fine-tuning automatique désactivé")
             return False
 
         # Lancer le fine-tuning dans un thread séparé
@@ -1008,7 +1074,7 @@ def trigger_automatic_finetuning() -> bool:
         finetuning_thread.daemon = True
         finetuning_thread.start()
 
-        print("\n🚀 Fine-tuning automatique lancé en arrière-plan.")
+        print("\n Fine-tuning automatique lancé en arrière-plan.")
         return True
 
 
@@ -1021,28 +1087,28 @@ def check_and_trigger_finetuning() -> bool:
 
         if negative_count >= NEGATIVE_FEEDBACK_THRESHOLD:
             print(
-                f"🚨 Seuil de fine-tuning atteint: {negative_count}/{NEGATIVE_FEEDBACK_THRESHOLD} feedbacks négatifs"
+                f" Seuil de fine-tuning atteint: {negative_count}/{NEGATIVE_FEEDBACK_THRESHOLD} feedbacks négatifs"
             )
 
             if AUTO_FINETUNING_ENABLED and not IS_FINETUNING_RUNNING:
-                print("🚀 Déclenchement automatique du fine-tuning...")
+                print(" Déclenchement automatique du fine-tuning...")
                 return trigger_automatic_finetuning()
             elif IS_FINETUNING_RUNNING:
-                print("⚠️ Fine-tuning déjà en cours")
+                print(" Fine-tuning déjà en cours")
                 return False
             else:
                 print(
-                    "💡 Fine-tuning automatique désactivé, déclenchement manuel requis"
+                    " Fine-tuning automatique désactivé, déclenchement manuel requis"
                 )
                 return False
         else:
             print(
-                f"📊 Feedbacks négatifs: {negative_count}/{NEGATIVE_FEEDBACK_THRESHOLD}"
+                f" Feedbacks négatifs: {negative_count}/{NEGATIVE_FEEDBACK_THRESHOLD}"
             )
             return False
 
     except Exception as e:
-        print(f"❌ Erreur vérification fine-tuning: {e}")
+        print(f" Erreur vérification fine-tuning: {e}")
         return False
 
 
@@ -1059,7 +1125,7 @@ def reload_model_artifacts() -> bool:
         SUSPICIOUS_WORDS_SET, \
         STOP_WORDS
 
-    print("🔄 RECHARGEMENT DU MODÈLE EN COURS...")
+    print(" RECHARGEMENT DU MODÈLE EN COURS...")
     print("=" * 50)
 
     try:
@@ -1070,11 +1136,11 @@ def reload_model_artifacts() -> bool:
         success = load_model_artifacts()
 
         if success:
-            print("✅ MODÈLE RECHARGÉ AVEC SUCCÈS!")
+            print(" MODÈLE RECHARGÉ AVEC SUCCÈS!")
             print(f"   Nouvelle longueur de séquence: {MAX_SEQUENCE_LENGTH}")
             print(f"   Vocabulaire: {len(tokenizer.word_index)} mots")
 
-            # Test rapide du nouveau modèle
+
             try:
                 test_text = "Test de validation du nouveau modèle"
                 test_result = perform_prediction(test_text)
@@ -1082,18 +1148,18 @@ def reload_model_artifacts() -> bool:
 
                 return True
             except Exception as e:
-                print(f"❌ Test de validation échoué: {e}")
-                # Restaurer l'ancien modèle si possible
+                print(f" Test de validation échoué: {e}")
+
                 if old_model is not None:
                     model = old_model
                     print("🔄 Ancien modèle restauré")
                 return False
         else:
-            print("❌ Échec du rechargement")
+            print(" Échec du rechargement")
             return False
 
     except Exception as e:
-        print(f"❌ Erreur critique lors du rechargement: {e}")
+        print(f" Erreur critique lors du rechargement: {e}")
         return False
 
 
@@ -1133,7 +1199,7 @@ def health_check():
         "is_finetuning_running": IS_FINETUNING_RUNNING,
         "auto_finetuning_enabled": AUTO_FINETUNING_ENABLED,
         "finetuning_threshold": NEGATIVE_FEEDBACK_THRESHOLD,
-        # Informations smart_percentile existantes
+
         "smart_percentile_capabilities": {
             "enabled": SMART_PERCENTILE_ENABLED,
             "variable_length_supported": MODEL_SUPPORTS_VARIABLE_LENGTH,
@@ -1148,7 +1214,7 @@ def health_check():
 @app.post("/predict", summary="Predict on single text (standard mode)")
 def predict(item: TextInput):
     """Analyze text with standard method (compatibility mode)"""
-    print(f"⚠️ ANCIEN ENDPOINT /predict APPELÉ avec texte de {len(item.text)} chars")
+    print(f"⚠ ANCIEN ENDPOINT /predict APPELÉ avec texte de {len(item.text)} chars")
 
     if not model:
         raise HTTPException(status_code=503, detail="Modèle non disponible")
@@ -1165,7 +1231,7 @@ def predict(item: TextInput):
 @app.post("/predict/email-id", summary="Predict using raw data from CSV by email ID")
 def predict_by_email_id(item: EmailIDInput):
     """Analyze email using raw data directly from CSV file"""
-    print(f"🎯 ENDPOINT /predict/email-id APPELÉ avec ID: {item.email_id}")
+    print(f" ENDPOINT /predict/email-id APPELÉ avec ID: {item.email_id}")
 
     if not model:
         raise HTTPException(status_code=503, detail="Modèle non disponible")
@@ -1177,7 +1243,7 @@ def predict_by_email_id(item: EmailIDInput):
         # Créer le texte combiné avec les données BRUTES
         raw_text = f"From: {email_data['from']}\nSubject: {email_data['subject']}\nBody: {email_data['body']}"
 
-        print(f"🔍 RAW EMAIL ID {item.email_id} - INPUT (1000 chars):")
+        print(f" RAW EMAIL ID {item.email_id} - INPUT (1000 chars):")
         print(f"'{raw_text[:1000]}'")
         print(f"Total length: {len(raw_text)}")
 
@@ -1249,7 +1315,7 @@ def predict_batch_adaptive(batch: BatchInputAdaptive):
         raise HTTPException(status_code=503, detail="Modèle non disponible")
 
     if not (SMART_PERCENTILE_ENABLED and MODEL_SUPPORTS_VARIABLE_LENGTH):
-        # Fallback sur la méthode standard
+
         results = []
         for item in batch.items:
             try:
@@ -1338,9 +1404,9 @@ async def save_feedback(feedback: FeedbackInput, background_tasks: BackgroundTas
         if not save_feedback_to_csv(feedback_data):
             raise HTTPException(status_code=500, detail="Erreur sauvegarde feedback")
 
-        print(f"📝 Feedback enregistré: {feedback.user_satisfaction}")
+        print(f" Feedback enregistré: {feedback.user_satisfaction}")
 
-        # Vérifier et déclencher automatiquement le fine-tuning
+
         auto_triggered = False
         if feedback.user_satisfaction == "no":  # Seulement pour les feedbacks négatifs
             auto_triggered = check_and_trigger_finetuning()
@@ -1348,7 +1414,7 @@ async def save_feedback(feedback: FeedbackInput, background_tasks: BackgroundTas
         negative_count = count_negative_feedbacks()
         finetuning_ready = negative_count >= NEGATIVE_FEEDBACK_THRESHOLD
 
-        print(f"📊 Feedbacks négatifs: {negative_count}")
+        print(f" Feedbacks négatifs: {negative_count}")
 
         response = {
             "status": "success",
@@ -1362,7 +1428,7 @@ async def save_feedback(feedback: FeedbackInput, background_tasks: BackgroundTas
 
         if auto_triggered:
             response["finetuning_message"] = (
-                "🚀 Fine-tuning automatique lancé en arrière-plan!"
+                " Fine-tuning automatique lancé en arrière-plan!"
             )
         elif finetuning_ready and not IS_FINETUNING_RUNNING:
             response["finetuning_message"] = (
@@ -1374,7 +1440,7 @@ async def save_feedback(feedback: FeedbackInput, background_tasks: BackgroundTas
         return response
 
     except Exception as e:
-        print(f"❌ Erreur feedback: {e}")
+        print(f" Erreur feedback: {e}")
         raise HTTPException(status_code=500, detail=f"Erreur: {e}")
 
 
@@ -1405,7 +1471,7 @@ def get_feedbacks():
         }
 
     except Exception as e:
-        print(f"❌ Erreur lecture feedbacks: {e}")
+        print(f" Erreur lecture feedbacks: {e}")
         raise HTTPException(status_code=500, detail=f"Erreur: {e}")
 
 
@@ -1416,7 +1482,7 @@ async def save_feedback_by_id(
     """Save user feedback using email ID to get complete email data"""
     try:
         print(
-            f"🔍 Feedback reçu pour email_id: {feedback.email_id}, client_id: {feedback.client_id}"
+            f" Feedback reçu pour email_id: {feedback.email_id}, client_id: {feedback.client_id}"
         )
 
         # Récupérer les données complètes comme pour l'analyse
@@ -1433,20 +1499,21 @@ async def save_feedback_by_id(
             "predicted_probability": feedback.predicted_probability,
             "user_satisfaction": feedback.user_satisfaction,
             "language_detected": feedback.language_detected,
+            "email_id": feedback.email_id
         }
 
         if not save_feedback_to_csv(feedback_data):
             raise HTTPException(status_code=500, detail="Erreur sauvegarde feedback")
 
-        print("\n📤 === FEEDBACK REÇU ===")
-        print(f"📧 Email ID: {feedback.email_id}")
-        print(f"👤 Client ID: {feedback.client_id}")
+        print("\n === FEEDBACK REÇU ===")
+        print(f" Email ID: {feedback.email_id}")
+        print(f" Client ID: {feedback.client_id}")
         print(
-            f"🤖 Prédiction: {feedback.predicted_class} (prob: {feedback.predicted_probability:.4f})"
+            f" Prédiction: {feedback.predicted_class} (prob: {feedback.predicted_probability:.4f})"
         )
-        print(f"😊 Satisfaction utilisateur: {feedback.user_satisfaction}")
-        print(f"🌍 Langue détectée: {feedback.language_detected}")
-        print("💾 Feedback sauvegardé avec succès")
+        print(f" Satisfaction utilisateur: {feedback.user_satisfaction}")
+        print(f" Langue détectée: {feedback.language_detected}")
+        print(" Feedback sauvegardé avec succès")
 
         # Déclencher le fine-tuning pour feedbacks négatifs
         auto_triggered = False
@@ -1455,7 +1522,7 @@ async def save_feedback_by_id(
         if feedback.user_satisfaction == "no":
             auto_triggered = check_and_trigger_finetuning()
             if auto_triggered:
-                print("🚀 Fine-tuning automatique déclenché par feedback négatif")
+                print(" Fine-tuning automatique déclenché par feedback négatif")
 
         negative_count = count_negative_feedbacks()
         finetuning_ready = negative_count >= NEGATIVE_FEEDBACK_THRESHOLD
@@ -1466,14 +1533,14 @@ async def save_feedback_by_id(
             "feedback_type": feedback.user_satisfaction,
             "negative_feedbacks": negative_count,
             "finetuning_ready": finetuning_ready,
-            "auto_finetuning_triggered": auto_triggered,  # ✅ IMPORTANT
-            "is_finetuning_running": IS_FINETUNING_RUNNING,  # ✅ IMPORTANT
+            "auto_finetuning_triggered": auto_triggered,
+            "is_finetuning_running": IS_FINETUNING_RUNNING,
             "data_source": "complete_csv_data",
         }
 
         if auto_triggered:
             response["finetuning_message"] = (
-                "🧠 IA en cours d'amélioration grâce à votre feedback!"
+                " IA en cours d'amélioration grâce à votre feedback!"
             )
             response["estimated_duration"] = "~5-10 minutes"
         elif finetuning_ready and not IS_FINETUNING_RUNNING:
@@ -1484,10 +1551,10 @@ async def save_feedback_by_id(
         return response
 
     except Exception as e:
-        print(f"❌ Erreur feedback par ID: {e}")
+        print(f" Erreur feedback par ID: {e}")
         import traceback
 
-        print(f"❌ Stack trace complète: {traceback.format_exc()}")
+        print(f" Stack trace complète: {traceback.format_exc()}")
         raise HTTPException(status_code=500, detail=f"Erreur: {e}")
 
 
@@ -1527,7 +1594,7 @@ def get_feedback_stats():
         }
 
     except Exception as e:
-        print(f"❌ Erreur stats feedbacks: {e}")
+        print(f" Erreur stats feedbacks: {e}")
         raise HTTPException(status_code=500, detail=f"Erreur: {e}")
 
 
@@ -1545,8 +1612,7 @@ def stop_finetuning():
             "is_finetuning_running": False,
         }
 
-    # Note: Dans un vrai scénario, il faudrait implémenter
-    # un mécanisme pour arrêter le processus de fine-tuning
+
     IS_FINETUNING_RUNNING = False
 
     return {
@@ -1586,7 +1652,7 @@ def get_model_info():
                     }
                 )
 
-            # Ajouter un résumé du modèle
+
             try:
                 import io
                 from contextlib import redirect_stdout
@@ -1642,12 +1708,12 @@ async def reload_model_endpoint():
     Force le rechargement du modèle depuis le disque
     """
     try:
-        print("🔄 RECHARGEMENT MANUEL DU MODÈLE DEMANDÉ...")
+        print(" RECHARGEMENT MANUEL DU MODÈLE DEMANDÉ...")
 
         success = reload_model_artifacts()
 
         if success:
-            # CORRECTION: Récupérer les métadonnées correctement
+
             try:
                 metadata_file = Path("model/model_prod/model_metadata.json")
                 if metadata_file.exists():
@@ -1672,7 +1738,7 @@ async def reload_model_endpoint():
             )
 
     except Exception as e:
-        print(f"❌ Erreur rechargement manuel: {e}")
+        print(f" Erreur rechargement manuel: {e}")
         raise HTTPException(status_code=500, detail=f"Erreur rechargement: {str(e)}")
 
 
@@ -1770,7 +1836,7 @@ async def fetch_gmail_emails(
         )
 
     try:
-        # Valider d'abord les identifiants
+
         if validate_gmail_credentials:
             valid, validation_message = validate_gmail_credentials(
                 request.username, request.password
@@ -1778,13 +1844,13 @@ async def fetch_gmail_emails(
             if not valid:
                 raise HTTPException(status_code=401, detail=validation_message)
 
-        # Lancer la récupération en arrière-plan
+
         def fetch_emails_task():
             success, message, emails_data = fetch_emails_from_gmail(
                 request.username, request.password
             )
             if success:
-                print(f"✅ Emails récupérés avec succès: {len(emails_data)} emails")
+                print(f" Emails récupérés avec succès: {len(emails_data)} emails")
                 # Hash de l'email pour identifier le dossier - Normalisation identique à JavaScript
                 import hashlib
 
@@ -1792,9 +1858,9 @@ async def fetch_gmail_emails(
                 email_hash = hashlib.sha256(
                     normalized_email.encode("utf-8")
                 ).hexdigest()[:12]
-                print(f"📁 Emails sauvegardés dans: src/pages/emails/{email_hash}")
+                print(f" Emails sauvegardés dans: src/pages/emails/{email_hash}")
             else:
-                print(f"❌ Erreur récupération emails: {message}")
+                print(f" Erreur récupération emails: {message}")
 
         background_tasks.add_task(fetch_emails_task)
 
@@ -1832,7 +1898,6 @@ async def gmail_status():
 
         if csv_exists:
             csv_modified = datetime.fromtimestamp(csv_path.stat().st_mtime).isoformat()
-            # Compter les lignes du CSV (moins 1 pour le header)
             try:
                 with open(csv_path, "r", encoding="utf-8") as f:
                     total_emails = sum(1 for line in f) - 1
@@ -1874,9 +1939,9 @@ async def process_csv_file(file: UploadFile = File(...)):
         raise HTTPException(status_code=503, detail="Modèle non disponible")
 
     try:
-        print("\n🔥 === DÉBUT TRAITEMENT CSV ===")
-        print(f"📁 Fichier reçu: {file.filename}")
-        print(f"📁 Content-Type: {file.content_type}")
+        print("\n === DÉBUT TRAITEMENT CSV ===")
+        print(f" Fichier reçu: {file.filename}")
+        print(f" Content-Type: {file.content_type}")
 
         # Vérifier le type de fichier
         if not file.filename.endswith(".csv"):
@@ -1884,16 +1949,16 @@ async def process_csv_file(file: UploadFile = File(...)):
             raise HTTPException(status_code=400, detail="Le fichier doit être un CSV")
 
         # Lire le fichier CSV uploadé
-        print("📖 Lecture du fichier...")
+        print(" Lecture du fichier...")
         content = await file.read()
-        print(f"📖 Taille du fichier: {len(content)} bytes")
+        print(f" Taille du fichier: {len(content)} bytes")
 
         df = pd.read_csv(io.StringIO(content.decode("utf-8")))
-        print("📊 CSV parsé avec succès")
-        print(f"📊 Colonnes détectées: {list(df.columns)}")
-        print(f"📊 Nombre de lignes: {len(df)}")
+        print(" CSV parsé avec succès")
+        print(f" Colonnes détectées: {list(df.columns)}")
+        print(f" Nombre de lignes: {len(df)}")
 
-        # Vérifier les colonnes requises - From, Subject, Body comme sur l'interface web
+
         required_columns = ["from", "subject", "body", "type"]
         missing_columns = [col for col in required_columns if col not in df.columns]
         if missing_columns:
@@ -1902,8 +1967,8 @@ async def process_csv_file(file: UploadFile = File(...)):
                 status_code=400, detail=f"Colonnes manquantes: {missing_columns}"
             )
 
-        print("✅ Validation des colonnes OK")
-        print("📊 Distribution AVANT traitement:")
+        print(" Validation des colonnes OK")
+        print(" Distribution AVANT traitement:")
         distribution_avant = df["type"].value_counts()
         for type_email, count in distribution_avant.items():
             print(f"   - {type_email}: {count}")
@@ -1922,8 +1987,8 @@ async def process_csv_file(file: UploadFile = File(...)):
             batch_results = []
             batch_num = i // batch_size + 1
 
-            print(f"🚀 === BATCH {batch_num}/{total_batches} ===")
-            print(f"   📊 Emails dans ce batch: {len(batch_df)}")
+            print(f" === BATCH {batch_num}/{total_batches} ===")
+            print(f"    Emails dans ce batch: {len(batch_df)}")
 
             # Traiter chaque email du batch
             for j, row in batch_df.iterrows():
@@ -1943,7 +2008,7 @@ async def process_csv_file(file: UploadFile = File(...)):
                         not combined_text
                         or combined_text == "From: \nSubject: \nBody: "
                     ):
-                        print(f"   ⚪ Email {email_index}: Vide - type conservé")
+                        print(f"    Email {email_index}: Vide - type conservé")
                         # Email vide - garder le type original
                         original_type = row["type"]
                         batch_results.append(
@@ -1968,11 +2033,11 @@ async def process_csv_file(file: UploadFile = File(...)):
 
                     if new_type != old_type:
                         print(
-                            f"   🔄 Email {email_index}: {old_type} → {new_type} (conf: {result['confidence']})"
+                            f"    Email {email_index}: {old_type} → {new_type} (conf: {result['confidence']})"
                         )
                     else:
                         print(
-                            f"   ✅ Email {email_index}: {new_type} confirmé (conf: {result['confidence']})"
+                            f"    Email {email_index}: {new_type} confirmé (conf: {result['confidence']})"
                         )
 
                     batch_results.append(
@@ -1985,7 +2050,7 @@ async def process_csv_file(file: UploadFile = File(...)):
                     )
 
                 except Exception as e:
-                    print(f"   ❌ Email {email_index}: ERREUR - {str(e)}")
+                    print(f"    Email {email_index}: ERREUR - {str(e)}")
                     # En cas d'erreur, garder le type original
                     original_type = row["type"]
                     batch_results.append(
@@ -1998,16 +2063,16 @@ async def process_csv_file(file: UploadFile = File(...)):
                     )
 
             all_results.extend(batch_results)
-            print(f"✅ Batch {batch_num} terminé ({len(batch_results)} emails traités)")
+            print(f" Batch {batch_num} terminé ({len(batch_results)} emails traités)")
 
-        print("🎯 === TRAITEMENT TERMINÉ ===")
+        print(" === TRAITEMENT TERMINÉ ===")
 
         # Mettre à jour le DataFrame avec les nouvelles prédictions
         results_df = pd.DataFrame(all_results)
         df["type"] = results_df["new_type"]
 
         # Statistiques détaillées
-        print("📈 === STATISTIQUES FINALES ===")
+        print(" === STATISTIQUES FINALES ===")
         distribution_apres = df["type"].value_counts()
         for type_email, count in distribution_apres.items():
             print(f"   - {type_email}: {count}")
@@ -2019,7 +2084,7 @@ async def process_csv_file(file: UploadFile = File(...)):
             important_avant = distribution_avant.get("IMPORTANT", 0)
             important_apres = distribution_apres.get("IMPORTANT", 0)
 
-            print("📊 ÉVOLUTION:")
+            print(" ÉVOLUTION:")
             print(
                 f"   - SPAM: {spam_avant} → {spam_apres} ({spam_apres - spam_avant:+d})"
             )
@@ -2047,16 +2112,16 @@ async def process_csv_file(file: UploadFile = File(...)):
 
         df_output["processed_at"] = datetime.now().isoformat()
 
-        print("📝 Préparation du CSV de sortie...")
-        print(f"📝 Colonnes incluses: {available_columns}")
+        print(" Préparation du CSV de sortie...")
+        print(f" Colonnes incluses: {available_columns}")
 
         # Convertir en CSV
         output = io.StringIO()
         df_output.to_csv(output, index=False)
         csv_content = output.getvalue()
 
-        print(f"✅ CSV de sortie généré: {len(csv_content)} caractères")
-        print("📤 Envoi de la réponse au client...")
+        print(f" CSV de sortie généré: {len(csv_content)} caractères")
+        print(" Envoi de la réponse au client...")
 
         # Préparer la réponse en streaming
         headers = {
@@ -2064,9 +2129,9 @@ async def process_csv_file(file: UploadFile = File(...)):
             "Content-Type": "text/csv",
         }
 
-        print("🎉 === TRAITEMENT CSV TERMINÉ AVEC SUCCÈS ===")
-        print(f"   📊 Total traité: {len(df)} emails")
-        print("   📤 Fichier renvoyé au client\n")
+        print(" === TRAITEMENT CSV TERMINÉ AVEC SUCCÈS ===")
+        print(f"    Total traité: {len(df)} emails")
+        print("    Fichier renvoyé au client\n")
 
         return StreamingResponse(
             io.BytesIO(csv_content.encode("utf-8")),
@@ -2113,7 +2178,7 @@ def get_finetuning_status():
 
 
 # --- Charger les artefacts au démarrage ---
-print("🚀 Initialisation de l'API de détection de phishing avec Smart Percentile...")
+print(" Initialisation de l'API de détection de phishing avec Smart Percentile...")
 model_loaded = load_model_artifacts()
 
 if not model_loaded:

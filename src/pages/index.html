@@ -21,7 +21,7 @@
             content: '';
             position: absolute;
             top: 10px;
-            right: 10px;
+            right: calc(10px + 1cm);
             font-size: 16px;
             padding: 2px 6px;
             border-radius: 50%;
@@ -61,7 +61,14 @@
         }
         .feedback-positive { background: #d4edda; color: #155724; }
         .feedback-negative { background: #f8d7da; color: #721c24; }
-
+         /* Style pour les emails avec feedback négatif */
+       .email-item.has-feedback.has-negative-feedback {
+            background-color: rgba(248, 215, 218, 0.5); /* Rouge clair, semi-transparent */
+        }
+        .email-item.has-feedback.has-negative-feedback::before {
+            content: '❌'; /* Remplace l'icône 🧠 par défaut */
+            background: rgba(220, 53, 69, 0.1);
+        }
         .card { backdrop-filter: blur(10px); background: rgba(255, 255, 255, 0.95); border: none; box-shadow: 0 8px 32px rgba(0, 0, 0, 0.1); }
         .stats-card { text-align: center; padding: 2rem; color: white; border-radius: 15px; transition: transform 0.3s ease; }
         .stats-card:hover { transform: translateY(-5px); }
@@ -91,7 +98,7 @@
         .error-message { background: #f8d7da; color: #721c24; padding: 10px; border-radius: 8px; border: 1px solid #f5c6cb; margin: 10px 0; }
         .feedback-section { background: rgba(255,255,255,0.1); border-radius: 10px; padding: 15px; margin-top: 15px; }
         .feedback-message { margin-top: 10px; }
-        
+
         /* Contenu visible pour debug - authentification désactivée */
         .main-content {
             visibility: visible;
@@ -170,11 +177,11 @@
             border-radius: 3px;
         }
     </style>
-    
+
     <!-- Protection d'authentification améliorée -->
     <script>
-        console.log('🔥 DEBUG: Script d\'authentification chargé');
-        // TEMPORAIREMENT DÉSACTIVÉ POUR DEBUG
+        console.log(' DEBUG: Script d\'authentification chargé');
+
         if (false) {
         // PROTECTION CRITIQUE - Ne pas contourner cette vérification
         (function() {
@@ -330,7 +337,7 @@
     </script>
 </head>
 <body>
-    <!-- Contenu principal -->
+
     <div class="main-content">
     <div class="container-fluid py-4">
         <div class="row mb-4">
@@ -408,25 +415,25 @@
                 <div class="col-md-3">
                     <div class="legend-item">
                         <div class="legend-color" style="border: 2px solid #ff9800;"></div>
-                        <span>🧠 Feedback envoyé</span>
+                        <span class="me-1">🧠</span><span>Feedback envoyé</span>
                     </div>
                 </div>
                 <div class="col-md-3">
                     <div class="legend-item">
                         <div class="legend-color" style="border: 2px solid #ff5722;"></div>
-                        <span>🔥 En cours de fine-tuning</span>
+                        <span class="me-1">🔥</span><span>En cours de fine-tuning</span>
                     </div>
                 </div>
                 <div class="col-md-3">
                     <div class="legend-item">
                         <div class="legend-color" style="border: 2px solid #28a745;"></div>
-                        <span>✅ Fine-tuning terminé</span>
+                        <span class="me-1">✅</span><span>Fine-tuning terminé</span>
                     </div>
                 </div>
                 <div class="col-md-3">
                     <div class="legend-item">
                         <div class="legend-color" style="background: #f8d7da;"></div>
-                        <span>❌ Feedback négatif</span>
+                        <span class="me-1">❌</span><span>Feedback négatif</span>
                     </div>
                 </div>
             </div>
@@ -466,29 +473,23 @@
             </div>
         </div>
 
-        <div class="row mb-4">
-            <div class="col-md-3">
+        <div class="row mb-4 justify-content-center">
+            <div class="col-md-4">
                 <div class="stats-card stats-primary">
                     <div class="display-4" id="totalEmails">0</div>
                     <h5>Emails analysés</h5>
                 </div>
             </div>
-            <div class="col-md-3">
+            <div class="col-md-4">
                 <div class="stats-card stats-success">
                     <div class="display-4" id="successRate">0%</div>
                     <h5>Taux de réussite</h5>
                 </div>
             </div>
-            <div class="col-md-3">
+            <div class="col-md-4">
                 <div class="stats-card stats-danger">
                     <div class="display-4" id="spamCount">0</div>
                     <h5>Spams détectés</h5>
-                </div>
-            </div>
-            <div class="col-md-3">
-                <div class="stats-card stats-warning">
-                    <div class="display-4" id="feedbackCount">0</div>
-                    <h5>Feedbacks envoyés</h5>
                 </div>
             </div>
         </div>
@@ -592,7 +593,7 @@
             </div>
         </div>
     </div>
-    </div><!-- Fin main-content -->
+    </div>
 
     <!-- Modal Gmail -->
     <div class="modal fade" id="gmailModal" tabindex="-1" aria-labelledby="gmailModalLabel" aria-hidden="true">
@@ -714,25 +715,25 @@
                 probability: feedback.probability
             };
             localStorage.setItem('emailFeedbacks', JSON.stringify(feedbackStorage));
-            console.log(`💾 Feedback sauvegardé pour email ${emailId}`);
+            console.log(` Feedback sauvegardé pour email ${emailId}`);
         }
 
         function markEmailForFinetuning(emailId) {
             finetuningEmailIds.add(emailId);
             localStorage.setItem('finetuningEmails', JSON.stringify([...finetuningEmailIds]));
-            console.log(`🔥 Email ${emailId} marqué pour fine-tuning`);
+            console.log(` Email ${emailId} marqué pour fine-tuning`);
         }
 
         function markEmailsAsFinetuned(emailIds) {
             emailIds.forEach(id => finetunedEmailIds.add(id));
             localStorage.setItem('finetunedEmails', JSON.stringify([...finetunedEmailIds]));
-            console.log(`✅ ${emailIds.size} emails marqués comme fine-tunés.`);
+            console.log(` ${emailIds.size} emails marqués comme fine-tunés.`);
         }
 
         function clearPendingFinetuningEmails() {
             finetuningEmailIds.clear();
             localStorage.removeItem('finetuningEmails');
-            console.log('🗑️ File d\'attente de fine-tuning vidée.');
+            console.log(' File d\'attente de fine-tuning vidée.');
         }
 
         function getEmailFeedbackStatus(emailId) {
@@ -747,45 +748,34 @@
             return finetunedEmailIds.has(emailId);
         }
 
-        function updateEmailDisplayWithFeedback() {
-            const emailItems = document.querySelectorAll('.email-item');
-            let feedbackCount = 0;
+function updateEmailDisplayWithFeedback() {
+            const emailItems = document.querySelectorAll('#emailList .email-item');
+            emailItems.forEach(item => {
+                const emailId = item.dataset.emailId;
+                if (!emailId) return;
 
-            emailItems.forEach((item, index) => {
-                const email = filteredEmails[index];
-                if (!email) return;
+                // 1. Réinitialiser toutes les classes de statut
+                item.classList.remove('has-feedback', 'contributing-to-finetuning', 'finetuned-successfully', 'has-negative-feedback');
 
-                const emailId = email.id || `email_${index}`;
-                const feedbackStatus = getEmailFeedbackStatus(emailId);
-                const isContributing = isEmailContributingToFinetuning(emailId);
-                const isFinetuned = isEmailFinetuned(emailId);
-
-                item.classList.remove('has-feedback', 'contributing-to-finetuning', 'finetuned-successfully');
-
-                const existingBadges = item.querySelectorAll('.feedback-badge');
-                existingBadges.forEach(badge => badge.remove());
-
-                if (isFinetuned) {
+                // 2. Appliquer le statut le plus important en premier
+                if (isEmailFinetuned(emailId)) {
+                    // ✅ Si l'ID est dans la liste des "terminés"
                     item.classList.add('finetuned-successfully');
-                } else if (isContributing) {
+                } else if (isEmailContributingToFinetuning(emailId)) {
+                    // 🔥 Si l'ID est dans la liste des "en cours"
                     item.classList.add('contributing-to-finetuning');
-                } else if (feedbackStatus) {
-                    item.classList.add('has-feedback');
-                }
-
-                if (feedbackStatus) {
-                    feedbackCount++;
-                    const badge = document.createElement('div');
-                    badge.className = `feedback-badge ${feedbackStatus.satisfaction === 'yes' ? 'feedback-positive' : 'feedback-negative'}`;
-                    badge.innerHTML = feedbackStatus.satisfaction === 'yes' ? '👍' : '👎';
-                    badge.title = `Feedback: ${feedbackStatus.satisfaction === 'yes' ? 'Positif' : 'Négatif'} - ${new Date(feedbackStatus.timestamp).toLocaleString()}`;
-                    item.appendChild(badge);
+                } else {
+                    // 🧠 ou ❌ Sinon, vérifier s'il y a un feedback simple
+                    const feedback = getEmailFeedbackStatus(emailId);
+                    if (feedback) {
+                        item.classList.add('has-feedback');
+                        if (feedback.satisfaction === 'no') {
+                            item.classList.add('has-negative-feedback');
+                        }
+                    }
                 }
             });
-            document.getElementById('feedbackCounter').textContent = `${feedbackCount} avec feedback`;
-            document.getElementById('feedbackCount').textContent = feedbackCount;
         }
-
         async function loadEmailsWithAI() {
             console.log('🤖 Chargement automatique avec IA...');
             autoRefreshMode = true;
@@ -836,44 +826,61 @@
         }
 
         async function checkFinetuningStatus() {
+    try {
+
+        const response = await fetch(`${mlApiUrl}/health`);
+        const data = await response.json();
+        const isApiTraining = data.is_finetuning_running;
+
+        // Si l'état de l'API est différent de notre état local, il y a eu un changement
+        // ou une désynchronisation (par ex. après un rechargement de page).
+        if (isApiTraining !== finetuningStatus) {
+            console.log(`⚠ CHANGEMENT D'ÉTAT DÉTECTÉ (Local: ${finetuningStatus}, API: ${isApiTraining}). Lancement de la synchronisation...`);
+            await syncWithAPI();
+        }
+    } catch (error) {
+        console.warn("Erreur de monitoring", error.message);
+    }
+}
+              async function syncWithAPI() {
+            console.log("🔄 Synchronisation complète avec l'API...");
             try {
-                const response = await fetch(`${mlApiUrl}/health`, { mode: 'cors', signal: AbortSignal.timeout(5000) });
+                const response = await fetch(`${mlApiUrl}/finetuning/sync-frontend`, { method: 'POST' });
+                if (!response.ok) throw new Error(`Réponse API: ${response.status}`);
 
-                if (response.ok) {
-                    const data = await response.json();
-                    const isTraining = data.is_finetuning_running || false;
+                const data = await response.json();
+                const syncData = data.sync_data;
 
-                    if (finetuningStatus && !isTraining) {
-                        console.log('✅🎉 FINE-TUNING TERMINÉ!');
-                        stopFinetuningTimer(); // Arrêter le timer
-                        markEmailsAsFinetuned(finetuningEmailIds);
-                        clearPendingFinetuningEmails();
-                        applyFiltersAndSearch();
 
-                        if (autoRefreshMode) {
-                            setTimeout(() => {
-                                console.log('🔄 Rechargement automatique après fine-tuning');
-                                loadEmailsWithAI();
-                            }, 2000);
-                        }
-                    } else if (!finetuningStatus && isTraining) {
-                        console.log('🔥 FINE-TUNING DÉTECTÉ!');
-                        startFinetuningTimer(); // Lancer le timer
-                    }
+                const wasTraining = finetuningStatus;
+                const isNowTraining = syncData.is_finetuning_running;
 
-                    finetuningStatus = isTraining;
-                    showFinetuningIndicator(isTraining);
-                    updateMLStatusForTraining(isTraining);
+                finetuningStatus = isNowTraining;
+                showFinetuningIndicator(isNowTraining);
+
+                // Reconstruire l'état local à partir de la source de vérité (le backend)
+                finetuningEmailIds = new Set(syncData.pending_email_ids || []);
+                finetunedEmailIds = new Set(syncData.processed_email_ids || []);
+
+                // Sauvegarder ce nouvel état dans le localStorage
+                localStorage.setItem('finetuningEmails', JSON.stringify([...finetuningEmailIds]));
+                localStorage.setItem('finetunedEmails', JSON.stringify([...finetunedEmailIds]));
+
+                // Mettre à jour TOUTE l'interface visuelle
+                updateEmailDisplayWithFeedback();
+
+                // Rafraîchir l'email actuellement sélectionné pour que son badge soit aussi à jour
+                const activeEmailElement = document.querySelector('#emailList .email-item.active');
+                if (activeEmailElement && activeEmailElement.dataset.index) {
+                    selectEmail(parseInt(activeEmailElement.dataset.index, 10));
                 }
+
+                console.log(" Synchronisation terminée.");
             } catch (error) {
-                console.warn('⚠️ Impossible de vérifier le statut fine-tuning:', error);
-                if (finetuningStatus) { // Si on perd la connexion pendant le FT
-                    stopFinetuningTimer();
-                    showFinetuningIndicator(false);
-                    finetuningStatus = false;
-                }
+                console.error(" Erreur critique de synchronisation:", error);
             }
         }
+
 
         function startFinetuningTimer() {
             if (finetuningTimerInterval) clearInterval(finetuningTimerInterval);
@@ -897,9 +904,18 @@
             }
         }
 
-        function showFinetuningIndicator(show) {
+         function showFinetuningIndicator(show) {
             const indicator = document.getElementById('finetuningIndicator');
-            if (indicator) indicator.style.display = show ? 'flex' : 'none'; // Utiliser flex pour l'alignement
+            if (indicator) {
+                const isVisible = indicator.style.display !== 'none';
+                if (show && !isVisible) {
+                    startFinetuningTimer();
+                    indicator.style.display = 'block';
+                } else if (!show && isVisible) {
+                    stopFinetuningTimer();
+                    indicator.style.display = 'none';
+                }
+            }
         }
 
         function showAutoRefreshIndicator(show) {
@@ -930,7 +946,7 @@
             try {
                 autoRefreshMode = false;
                 showAutoRefreshIndicator(false);
-                
+
                 // Essayer de charger directement le fichier avec le hash utilisateur
                 let userEmailHash = null;
                 try {
@@ -940,11 +956,11 @@
                         // Utiliser le hash fourni par le backend (email_hash)
                         if (user.email_hash) {
                             userEmailHash = user.email_hash;
-                            console.log(`📁 Utilisation du hash backend pour ${user.email}: ${userEmailHash}`);
+                            console.log(` Utilisation du hash backend pour ${user.email}: ${userEmailHash}`);
                         } else if (user.email) {
                             // Fallback vers le calcul local si le hash n'est pas disponible
                             userEmailHash = await hashEmailForDirectory(user.email);
-                            console.log(`📁 Fallback hash local pour ${user.email}: ${userEmailHash}`);
+                            console.log(` Fallback hash local pour ${user.email}: ${userEmailHash}`);
                         }
                     }
                 } catch (e) {
@@ -953,14 +969,14 @@
 
                 // Essayer de charger le fichier spécifique à l'utilisateur
                 let csvPath = userEmailHash ? `emails/${userEmailHash}/emails_live.csv` : 'emails_live.csv';
-                
+
                 await emailLoader.loadEmailsFromCSV(csvPath);
-                emailLoader.updateSourceIndicator(`📊 Données CSV brutes (${emailLoader.emails.length} emails)`, 'success');
+                emailLoader.updateSourceIndicator(` Données CSV brutes (${emailLoader.emails.length} emails)`, 'success');
                 loadAndUpdate();
-                
+
             } catch (error) {
                 console.error('Erreur chargement CSV brut:', error);
-                emailLoader.updateSourceIndicator(`❌ Erreur: ${error.message}`, 'danger');
+                emailLoader.updateSourceIndicator(` Erreur: ${error.message}`, 'danger');
                 alert(`Erreur de chargement du fichier CSV. Assurez-vous d'utiliser un serveur local et que le fichier 'emails_live.csv' est présent.`);
             }
         }
@@ -970,7 +986,7 @@
                 autoRefreshMode = false;
                 showAutoRefreshIndicator(false);
                 await emailLoader.loadEmailsFromCSV('emails_demo.csv');
-                emailLoader.updateSourceIndicator(`📝 Données de démonstration (${emailLoader.emails.length} emails)`, 'primary');
+                emailLoader.updateSourceIndicator(` Données de démonstration (${emailLoader.emails.length} emails)`, 'primary');
                 loadAndUpdate();
             } catch (error) {
                 alert(`Erreur de chargement du fichier démo.`);
@@ -987,103 +1003,103 @@
         }
 
         async function refreshEmails() {
-            console.log('🔄 Refresh avec prédictions ML pour tous les emails...');
-            emailLoader.updateSourceIndicator('🔄 Chargement et analyse ML de tous les emails...', 'info');
-            
+            console.log(' Refresh avec prédictions ML pour tous les emails...');
+            emailLoader.updateSourceIndicator(' Chargement et analyse ML de tous les emails...', 'info');
+
             try {
-                // Étape 1: Charger d'abord les emails depuis le CSV
+
                 let userEmailHash = null;
                 try {
                     const userData = localStorage.getItem('user_data');
                     if (userData) {
                         const user = JSON.parse(userData);
-                        // Utiliser le hash fourni par le backend (email_hash)
+
                         if (user.email_hash) {
                             userEmailHash = user.email_hash;
-                            console.log(`📁 Utilisation du hash backend pour ${user.email}: ${userEmailHash}`);
+                            console.log(` Utilisation du hash backend pour ${user.email}: ${userEmailHash}`);
                         } else if (user.email) {
                             // Fallback vers le calcul local si le hash n'est pas disponible
                             userEmailHash = await hashEmailForDirectory(user.email);
-                            console.log(`📁 Fallback hash local pour ${user.email}: ${userEmailHash}`);
+                            console.log(` Fallback hash local pour ${user.email}: ${userEmailHash}`);
                         }
                     }
                 } catch (e) {
                     console.log('Pas d\'utilisateur authentifié, mode global');
                 }
 
-                // Construire le bon chemin CSV
+
                 let csvPath = userEmailHash ? `emails/${userEmailHash}/emails_live.csv` : 'emails_live.csv';
-                
-                // Charger les emails depuis le CSV
+
+
                 await emailLoader.loadEmailsFromCSV(csvPath);
                 console.log(`📊 ${emailLoader.emails.length} emails chargés depuis ${csvPath}`);
-                
+
                 if (emailLoader.emails.length === 0) {
-                    emailLoader.updateSourceIndicator('⚠️ Aucun email trouvé', 'warning');
+                    emailLoader.updateSourceIndicator(' Aucun email trouvé', 'warning');
                     return;
                 }
 
                 // Étape 2: Faire des prédictions ML pour chaque email
-                emailLoader.updateSourceIndicator(`🧠 Analyse ML en cours pour ${emailLoader.emails.length} emails...`, 'info');
-                
+                emailLoader.updateSourceIndicator(` Analyse ML en cours pour ${emailLoader.emails.length} emails...`, 'info');
+
                 let successCount = 0;
                 let errorCount = 0;
 
                 for (let i = 0; i < emailLoader.emails.length; i++) {
                     const email = emailLoader.emails[i];
                     const emailId = email.id || `email_${i}`;
-                    
+
                     try {
-                        console.log(`🧠 Analyse ML ${i + 1}/${emailLoader.emails.length}: ${emailId}`);
-                        
+                        console.log(` Analyse ML ${i + 1}/${emailLoader.emails.length}: ${emailId}`);
+
                         const response = await fetch(`${mlApiUrl}/predict/email-id`, {
                             method: 'POST',
                             mode: 'cors',
                             headers: { 'Content-Type': 'application/json' },
-                            body: JSON.stringify({ 
-                                email_id: emailId, 
-                                client_id: userEmailHash 
+                            body: JSON.stringify({
+                                email_id: emailId,
+                                client_id: userEmailHash
                             }),
                             signal: AbortSignal.timeout(15000) // 15 secondes par email
                         });
 
                         if (response.ok) {
                             const result = await response.json();
-                            
-                            // Mettre à jour le type de l'email basé sur la prédiction
+
+
                             const newType = result.prediction === 'phishing' ? 'SPAM' : 'IMPORTANT';
                             const oldType = email.type;
-                            
+
                             emailLoader.emails[i].type = newType;
                             emailLoader.emails[i].ml_probability = result.probability;
                             emailLoader.emails[i].ml_confidence = result.confidence;
                             emailLoader.emails[i].language_detected = result.language_detected;
-                            
+
                             if (newType !== oldType) {
-                                console.log(`   🔄 ${emailId}: ${oldType} → ${newType} (conf: ${result.confidence})`);
+                                console.log(`    ${emailId}: ${oldType} → ${newType} (conf: ${result.confidence})`);
                             } else {
-                                console.log(`   ✅ ${emailId}: ${newType} confirmé (conf: ${result.confidence})`);
+                                console.log(`    ${emailId}: ${newType} confirmé (conf: ${result.confidence})`);
                             }
-                            
+
                             successCount++;
                         } else {
-                            console.warn(`   ⚠️ ${emailId}: Erreur HTTP ${response.status}`);
+                            console.warn(`    ${emailId}: Erreur HTTP ${response.status}`);
                             errorCount++;
                         }
                     } catch (error) {
-                        console.error(`   ❌ ${emailId}: ${error.message}`);
+                        console.error(`    ${emailId}: ${error.message}`);
                         errorCount++;
                     }
-                    
+
                     // Mise à jour progressive de l'interface
                     if ((i + 1) % 5 === 0 || i === emailLoader.emails.length - 1) {
                         const processed = i + 1;
                         const remaining = emailLoader.emails.length - processed;
                         emailLoader.updateSourceIndicator(
-                            `🧠 Analyse ML: ${processed}/${emailLoader.emails.length} traités (${remaining} restants)`, 
+                            `Analyse ML: ${processed}/${emailLoader.emails.length} traités (${remaining} restants)`,
                             'info'
                         );
-                        
+
                         // Rafraîchir l'affichage par petits groupes
                         const container = document.getElementById('emailList');
                         emailLoader.displayEmails(container);
@@ -1093,29 +1109,29 @@
                 }
 
                 // Étape 3: Affichage final
-                console.log(`✅ Analyse ML terminée: ${successCount} succès, ${errorCount} erreurs`);
-                
+                console.log(` Analyse ML terminée: ${successCount} succès, ${errorCount} erreurs`);
+
                 const container = document.getElementById('emailList');
                 emailLoader.displayEmails(container);
                 emailLoader.updateStatsDisplay();
                 updateEmailDisplayWithFeedback();
-                
+
                 if (emailLoader.emails.length > 0) {
                     selectEmail(0);
                 }
-                
+
                 // Message de statut final
-                const statusMessage = errorCount > 0 
-                    ? `🧠 Analyse ML terminée: ${successCount}/${emailLoader.emails.length} emails analysés (${errorCount} erreurs)`
-                    : `🧠 Analyse ML terminée: ${emailLoader.emails.length} emails analysés avec succès`;
-                    
+                const statusMessage = errorCount > 0
+                    ? `Analyse ML terminée: ${successCount}/${emailLoader.emails.length} emails analysés (${errorCount} erreurs)`
+                    : `Analyse ML terminée: ${emailLoader.emails.length} emails analysés avec succès`;
+
                 emailLoader.updateSourceIndicator(statusMessage, successCount > 0 ? 'success' : 'warning');
-                
+
             } catch (error) {
-                console.error('❌ Erreur lors du refresh avec ML:', error);
-                emailLoader.updateSourceIndicator(`❌ Erreur: ${error.message}`, 'danger');
-                
-                // Fallback: essayer de charger sans ML
+                console.error(' Erreur lors du refresh avec ML:', error);
+                emailLoader.updateSourceIndicator(` Erreur: ${error.message}`, 'danger');
+
+
                 try {
                     if (autoRefreshMode) {
                         await refreshEmailsWithML();
@@ -1127,7 +1143,7 @@
                         }
                     }
                 } catch (fallbackError) {
-                    console.error('❌ Fallback également échoué:', fallbackError);
+                    console.error(' Fallback également échoué:', fallbackError);
                 }
             }
         }
@@ -1256,14 +1272,14 @@
         async function checkMLStatus() {
             const statusElement = document.getElementById('mlStatus');
             const analyzeBtn = document.getElementById('analyzeBtn');
-            
+
             console.log('🔍 [DEBUG] Début checkMLStatus - URL:', mlApiUrl);
             statusElement.innerHTML = '<i class="bi bi-arrow-clockwise spin"></i> Vérification du modèle ML...';
 
             try {
                 console.log('🔍 [DEBUG] Tentative de connexion au service ML...');
-                const response = await fetch(`${mlApiUrl}/health`, { 
-                    mode: 'cors', 
+                const response = await fetch(`${mlApiUrl}/health`, {
+                    mode: 'cors',
                     signal: AbortSignal.timeout(5000)
                 });
 
@@ -1272,14 +1288,14 @@
                 if (response.ok) {
                     mlStatusOnline = true;
                     const data = await response.json();
-                    console.log('🔍 [DEBUG] Données ML reçues:', data);
+
                     updateMLStatusForTraining(data.is_finetuning_running || false);
-                    console.log('✅ [DEBUG] Modèle ML en ligne et opérationnel');
+
                 } else {
                     throw new Error(`HTTP ${response.status}`);
                 }
             } catch (error) {
-                console.error('❌ [DEBUG] Erreur checkMLStatus:', error);
+                console.error(' [DEBUG] Erreur checkMLStatus:', error);
                 mlStatusOnline = false;
                 statusElement.innerHTML = `<i class="bi bi-circle-fill text-danger"></i> Modèle ML: <strong>Hors ligne</strong><br><small>${error.name === 'AbortError' ? 'Timeout' : 'Erreur connexion'}</small>`;
                 statusElement.className = 'ml-status offline';
@@ -1315,11 +1331,11 @@
                     // Utiliser le hash fourni par le backend (email_hash)
                     if (user.email_hash) {
                         clientId = user.email_hash;
-                        console.log(`📁 Analyse ML pour client (backend hash): ${clientId}`);
+                        console.log(` Analyse ML pour client (backend hash): ${clientId}`);
                     } else if (user.email) {
                         // Fallback vers le calcul local si le hash n'est pas disponible
                         clientId = await hashEmailForDirectory(user.email);
-                        console.log(`📁 Analyse ML pour client (fallback hash): ${clientId}`);
+                        console.log(` Analyse ML pour client (fallback hash): ${clientId}`);
                     }
                 }
             } catch (e) {
@@ -1370,72 +1386,66 @@
         }
 
         async function sendFeedback(satisfaction) {
-            if (!currentEmailData || !currentAnalysisResult) return;
+            if (!currentEmailData || !currentEmailData.id || !currentAnalysisResult) {
+                alert("Veuillez d'abord analyser un email avant de donner votre feedback.");
+                return;
+            }
 
             try {
-                // Récupérer le client_id de la même manière que pour l'analyse
                 let clientId = null;
                 try {
                     const userData = localStorage.getItem('user_data');
                     if (userData) {
                         const user = JSON.parse(userData);
-                        // Utiliser le hash fourni par le backend (email_hash)
-                        if (user.email_hash) {
-                            clientId = user.email_hash;
-                        } else if (user.email) {
-                            // Fallback vers le calcul local si le hash n'est pas disponible
-                            clientId = await hashEmailForDirectory(user.email);
-                        }
+                        if (user.email_hash) clientId = user.email_hash;
+                        else if (user.email) clientId = await hashEmailForDirectory(user.email);
                     }
                 } catch (e) {
                     console.log('Info: Pas de client_id pour le feedback, envoi global');
                 }
 
                 const feedbackData = {
-                    email_id: currentEmailData.id, 
+                    email_id: currentEmailData.id,
+
                     predicted_class: currentAnalysisResult.prediction,
-                    predicted_probability: currentAnalysisResult.probability, 
+                    predicted_probability: currentAnalysisResult.probability,
                     user_satisfaction: satisfaction,
                     language_detected: currentAnalysisResult.language_detected,
                     client_id: clientId
                 };
+
                 showFeedbackMessage('Envoi du feedback...', 'info');
 
                 const response = await fetch(`${mlApiUrl}/feedback/by-id`, {
-                    method: 'POST', mode: 'cors', headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify(feedbackData), signal: AbortSignal.timeout(10000)
+                    method: 'POST',
+                    mode: 'cors',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(feedbackData),
+                    signal: AbortSignal.timeout(10000)
                 });
                 if (!response.ok) throw new Error(`HTTP ${response.status}: ${await response.text()}`);
 
                 const result = await response.json();
+
                 saveFeedbackToStorage(currentEmailData.id, {
-                    satisfaction: satisfaction, timestamp: new Date().toISOString(),
-                    prediction: currentAnalysisResult.prediction, probability: currentAnalysisResult.probability
+                    satisfaction: satisfaction,
+                    timestamp: new Date().toISOString(),
+                    prediction: currentAnalysisResult.prediction,
+                    probability: currentAnalysisResult.probability
                 });
 
-                if (result.auto_finetuning_triggered) {
+                if (satisfaction === 'no') {
                     markEmailForFinetuning(currentEmailData.id);
-                    showFeedbackMessage('✅ Feedback enregistré! 🧠 IA en cours d\'amélioration...', 'success');
-                    await checkFinetuningStatus(); // Mettre à jour l'état immédiatement
-                    applyFiltersAndSearch();
+                    showFeedbackMessage('✅ Feedback enregistré! L\'IA va apprendre de ce cas.', 'success');
                 } else {
-                    showFeedbackMessage('✅ Merci ! Feedback enregistré', 'success');
+                     showFeedbackMessage('✅ Merci ! Feedback enregistré.', 'success');
                 }
 
-                updateEmailDisplayWithFeedback();
-
-                const feedbackStatusElement = document.getElementById('emailFeedbackStatus');
-                feedbackStatusElement.style.display = 'block';
-                feedbackStatusElement.className = `badge ${satisfaction === 'yes' ? 'bg-success' : 'bg-danger'}`;
-                feedbackStatusElement.innerHTML = `${satisfaction === 'yes' ? '✅ Feedback Positif' : '❌ Feedback Négatif'}`;
-                document.querySelectorAll('input[name="satisfaction"]').forEach(input => input.disabled = true);
+                await syncWithAPI();
 
             } catch (error) {
-                console.error('❌ Erreur feedback:', error);
+                console.error(' Erreur feedback:', error);
                 showFeedbackMessage('❌ Erreur lors de l\'envoi', 'error');
-                document.querySelectorAll('input[name="satisfaction"]').forEach(input => {
-                    input.disabled = false; input.checked = false;
-                });
             }
         }
 
@@ -1503,11 +1513,11 @@
                     body: JSON.stringify({ email_id: currentEmailData.id, client_id: clientId }),
                     signal: AbortSignal.timeout(30000)
                 });
-                
+
                 if (!response.ok) throw new Error(`API Error ${response.status}: ${await response.text()}`);
 
                 const data = await response.json();
-                
+
                 // Stocker le résultat pour l'envoi du feedback
                 const confidence = Math.round((data.probability || 0) * 100);
                 const isSpam = data.prediction === 'phishing' || data.prediction === 'spam';
@@ -1539,10 +1549,27 @@
                 await sendFeedback(satisfaction);
 
             } catch (error) {
-                console.error('❌ Erreur lors de l\'analyse pour feedback:', error);
+                console.error(' Erreur lors de l\'analyse pour feedback:', error);
                 alert(`Erreur lors de l'analyse: ${error.message}`);
                 document.querySelectorAll('input[name="satisfaction"]').forEach(input => input.checked = false);
             }
+        }
+        function loadFeedbackState() {
+            finetuningEmailIds = new Set(JSON.parse(localStorage.getItem('finetuningEmails') || '[]'));
+            finetunedEmailIds = new Set(JSON.parse(localStorage.getItem('finetunedEmails') || '[]'));
+            feedbackStorage = JSON.parse(localStorage.getItem('emailFeedbacks') || '{}');
+            console.log(` État du feedback chargé: ${finetuningEmailIds.size} en cours, ${finetunedEmailIds.size} terminés.`);
+        }
+
+        function resetFeedbackState() {
+            console.warn(" Réinitialisation de l'état du feedback local (localStorage).");
+            finetuningEmailIds.clear();
+            finetunedEmailIds.clear();
+            feedbackStorage = {};
+            localStorage.removeItem('finetuningEmails');
+            localStorage.removeItem('finetunedEmails');
+            localStorage.removeItem('emailFeedbacks');
+            updateEmailDisplayWithFeedback(); // Rafraîchit l'UI pour retirer les icônes.
         }
 
         function showAnalysisError(message) {
@@ -1572,73 +1599,46 @@
         }
 
         document.addEventListener('DOMContentLoaded', async () => {
-            console.log('🚀 Initialisation du dashboard ML avec cycle de vie et timer...');
-            
-            // Clear any cached hash values
+            console.log(' Démarrage du Dashboard ML (version corrigée et finalisée)');
+
+
             localStorage.removeItem('userEmailHash');
             sessionStorage.removeItem('userEmailHash');
-            
-            // SIMULATION TEMPORAIRE D'AUTHENTIFICATION POUR TEST
-            // TODO: Retirer quand l'auth JWT fonctionne
+
             if (!localStorage.getItem('user_data')) {
-                console.log('🔧 SIMULATION: Pas d\'auth détectée, simulation pour farinesfari@gmail.com');
+                console.log('🔧 SIMULATION: Pas d\'auth détectée, création d\'un utilisateur de démo.');
                 localStorage.setItem('user_data', JSON.stringify({
                     email: 'farinesfari@gmail.com',
                     name: 'Test User',
                     role: 'user',
-                    email_hash: '40a478aac913'  // Hash préalculé pour farinesfari@gmail.com
+                    email_hash: '40a478aac913' // Hash pré-calculé
                 }));
             }
-            
-            // Test du hash pour vérifier la cohérence - Version 4.0 (dynamique)
-            console.log(`🔧 hashEmailForDirectory function exists: ${typeof hashEmailForDirectory}`);
-            
-            // Test dynamique avec l'utilisateur connecté s'il existe
-            try {
-                const userData = localStorage.getItem('user_data');
-                if (userData) {
-                    const user = JSON.parse(userData);
-                    if (user.email) {
-                        const testHash = await hashEmailForDirectory(user.email);
-                        console.log(`🧪 Test hash cohérence pour "${user.email}": ${testHash}`);
-                    }
-                }
-            } catch (e) {
-                console.log('🔧 Erreur lors du test de hash:', e);
-            }
-            
-            console.log('🚀 Initialisation du dashboard ML...');
 
-            // Vérifier l'authentification
-            if (!checkAuth()) {
-                console.log('❌ Non authentifié, redirection...');
-                window.location.href = 'new_login.html';
-                return;
-            }
 
-            // Initialiser les informations utilisateur
-            initializeUserInterface();
+            loadFeedbackState();
 
-            // Charger les emails
-            loadLiveEmails();
 
-            // Vérifier le statut ML
-            console.log('🔄 [DEBUG] Démarrage de la vérification ML...');
-            checkMLStatus();
+            await loadLiveEmails();
 
-            // Intervalles pour le monitoring continu
-            setInterval(checkFinetuningStatus, 5000);
 
-            // ✅ SIMPLIFIÉ: Plus d'event listeners complexes - utilisation directe des boutons onclick
+            await checkMLStatus();
+
+
             document.querySelectorAll('input[name="viewMode"]').forEach(input => input.addEventListener('change', updateBodyDisplay));
 
-            console.log('✅ Système de feedback et fine-tuning avec cycle de vie initialisé');
-            console.log(`📊 ${Object.keys(feedbackStorage).length} feedbacks en mémoire`);
-            console.log(`🔥 ${finetuningEmailIds.size} emails en attente de fine-tuning`);
-            console.log(`✅ ${finetunedEmailIds.size} emails déjà fine-tunés`);
+            console.log(' Données initiales et UI prêtes.');
+
+
+            console.log(" Lancement de la synchronisation initiale pour garantir la cohérence...");
+            await syncWithAPI();
+
+            console.log(" Démarrage du monitoring en continu...");
+            setInterval(checkFinetuningStatus, 5000);
+
+            console.log(' Dashboard entièrement initialisé et prêt à l\'emploi.');
         });
 
-        // Initialiser l'interface utilisateur
         function initializeUserInterface() {
             const user = AuthManager.getCurrentUser();
             if (user) {
@@ -1677,9 +1677,6 @@
         `;
         document.head.appendChild(style);
 
-        // Hash function moved to hashUtils.js - using centralized implementation
-
-        // Fonction pour charger les emails de l'utilisateur connecté
         async function loadUserEmails() {
             try {
                 // Récupérer les informations de l'utilisateur connecté
@@ -1788,41 +1785,39 @@
             }
         }
 
-        // Fonction de debug (optionnelle)
         function debugFeedbackState() {
-            console.log('🔍 État du feedback:');
+            console.log(' État du feedback:');
             console.log('  currentEmailData:', currentEmailData);
             console.log('  currentAnalysisResult:', currentAnalysisResult);
             console.log('  mlStatusOnline:', mlStatusOnline);
-            
+
             // Test des event listeners
             const inputs = document.querySelectorAll('input[name="satisfaction"]');
-            console.log('🔍 Inputs satisfaction trouvés:', inputs.length);
+            console.log(' Inputs satisfaction trouvés:', inputs.length);
             inputs.forEach(input => {
                 console.log(`  - ${input.id}: enabled=${!input.disabled}, checked=${input.checked}`);
             });
         }
-        
+
         function handleSatisfactionChange(e) {
-            console.log('🎯 handleSatisfactionChange déclenché:', e.target.id, 'valeur:', e.target.value, 'checked:', e.target.checked);
+            console.log(' handleSatisfactionChange déclenché:', e.target.id, 'valeur:', e.target.value, 'checked:', e.target.checked);
             if (e.target.checked) {
                 handleFeedback(e.target.value);
             }
         }
-        
+
         function handleSatisfactionClick(e) {
-            console.log('🖱️ handleSatisfactionClick déclenché:', e.target.id, 'valeur:', e.target.value);
-            // Laisser l'événement change gérer la logique
+            console.log(' handleSatisfactionClick déclenché:', e.target.id, 'valeur:', e.target.value);
         }
-        
+
         function testFeedback(satisfaction) {
             console.log('🧪 TEST DIRECT du feedback avec:', satisfaction);
             handleFeedback(satisfaction);
         }
-        
+
         async function sendFeedbackDirect(satisfaction) {
-            console.log('🎯 Bouton de feedback cliqué:', satisfaction);
-            
+            console.log(' Bouton de feedback cliqué:', satisfaction);
+
             if (!currentEmailData) {
                 alert('Veuillez sélectionner un email d\'abord.');
                 return;
@@ -1833,11 +1828,11 @@
                 return;
             }
 
-            // Si pas d'analyse ML précédente, analyser d'abord puis envoyer feedback
+
             if (!currentAnalysisResult) {
                 await analyzeEmailThenSendFeedback(satisfaction);
             } else {
-                // Si analyse déjà faite, envoyer directement le feedback avec confirmation
+
                 handleFeedback(satisfaction);
             }
         }
