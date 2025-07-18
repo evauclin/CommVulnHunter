@@ -1031,7 +1031,7 @@ class IndividualFeedbackRetrainingManager:
         self, retrained_model, feedback_data, backup_dir, validation_result
     ):
         """Déploie immédiatement le modèle re-entraîné ET déclenche le rechargement de l'API"""
-        print("\n🚀 DÉPLOIEMENT IMMÉDIAT DU MODÈLE RE-ENTRAÎNÉ")
+        print("\n DÉPLOIEMENT IMMÉDIAT DU MODÈLE RE-ENTRAÎNÉ")
         print("=" * 50)
 
         try:
@@ -1103,7 +1103,7 @@ class IndividualFeedbackRetrainingManager:
             # Recharger le modèle en mémoire
             self.model = load_model(str(production_model_path))
 
-            print("✅ DÉPLOIEMENT RÉUSSI!")
+            print(" DÉPLOIEMENT RÉUSSI!")
             print(f"   Version du modèle: {new_version}")
             print(f"   Feedback traité: #{feedback_data['id']}")
             print(f"   Re-entraînements totaux: {self.total_retrainings}")
@@ -1116,7 +1116,7 @@ class IndividualFeedbackRetrainingManager:
             return True
 
         except Exception as e:
-            print(f"❌ Erreur déploiement: {e}")
+            print(f" Erreur déploiement: {e}")
             import traceback
 
             traceback.print_exc()
@@ -1127,7 +1127,7 @@ class IndividualFeedbackRetrainingManager:
     ):
         """Enregistre la tentative de re-entraînement"""
         try:
-            # Nettoyer tous les types NumPy
+
             clean_feedback_data = convert_numpy_types(
                 {
                     "text": feedback_data["text"][:200],
@@ -1150,7 +1150,7 @@ class IndividualFeedbackRetrainingManager:
                 "consecutive_failures": int(self.consecutive_failures),
             }
 
-            # Charger le log existant
+
             retraining_log = []
             if self.retraining_log_path.exists():
                 try:
@@ -1159,10 +1159,10 @@ class IndividualFeedbackRetrainingManager:
                 except:
                     retraining_log = []
 
-            # Ajouter la nouvelle entrée
+
             retraining_log.append(log_entry)
 
-            # Limiter à 50 entrées
+
             if len(retraining_log) > 50:
                 retraining_log = retraining_log[-50:]
 
@@ -1171,10 +1171,10 @@ class IndividualFeedbackRetrainingManager:
             with open(self.retraining_log_path, "w") as f:
                 json.dump(retraining_log, f, indent=2)
 
-            print("📝 Tentative de re-entraînement enregistrée")
+            print(" Tentative de re-entraînement enregistrée")
 
         except Exception as e:
-            print(f"⚠️ Erreur enregistrement log: {e}")
+            print(f" Erreur enregistrement log: {e}")
             import traceback
 
             traceback.print_exc()
@@ -1183,7 +1183,7 @@ class IndividualFeedbackRetrainingManager:
         self, feedback_id, deployed=True, validation_result=None
     ):
         """Marque LE feedback comme traité"""
-        print(f"\n📝 MARQUAGE DU FEEDBACK #{feedback_id} COMME TRAITÉ")
+        print(f"\n MARQUAGE DU FEEDBACK #{feedback_id} COMME TRAITÉ")
         print("=" * 50)
 
         try:
@@ -1211,11 +1211,11 @@ class IndividualFeedbackRetrainingManager:
             df.to_csv(self.feedback_csv_path, index=False)
 
             status = "et déployé" if deployed else "mais non déployé"
-            print(f"✅ Feedback #{feedback_id} marqué comme traité {status}")
+            print(f" Feedback #{feedback_id} marqué comme traité {status}")
             return True
 
         except Exception as e:
-            print(f"❌ Erreur marquage feedback: {e}")
+            print(f" Erreur marquage feedback: {e}")
             import traceback
 
             traceback.print_exc()
@@ -1241,17 +1241,17 @@ class IndividualFeedbackRetrainingManager:
         # Étape 2: Récupérer le prochain feedback
         feedback_data = self.get_next_unprocessed_feedback()
         if feedback_data is None:
-            print("ℹ️ Aucun feedback à traiter")
+            print("ℹ Aucun feedback à traiter")
             return False
 
-        print(f"🎯 Traitement du feedback #{feedback_data['id']}")
-        print(f"📊 Prédiction erronée: {feedback_data['original_prediction']}")
+        print(f" Traitement du feedback #{feedback_data['id']}")
+        print(f" Prédiction erronée: {feedback_data['original_prediction']}")
         print(f"✅ Correction attendue: {feedback_data['label']}")
 
         # Étape 3: Créer une sauvegarde
         backup_dir = self.create_backup_for_feedback(feedback_data["id"])
         if backup_dir is None:
-            print("❌ Impossible de créer la sauvegarde - Arrêt")
+            print(" Impossible de créer la sauvegarde - Arrêt")
             return False
 
         # Initialisation pour la boucle
@@ -1261,14 +1261,14 @@ class IndividualFeedbackRetrainingManager:
         final_model = None
         final_validation_result = None
 
-        # 🔄 BOUCLE DE RE-ENTRAÎNEMENT CONTINU
+        #  BOUCLE DE RE-ENTRAÎNEMENT CONTINU
         while (
             self.current_attempt < self.deployment_criteria["max_attempts_per_feedback"]
         ):
             self.current_attempt += 1
 
             print(
-                f"\n{'🎯' * 20} TENTATIVE {self.current_attempt}/{self.deployment_criteria['max_attempts_per_feedback']} {'🎯' * 20}"
+                f"\n{'' * 20} TENTATIVE {self.current_attempt}/{self.deployment_criteria['max_attempts_per_feedback']} {'🎯' * 20}"
             )
 
             # Étape 4: Créer le dataset d'entraînement adaptatif
@@ -1324,7 +1324,7 @@ class IndividualFeedbackRetrainingManager:
                     self.current_attempt
                     < self.deployment_criteria["max_attempts_per_feedback"]
                 ):
-                    print("⏳ Pause de 2 secondes avant prochaine tentative...")
+                    print(" Pause de 2 secondes avant prochaine tentative...")
                     time.sleep(2)
 
         # Étape 9: Décision finale
@@ -1340,10 +1340,10 @@ class IndividualFeedbackRetrainingManager:
                 "shows_improvement", False
             ):
                 print(
-                    f"🤔 Meilleur résultat obtenu à la tentative #{self.best_result_so_far['attempt_number']}"
+                    f" Meilleur résultat obtenu à la tentative #{self.best_result_so_far['attempt_number']}"
                 )
                 print(
-                    f"📊 Confiance: {self.best_result_so_far['confidence_score']:.3f}"
+                    f" Confiance: {self.best_result_so_far['confidence_score']:.3f}"
                 )
 
             self.consecutive_failures += 1
@@ -1359,26 +1359,26 @@ class IndividualFeedbackRetrainingManager:
         end_time = datetime.now()
         duration = end_time - start_time
 
-        print("\n🎉 RÉSUMÉ DU TRAITEMENT CONTINU")
+        print("\n RÉSUMÉ DU TRAITEMENT CONTINU")
         print("=" * 50)
-        print(f"⏱️ Durée: {duration}")
-        print(f"🎯 Feedback traité: #{feedback_data['id']}")
-        print(f"🔄 Tentatives utilisées: {self.current_attempt}")
-        print(f"🔧 Prédiction originale: {feedback_data['original_prediction']}")
-        print(f"✅ Correction attendue: {feedback_data['label']}")
+        print(f" Durée: {duration}")
+        print(f" Feedback traité: #{feedback_data['id']}")
+        print(f" Tentatives utilisées: {self.current_attempt}")
+        print(f" Prédiction originale: {feedback_data['original_prediction']}")
+        print(f" Correction attendue: {feedback_data['label']}")
 
         if success:
-            print("\n🚀 RÉSULTAT: MODÈLE RE-ENTRAÎNÉ ET DÉPLOYÉ!")
+            print("\n RÉSULTAT: MODÈLE RE-ENTRAÎNÉ ET DÉPLOYÉ!")
             print(f"   Feedback corrigé à la tentative #{self.current_attempt}")
             print(
                 f"   Confiance finale: {final_validation_result['confidence_score']:.3f}"
             )
         else:
-            print("\n🛑 RÉSULTAT: Modèle original conservé")
+            print("\n RÉSULTAT: Modèle original conservé")
             print("💡 Le re-entraînement n'a pas réussi à corriger ce feedback")
             if self.best_result_so_far:
                 print(
-                    f"📊 Meilleure confiance atteinte: {self.best_result_so_far['confidence_score']:.3f}"
+                    f" Meilleure confiance atteinte: {self.best_result_so_far['confidence_score']:.3f}"
                 )
 
         return deployment_success
@@ -1387,7 +1387,7 @@ class IndividualFeedbackRetrainingManager:
         self, feedback_id, deployed=True, validation_result=None
     ):
         """Marque LE feedback comme traité avec info sur les tentatives"""
-        print(f"\n📝 MARQUAGE DU FEEDBACK #{feedback_id} COMME TRAITÉ")
+        print(f"\n MARQUAGE DU FEEDBACK #{feedback_id} COMME TRAITÉ")
         print("=" * 50)
 
         try:
@@ -1418,12 +1418,12 @@ class IndividualFeedbackRetrainingManager:
             df.to_csv(self.feedback_csv_path, index=False)
 
             status = "et déployé" if deployed else "mais non déployé"
-            print(f"✅ Feedback #{feedback_id} marqué comme traité {status}")
-            print(f"📊 Tentatives utilisées: {self.current_attempt}")
+            print(f" Feedback #{feedback_id} marqué comme traité {status}")
+            print(f" Tentatives utilisées: {self.current_attempt}")
             return True
 
         except Exception as e:
-            print(f"❌ Erreur marquage feedback: {e}")
+            print(f" Erreur marquage feedback: {e}")
             return False
 
     def run_continuous_individual_processing(
@@ -1444,7 +1444,7 @@ class IndividualFeedbackRetrainingManager:
             print(f"\n{'=' * 20} ITÉRATION {iteration} {'=' * 20}")
 
             if max_iterations and iteration > max_iterations:
-                print(f"🛑 Limite d'itérations atteinte ({max_iterations})")
+                print(f" Limite d'itérations atteinte ({max_iterations})")
                 break
 
             # Vérifier les échecs consécutifs
@@ -1453,7 +1453,7 @@ class IndividualFeedbackRetrainingManager:
                 >= self.deployment_criteria["max_consecutive_failures"]
             ):
                 print(
-                    f"🚨 ARRÊT: Trop d'échecs consécutifs ({self.consecutive_failures})"
+                    f" ARRÊT: Trop d'échecs consécutifs ({self.consecutive_failures})"
                 )
                 break
 
@@ -1463,15 +1463,15 @@ class IndividualFeedbackRetrainingManager:
             if success is True:
                 processed_count += 1
                 deployed_count += 1
-                print("✅ Feedback traité et modèle déployé!")
+                print(" Feedback traité et modèle déployé!")
             elif success is False and self.get_next_unprocessed_feedback() is not None:
                 processed_count += 1
-                print("⚠️ Feedback traité mais modèle non déployé")
+                print(" Feedback traité mais modèle non déployé")
             else:
-                print("ℹ️ Aucun feedback disponible - Arrêt du traitement")
+                print(" Aucun feedback disponible - Arrêt du traitement")
                 break
 
-            print("\n📊 Bilan à ce stade:")
+            print("\n Bilan à ce stade:")
             print(f"   Feedbacks traités: {processed_count}")
             print(f"   Modèles déployés: {deployed_count}")
             print(
@@ -1481,8 +1481,8 @@ class IndividualFeedbackRetrainingManager:
             )
             print(f"   Échecs consécutifs: {self.consecutive_failures}")
 
-        print("\n🎉 TRAITEMENT CONTINU TERMINÉ")
-        print("📊 Statistiques finales:")
+        print("\n TRAITEMENT CONTINU TERMINÉ")
+        print(" Statistiques finales:")
         print(f"   Total feedbacks traités: {processed_count}")
         print(f"   Total modèles déployés: {deployed_count}")
         print(
@@ -1497,9 +1497,9 @@ class IndividualFeedbackRetrainingManager:
 
 def main():
     """Fonction principale pour le re-entraînement par feedback individuel"""
-    print("🚀 RE-ENTRAÎNEMENT PAR FEEDBACK INDIVIDUEL")
+    print(" RE-ENTRAÎNEMENT PAR FEEDBACK INDIVIDUEL")
     print("=" * 60)
-    print("🎯 PHILOSOPHIE: Chaque feedback négatif = Un re-entraînement")
+    print(" PHILOSOPHIE: Chaque feedback négatif = Un re-entraînement")
 
     # Initialiser le gestionnaire
     manager = IndividualFeedbackRetrainingManager(
@@ -1507,7 +1507,7 @@ def main():
     )
 
     # Vérifier les prérequis
-    print("\n🔍 Vérification des prérequis...")
+    print("\n Vérification des prérequis...")
 
     required_files = [
         manager.model_path,
@@ -1519,19 +1519,19 @@ def main():
 
     missing_files = [f for f in required_files if not f.exists()]
     if missing_files:
-        print("❌ Fichiers manquants:")
+        print(" Fichiers manquants:")
         for f in missing_files:
             print(f"   - {f}")
         return False
 
     if not manager.feedback_csv_path.exists():
-        print(f"❌ Fichier de feedbacks manquant: {manager.feedback_csv_path}")
+        print(f" Fichier de feedbacks manquant: {manager.feedback_csv_path}")
         return False
 
-    print("✅ Tous les prérequis sont satisfaits")
+    print(" Tous les prérequis sont satisfaits")
 
     # Mode automatique : traite automatiquement UN feedback
-    print("\n🎯 MODE AUTOMATIQUE : Traitement d'un feedback individuel")
+    print("\n MODE AUTOMATIQUE : Traitement d'un feedback individuel")
     success = manager.process_single_feedback()
     return success
 
@@ -1545,7 +1545,7 @@ class FeedbackRetrainingMonitor:
     def analyze_retraining_performance(self):
         """Analyse les performances du re-entraînement"""
         if not self.retraining_log_path.exists():
-            print("❌ Aucun log de re-entraînement disponible")
+            print(" Aucun log de re-entraînement disponible")
             return None
 
         try:
@@ -1553,10 +1553,10 @@ class FeedbackRetrainingMonitor:
                 retraining_log = json.load(f)
 
             if not retraining_log:
-                print("❌ Log de re-entraînement vide")
+                print(" Log de re-entraînement vide")
                 return None
 
-            print("\n📊 ANALYSE DES RE-ENTRAÎNEMENTS INDIVIDUELS")
+            print("\n ANALYSE DES RE-ENTRAÎNEMENTS INDIVIDUELS")
             print("=" * 60)
 
             total_attempts = len(retraining_log)
@@ -1567,16 +1567,16 @@ class FeedbackRetrainingMonitor:
                 successful_deployments / total_attempts if total_attempts > 0 else 0
             )
 
-            print(f"📈 Tentatives totales: {total_attempts}")
-            print(f"✅ Déploiements réussis: {successful_deployments}")
-            print(f"📊 Taux de succès: {success_rate:.1%}")
+            print(f" Tentatives totales: {total_attempts}")
+            print(f" Déploiements réussis: {successful_deployments}")
+            print(f" Taux de succès: {success_rate:.1%}")
 
             # Analyse des échecs
             failed_attempts = [
                 entry for entry in retraining_log if not entry["deployed"]
             ]
             if failed_attempts:
-                print(f"❌ Échecs: {len(failed_attempts)}")
+                print(f" Échecs: {len(failed_attempts)}")
 
                 # Raisons d'échec
                 correction_failures = len(
@@ -1608,7 +1608,7 @@ class FeedbackRetrainingMonitor:
                 [entry for entry in recent_attempts if entry["deployed"]]
             ) / len(recent_attempts)
 
-            print(f"📈 Tendance récente (10 derniers): {recent_success_rate:.1%}")
+            print(f"Tendance récente (10 derniers): {recent_success_rate:.1%}")
 
             # Patterns de feedback
             feedback_types = {}
@@ -1618,7 +1618,7 @@ class FeedbackRetrainingMonitor:
                 pattern = f"{original_pred} → {expected_correction}"
                 feedback_types[pattern] = feedback_types.get(pattern, 0) + 1
 
-            print("\n🔍 Patterns de correction les plus fréquents:")
+            print("\n Patterns de correction les plus fréquents:")
             for pattern, count in sorted(
                 feedback_types.items(), key=lambda x: x[1], reverse=True
             )[:5]:
@@ -1633,7 +1633,7 @@ class FeedbackRetrainingMonitor:
             }
 
         except Exception as e:
-            print(f"❌ Erreur analyse: {e}")
+            print(f" Erreur analyse: {e}")
             return None
 
 
@@ -1643,11 +1643,11 @@ def restore_from_backup(backup_dir, model_dir="./model/model_prod"):
     model_path = Path(model_dir)
 
     if not backup_path.exists():
-        print(f"❌ Sauvegarde non trouvée: {backup_path}")
+        print(f" Sauvegarde non trouvée: {backup_path}")
         return False
 
     try:
-        print(f"🔄 Restauration depuis: {backup_path}")
+        print(f" Restauration depuis: {backup_path}")
 
         # Sauvegarder l'état actuel
         current_backup = (
@@ -1655,20 +1655,20 @@ def restore_from_backup(backup_dir, model_dir="./model/model_prod"):
             / f"current_backup_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
         )
         shutil.copytree(model_path, current_backup)
-        print(f"💾 État actuel sauvegardé: {current_backup}")
+        print(f" État actuel sauvegardé: {current_backup}")
 
         # Restaurer depuis la sauvegarde
         for item in backup_path.iterdir():
             if item.is_file() and item.name != "backup_metadata.json":
                 dest = model_path / item.name
                 shutil.copy2(item, dest)
-                print(f"✅ {item.name} restauré")
+                print(f" {item.name} restauré")
 
-        print("🎉 Restauration terminée avec succès!")
+        print(" Restauration terminée avec succès!")
         return True
 
     except Exception as e:
-        print(f"❌ Erreur lors de la restauration: {e}")
+        print(f" Erreur lors de la restauration: {e}")
         return False
 
 
@@ -1690,11 +1690,11 @@ if __name__ == "__main__":
             try:
                 processed, deployed = manager.run_continuous_individual_processing()
                 print(
-                    f"✅ Traitement terminé: {processed} traités, {deployed} déployés"
+                    f" Traitement terminé: {processed} traités, {deployed} déployés"
                 )
                 sys.exit(0)
             except KeyboardInterrupt:
-                print("\n👋 Arrêté par l'utilisateur")
+                print("\n Arrêté par l'utilisateur")
                 sys.exit(0)
 
         elif command == "monitor":
@@ -1709,11 +1709,11 @@ if __name__ == "__main__":
                 backup_dir = sys.argv[2]
                 restore_from_backup(backup_dir)
             else:
-                print("❌ Usage: python traitement.py restore <backup_directory>")
+                print(" Usage: python traitement.py restore <backup_directory>")
             sys.exit(0)
 
         elif command == "help":
-            print("📋 UTILISATION DU RE-ENTRAÎNEMENT INDIVIDUEL:")
+            print(" UTILISATION DU RE-ENTRAÎNEMENT INDIVIDUEL:")
             print("=" * 60)
             print(
                 "python traitement.py                    # Mode automatique (traite 1 feedback)"
@@ -1729,25 +1729,12 @@ if __name__ == "__main__":
                 "python traitement.py restore <backup>   # Restaurer depuis sauvegarde"
             )
             print("python traitement.py help               # Afficher cette aide")
-            print("\n🎯 Le re-entraînement individuel effectue:")
-            print("   • Prend le prochain feedback négatif non traité")
-            print("   • Re-entraîne le modèle spécifiquement pour ce feedback")
-            print("   • Valide que la correction fonctionne")
-            print("   • Déploie immédiatement si la validation réussit")
-            print("   • Déclenche automatiquement le rechargement de l'API")
-            print("\n⚖️ Avantages:")
-            print("   • Correction immédiate des erreurs")
-            print("   • Apprentissage ciblé sur chaque problème")
-            print("   • Déploiement rapide des améliorations")
-            print("   • Adaptation continue du modèle")
-            print("   • Rechargement automatique sans redémarrage")
-            print("\n🎯 PHILOSOPHIE:")
             print(
                 "   Chaque feedback négatif = Une opportunité d'amélioration immédiate"
             )
 
         else:
-            print("❌ Commande non reconnue. Utilisez 'help' pour voir les options")
+            print(" Commande non reconnue. Utilisez 'help' pour voir les options")
     else:
-        # Mode automatique par défaut
+
         main()

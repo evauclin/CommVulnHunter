@@ -5,7 +5,7 @@
 venv/
 __pycache__/
 *.pyc
-
+src/pages/emails/
 # Fichiers de config perso
 *.env
 # Terraform

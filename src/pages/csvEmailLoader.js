@@ -123,7 +123,7 @@ class EmailCSVLoader {
     }
 
     /**
-     * ✅ AMÉLIORÉ : Nettoie le contenu d'un email pour l'affichage
+     *  Nettoie le contenu d'un email pour l'affichage
      */
     cleanEmailContent(content) {
         if (!content) return '';
@@ -154,7 +154,7 @@ class EmailCSVLoader {
     }
 
     /**
-     * ✅ AMÉLIORÉ : Nettoie et formate l'adresse email
+     * : Nettoie et formate l'adresse email
      */
     cleanEmailAddress(emailAddr) {
         if (!emailAddr) return 'Expéditeur inconnu';
@@ -179,7 +179,7 @@ class EmailCSVLoader {
     }
 
     /**
-     * ✅ AMÉLIORÉ : Nettoie et formate le sujet
+     *  Nettoie et formate le sujet
      */
     cleanSubject(subject) {
         if (!subject) return 'Sans objet';
@@ -205,7 +205,7 @@ class EmailCSVLoader {
     }
 
     /**
-     * ✅ AMÉLIORÉ : Formate un email pour l'affichage
+     *   Formate un email pour l'affichage
      */
     formatEmailForDisplay(email) {
         const isSpam = email.type === 'SPAM';
@@ -318,9 +318,6 @@ class EmailCSVLoader {
         };
     }
 
-    /**
-     * ✅ AMÉLIORÉ : Affiche les emails dans l'interface avec un meilleur rendu
-     */
     displayEmails(container, emailsToDisplay = this.emails) {
 
 
@@ -344,8 +341,6 @@ class EmailCSVLoader {
         emailsToDisplay.forEach((email, index) => {
             const formatted = this.formatEmailForDisplay(email);
 
-            // ✅✅✅ CORRECTION À APPLIQUER ICI ✅✅✅
-            // Ajoutez data-email-id="${email.id}" à la ligne ci-dessous
             html += `
                 <div class="email-item ${formatted.isSpam ? 'spam' : ''}" 
                      onclick="selectEmail(${index})" 
