@@ -992,7 +992,9 @@ class ModelFineTuner:
 
         return X_text, X_num, y
 
-    def finetune_model(self, X_text: np.ndarray, X_num: np.ndarray, y: np.ndarray) -> bool:
+    def finetune_model(
+        self, X_text: np.ndarray, X_num: np.ndarray, y: np.ndarray
+    ) -> bool:
         """Fine-tune the existing model"""
         print("\n🎯 FINE-TUNING DU MODÈLE")
         print("=" * 30)
@@ -1036,7 +1038,9 @@ class ModelFineTuner:
         print("✅ Fine-tuning terminé!")
         return history
 
-    def evaluate_finetuned_model(self, X_text_test: np.ndarray, X_num_test: np.ndarray, y_test: np.ndarray) -> dict:
+    def evaluate_finetuned_model(
+        self, X_text_test: np.ndarray, X_num_test: np.ndarray, y_test: np.ndarray
+    ) -> dict:
         """Evaluate the fine-tuned model"""
         print("\n📊 ÉVALUATION DU MODÈLE FINE-TUNÉ")
         print("=" * 35)

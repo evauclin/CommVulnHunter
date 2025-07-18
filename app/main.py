@@ -37,7 +37,6 @@ except ImportError:
     validate_gmail_credentials = None
 
 
-
 app = FastAPI(
     title="API de Détection de Phishing Automatique (FR/EN) - Smart Percentile",
     description="Une API adaptative pour classifier des textes avec optimisation automatique des longueurs.",
@@ -228,21 +227,20 @@ def get_emails_contributing_to_finetuning() -> List[str]:
     Retourne les email_id des feedbacks négatifs qui ont été traités ET DÉPLOYÉS.
     C'est la source de vérité pour l'affichage " Fine-tuning terminé".
     """
-    if not FEEDBACK_CSV_PATH.exists(): return []
+    if not FEEDBACK_CSV_PATH.exists():
+        return []
     try:
         df = pd.read_csv(FEEDBACK_CSV_PATH)
         # La colonne 'deployed' est maintenant la seule condition pour être "terminé"
         required_cols = ["email_id", "user_satisfaction", "deployed"]
         if not all(c in df.columns for c in required_cols):
             print(
-                " Colonne 'deployed' manquante dans user_feedbacks.csv, impossible de confirmer les emails terminés.")
+                " Colonne 'deployed' manquante dans user_feedbacks.csv, impossible de confirmer les emails terminés."
+            )
             return []
 
         # Logique finale et robuste :
-        processed_df = df[
-            (df["user_satisfaction"] == "no") &
-            (df["deployed"] == True)
-            ]
+        processed_df = df[(df["user_satisfaction"] == "no") & (df["deployed"] == True)]
         return processed_df["email_id"].dropna().unique().tolist()
     except Exception as e:
         print(f" Erreur lecture emails contributeurs: {e}")
@@ -255,7 +253,8 @@ def get_emails_pending_finetuning() -> List[str]:
     C'est la source de vérité pour l'affichage " En cours de fine-tuning".
     Un email est dans cet état s'il a un feedback négatif et que son statut 'deployed' n'est pas True.
     """
-    if not FEEDBACK_CSV_PATH.exists(): return []
+    if not FEEDBACK_CSV_PATH.exists():
+        return []
     try:
         df = pd.read_csv(FEEDBACK_CSV_PATH)
         required_cols = ["email_id", "user_satisfaction", "deployed"]
@@ -263,7 +262,9 @@ def get_emails_pending_finetuning() -> List[str]:
         # Si le fichier n'a pas encore la colonne 'deployed', on se base sur 'processed'
         if not all(c in df.columns for c in required_cols):
             if "processed" in df.columns:
-                pending_df = df[(df["user_satisfaction"] == "no") & (df["processed"] == False)]
+                pending_df = df[
+                    (df["user_satisfaction"] == "no") & (df["processed"] == False)
+                ]
                 return pending_df["email_id"].dropna().unique().tolist()
             return []
 
@@ -277,6 +278,7 @@ def get_emails_pending_finetuning() -> List[str]:
     except Exception as e:
         print(f"⚠ Erreur lecture emails en attente: {e}")
         return []
+
 
 def analyze_input_lengths(texts: list) -> list:
     """Quick analysis of input text lengths"""
@@ -336,7 +338,9 @@ def calculate_production_length(current_batch_lengths: list) -> int:
     return optimal
 
 
-def prepare_sequences_adaptive(texts: list, languages: list, target_length: int) -> tuple:
+def prepare_sequences_adaptive(
+    texts: list, languages: list, target_length: int
+) -> tuple:
     """Prepare sequences with a specific target length"""
     processed_texts = []
     for text, lang in zip(texts, languages):
@@ -542,9 +546,7 @@ def load_model_artifacts() -> bool:
         # NOUVEAU: Affichage du résumé des capacités
         print("\n API prête ! Capacités activées:")
         print(f"   Longueur de séquence: {MAX_SEQUENCE_LENGTH}")
-        print(
-            f"   Smart_percentile: {' OUI' if SMART_PERCENTILE_ENABLED else ' NON'}"
-        )
+        print(f"   Smart_percentile: {' OUI' if SMART_PERCENTILE_ENABLED else ' NON'}")
         print(
             f"   Longueurs variables: {' OUI' if MODEL_SUPPORTS_VARIABLE_LENGTH else ' NON'}"
         )
@@ -929,13 +931,15 @@ def save_feedback_to_csv(feedback_data: dict) -> bool:
             "user_satisfaction",
             "language_detected",
             "processed",
-            "email_id"
+            "email_id",
         ]
         feedback_data["processed"] = False
         FEEDBACK_CSV_PATH.parent.mkdir(exist_ok=True)
         file_exists = FEEDBACK_CSV_PATH.exists()
         with open(FEEDBACK_CSV_PATH, "a", newline="", encoding="utf-8") as csvfile:
-            writer = csv.DictWriter(csvfile, fieldnames=csv_headers, extrasaction='ignore')  # ignore les clés en trop
+            writer = csv.DictWriter(
+                csvfile, fieldnames=csv_headers, extrasaction="ignore"
+            )  # ignore les clés en trop
             if not file_exists:
                 writer.writeheader()
             writer.writerow(feedback_data)
@@ -1034,7 +1038,11 @@ def get_finetuning_logs():
         "note": "Pour voir les logs en temps réel, consultez la console où l'API est lancée",
     }
 
-@app.post("/finetuning/sync-frontend", summary="Synchronise l'état complet du fine-tuning avec le frontend")
+
+@app.post(
+    "/finetuning/sync-frontend",
+    summary="Synchronise l'état complet du fine-tuning avec le frontend",
+)
 def sync_frontend_finetuning():
     """
     Endpoint crucial pour le frontend. Il fournit l'état actuel ET la liste des emails
@@ -1044,12 +1052,11 @@ def sync_frontend_finetuning():
         "status": "success",
         "sync_data": {
             "is_finetuning_running": IS_FINETUNING_RUNNING,
-
             "processed_email_ids": get_emails_contributing_to_finetuning(),
-
-            "pending_email_ids": get_emails_pending_finetuning()
-        }
+            "pending_email_ids": get_emails_pending_finetuning(),
+        },
     }
+
 
 def trigger_automatic_finetuning() -> bool:
     """
@@ -1097,9 +1104,7 @@ def check_and_trigger_finetuning() -> bool:
                 print(" Fine-tuning déjà en cours")
                 return False
             else:
-                print(
-                    " Fine-tuning automatique désactivé, déclenchement manuel requis"
-                )
+                print(" Fine-tuning automatique désactivé, déclenchement manuel requis")
                 return False
         else:
             print(
@@ -1139,7 +1144,6 @@ def reload_model_artifacts() -> bool:
             print(" MODÈLE RECHARGÉ AVEC SUCCÈS!")
             print(f"   Nouvelle longueur de séquence: {MAX_SEQUENCE_LENGTH}")
             print(f"   Vocabulaire: {len(tokenizer.word_index)} mots")
-
 
             try:
                 test_text = "Test de validation du nouveau modèle"
@@ -1199,7 +1203,6 @@ def health_check():
         "is_finetuning_running": IS_FINETUNING_RUNNING,
         "auto_finetuning_enabled": AUTO_FINETUNING_ENABLED,
         "finetuning_threshold": NEGATIVE_FEEDBACK_THRESHOLD,
-
         "smart_percentile_capabilities": {
             "enabled": SMART_PERCENTILE_ENABLED,
             "variable_length_supported": MODEL_SUPPORTS_VARIABLE_LENGTH,
@@ -1315,7 +1318,6 @@ def predict_batch_adaptive(batch: BatchInputAdaptive):
         raise HTTPException(status_code=503, detail="Modèle non disponible")
 
     if not (SMART_PERCENTILE_ENABLED and MODEL_SUPPORTS_VARIABLE_LENGTH):
-
         results = []
         for item in batch.items:
             try:
@@ -1405,7 +1407,6 @@ async def save_feedback(feedback: FeedbackInput, background_tasks: BackgroundTas
             raise HTTPException(status_code=500, detail="Erreur sauvegarde feedback")
 
         print(f" Feedback enregistré: {feedback.user_satisfaction}")
-
 
         auto_triggered = False
         if feedback.user_satisfaction == "no":  # Seulement pour les feedbacks négatifs
@@ -1499,7 +1500,7 @@ async def save_feedback_by_id(
             "predicted_probability": feedback.predicted_probability,
             "user_satisfaction": feedback.user_satisfaction,
             "language_detected": feedback.language_detected,
-            "email_id": feedback.email_id
+            "email_id": feedback.email_id,
         }
 
         if not save_feedback_to_csv(feedback_data):
@@ -1612,7 +1613,6 @@ def stop_finetuning():
             "is_finetuning_running": False,
         }
 
-
     IS_FINETUNING_RUNNING = False
 
     return {
@@ -1651,7 +1651,6 @@ def get_model_info():
                         "dtype": str(input_layer.dtype),
                     }
                 )
-
 
             try:
                 import io
@@ -1713,7 +1712,6 @@ async def reload_model_endpoint():
         success = reload_model_artifacts()
 
         if success:
-
             try:
                 metadata_file = Path("model/model_prod/model_metadata.json")
                 if metadata_file.exists():
@@ -1836,14 +1834,12 @@ async def fetch_gmail_emails(
         )
 
     try:
-
         if validate_gmail_credentials:
             valid, validation_message = validate_gmail_credentials(
                 request.username, request.password
             )
             if not valid:
                 raise HTTPException(status_code=401, detail=validation_message)
-
 
         def fetch_emails_task():
             success, message, emails_data = fetch_emails_from_gmail(
@@ -1957,7 +1953,6 @@ async def process_csv_file(file: UploadFile = File(...)):
         print(" CSV parsé avec succès")
         print(f" Colonnes détectées: {list(df.columns)}")
         print(f" Nombre de lignes: {len(df)}")
-
 
         required_columns = ["from", "subject", "body", "type"]
         missing_columns = [col for col in required_columns if col not in df.columns]
